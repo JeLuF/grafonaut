@@ -1,0 +1,64 @@
+import 'dotenv/config';
+import path from 'node:path';
+import express from 'express';
+import cookieSession from 'cookie-session';
+import { addMyGraphic, findAccountById, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
+import { importSeedDirectory } from './seed-import.js';
+
+const app = express();
+const port = Number(process.env.PORT ?? 3000);
+const publicDirectory = path.resolve('dist');
+app.use(express.json());
+app.use(cookieSession({ name: 'ograf_session', keys: [process.env.SESSION_SECRET ?? 'local-development-secret'], httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' }));
+
+app.get('/health', (_request, response) => response.json({ ok: true }));
+app.get('/api/catalog', async (_request, response) => {
+  try { response.json({ items: await listPublishedCatalog() }); }
+  catch (error) { response.status(503).json({ error: 'Catalog unavailable', detail: error.message }); }
+});
+app.post('/api/my-graphics', async (request, response) => {
+  if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });
+  if (!request.body?.versionId) return response.status(400).json({ error: 'versionId is required' });
+  try {
+    await addMyGraphic(request.session.accountId, request.body.versionId);
+    response.status(201).json({ ok: true });
+  } catch (error) { response.status(400).json({ error: error.message }); }
+});
+app.get('/api/auth/me', async (request, response) => {
+  const account = request.session?.accountId ? await findAccountById(request.session.accountId) : null;
+  response.json({ account });
+});
+app.get('/api/auth/twitch', (_request, response) => {
+  if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_REDIRECT_URI) return response.status(503).send('Twitch OAuth is not configured. Set TWITCH_CLIENT_ID and TWITCH_REDIRECT_URI.');
+  const params = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, redirect_uri: process.env.TWITCH_REDIRECT_URI, response_type: 'code', scope: 'user:read:email' });
+  response.redirect(`https://id.twitch.tv/oauth2/authorize?${params}`);
+});
+app.get('/api/auth/twitch/callback', async (request, response) => {
+  try {
+    const tokenParams = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, client_secret: process.env.TWITCH_CLIENT_SECRET, code: request.query.code, grant_type: 'authorization_code', redirect_uri: process.env.TWITCH_REDIRECT_URI });
+    const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', { method: 'POST', body: tokenParams });
+    const token = await tokenResponse.json();
+    const profileResponse = await fetch('https://api.twitch.tv/helix/users', { headers: { Authorization: `Bearer ${token.access_token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID } });
+    const profile = (await profileResponse.json()).data?.[0];
+    if (!profile) throw new Error('Twitch profile unavailable');
+    const account = await upsertTwitchAccount(profile);
+    request.session = { accountId: account.id };
+    response.redirect('/');
+  } catch (error) { response.status(502).send(`Twitch sign-in failed: ${error.message}`); }
+});
+
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(publicDirectory));
+  app.get('*', (_request, response) => response.sendFile(path.join(publicDirectory, 'index.html')));
+}
+
+await initializeDatabase();
+const seedDirectories = [
+  [process.env.SEED_BUILTIN_DIR ?? './seeds/builtin', 'seed_builtin'],
+  [process.env.SEED_VOLUME_DIR ?? './seeds/volume', 'seed_volume']
+];
+for (const [directory, source] of seedDirectories) {
+  try { console.log(`Seed scan ${directory}: imported ${await importSeedDirectory(directory, source)} package(s)`); }
+  catch (error) { console.error(`Seed scan failed for ${directory}:`, error.message); }
+}
+app.listen(port, () => console.log(`OGraf MVP listening on http://localhost:${port}`));

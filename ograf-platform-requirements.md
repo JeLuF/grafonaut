@@ -46,10 +46,15 @@ OGraf-compatible controller.
 - **"My Graphics" view** *(distinct from the Publication Management view below)*: shows
   every graphic the user has added to their own working set — both graphics they've
   selected from the public catalog and ones they've uploaded themselves. **The same
-  catalog or private graphic can be added more than once**, as independent entries —
+  catalog or private package version can be added more than once**, as independent entries —
   e.g. keeping a separately-configured "left-aligned" and "right-aligned" instance of
   the same lower-third package for two different hosts, switchable instantly without
   re-editing properties each time. Each such entry has:
+  - a reference to one specific immutable package version; adding a newer package
+    version or switching an existing entry to it is an explicit manual action. Existing
+    entries must not automatically follow a package's latest or currently published
+    version, because the version's parameter schema or behavior may have changed and
+    could break downstream integrations,
   - an **enable/disable** action,
   - access to its own **schema property dialog** (a generated form, from the manifest's
     JSON `schema`, to set/edit its data fields — player names, roles, colors, etc. —
@@ -166,6 +171,9 @@ OGraf-compatible controller.
   assets — e.g. `/storage/packages/<pkg-uuid>/<version-uuid>/...`.
 - **Version immutability**: each upload is a new immutable version keyed by its own
   UUID. "Publish" only changes which version the catalog points to as current/default.
+  A "My Graphics" entry remains pinned to the specific package version selected when
+  it was added; moving it to a newer version is an explicit manual upgrade action and
+  must not happen implicitly when a package is republished or a newer upload exists.
   A running render instance keeps using the version it loaded until explicitly updated —
   republishing must not silently change what's live mid-broadcast.
 - The seed-import directories (§2) are kept separate from this data volume; imported
@@ -185,7 +193,9 @@ OGraf-compatible controller.
   independent copy of the schema data, an enabled flag, and an optional label (e.g.
   "Left" / "Right") — because the same package version can be added by the same user
   **multiple times** as independent, separately-configured entries. Each entry
-  corresponds to one addressable graphic instance in the OGraf Server API/renderer
+  corresponds to one addressable graphic instance in the OGraf Server API/renderer;
+  changing its referenced package version is an explicit manual upgrade operation,
+  not automatic latest-version resolution
   (see §10).
 
 ## 9. Security: Sandboxing the Rendered Graphic

@@ -28,7 +28,7 @@ erDiagram
 
     PACKAGE_VERSIONS {
         char36 id PK "UUID, also the storage dir name, §7"
-        char36 package_id FK
+        char36 package_version_id FK "immutable selected version; upgrades are manual, §7/§8"
         varchar64 version_label "manifest's own declared version string"
         varchar255 manifest_name
         text manifest_description
@@ -95,7 +95,7 @@ erDiagram
     PACKAGES ||--o| PACKAGE_VERSIONS : "latest version"
     PACKAGES ||--o| PACKAGE_VERSIONS : "current published version"
     ACCOUNTS ||--o{ MY_GRAPHICS_ENTRIES : owns
-    PACKAGES ||--o{ MY_GRAPHICS_ENTRIES : "referenced by"
+    PACKAGE_VERSIONS ||--o{ MY_GRAPHICS_ENTRIES : "selected version"
     ACCOUNTS ||--o{ ACTION_GROUPS : defines
     ACTION_GROUPS ||--o{ ACTION_GROUP_STEPS : contains
     MY_GRAPHICS_ENTRIES ||--o{ ACTION_GROUP_STEPS : "targeted by"

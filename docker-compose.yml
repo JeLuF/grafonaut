@@ -1,0 +1,42 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ograf}
+      MYSQL_USER: ${MYSQL_USER:-ograf}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ograf}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:-http://localhost:3000/api/auth/twitch/callback}
+      SEED_BUILTIN_DIR: /app/seeds/builtin
+      SEED_VOLUME_DIR: /app/seeds/volume
+      STORAGE_ROOT: /app/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - graf-storage:/app/storage
+      - ./seeds/volume:/app/seeds/volume:ro
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ograf}
+      MYSQL_USER: ${MYSQL_USER:-ograf}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ograf}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root-change-me}
+    volumes:
+      - graf-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+volumes:
+  graf-storage:
+  graf-mysql:

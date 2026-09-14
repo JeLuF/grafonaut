@@ -15,16 +15,13 @@
 --     independent flags at two different levels: one on the package itself
 --     (personal-or-moderation kill switch, affects everyone referencing it),
 --     one per user-owned entry (purely personal, affects only that user).
---   * A My Graphics entry (my_graphics_entries) references a *package*, not a
---     fixed package_version. Which version it actually resolves to at
---     load-time is application logic: the owner's own package always
---     resolves to packages.latest_version_id (so they can use/test unpublished
---     uploads immediately); a catalog package added by someone other than its
---     owner resolves to packages.current_published_version_id (so nobody sees
---     another account's unpublished/unreviewed content). §7's version
---     immutability guarantee ("a running render instance keeps using the
---     version it loaded until explicitly updated") is enforced at the
---     application/render-instance layer, not by pinning a version_id here.
+--   * A My Graphics entry (my_graphics_entries) references one fixed
+--     package_version. Newer uploads and republished catalog versions never
+--     change an existing entry; moving an entry to another version is an
+--     explicit manual operation because its schema or behavior may change.
+--     The package-level latest/current-published pointers are catalog metadata
+--     only and must not be used for implicit instance resolution. §7's version
+--     immutability guarantee therefore applies directly to the entry's FK.
 --   * renderer_connections models live WebSocket connections in MySQL for
 --     completeness (§8 lists it as an expected table). In a horizontally
 --     scaled deployment this is churny, process-local, ephemeral state that
@@ -147,14 +144,15 @@ ALTER TABLE packages
 
 -- -----------------------------------------------------------------------------
 -- my_graphics_entries - one row per item in a user's "My Graphics" view; the
--- same package may be referenced by several entries for the same account
+-- same package version may be referenced by several entries for the same account.
+-- The referenced version is immutable; changing it is an explicit manual upgrade.
 -- (§3, §8)
 -- -----------------------------------------------------------------------------
 DROP TABLE IF EXISTS my_graphics_entries;
 CREATE TABLE my_graphics_entries (
     id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     account_id      BIGINT UNSIGNED NOT NULL COMMENT 'the entry''s owner; not necessarily the package owner',
-    package_id      CHAR(36)     NOT NULL,
+    package_version_id CHAR(36)     NOT NULL COMMENT 'immutable version selected for this entry; upgrades are manual, §7/§8',
     label           VARCHAR(100) NULL COMMENT 'e.g. Left / Right, §3',
     schema_data     JSON         NOT NULL DEFAULT (JSON_OBJECT()) COMMENT 'this entry''s own independent property values',
     enabled         BOOLEAN      NOT NULL DEFAULT TRUE COMMENT 'per-entry personal toggle, independent of packages.disabled',
@@ -163,11 +161,11 @@ CREATE TABLE my_graphics_entries (
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_mge_account (account_id),
-    KEY idx_mge_package (package_id),
+    KEY idx_mge_package_version (package_version_id),
     CONSTRAINT fk_mge_account
         FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE,
-    CONSTRAINT fk_mge_package
-        FOREIGN KEY (package_id) REFERENCES packages (id) ON DELETE CASCADE
+    CONSTRAINT fk_mge_package_version
+        FOREIGN KEY (package_version_id) REFERENCES package_versions (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- -----------------------------------------------------------------------------
