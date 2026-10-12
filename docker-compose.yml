@@ -11,10 +11,12 @@ services:
       MYSQL_USER: ${MYSQL_USER:-ograf}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ograf}
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
       TRUST_PROXY: ${TRUST_PROXY:-loopback,linklocal,uniquelocal}
       TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
       TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
       TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:-http://localhost:3000/api/auth/twitch/callback}
+      RENDERER_HOST: ${RENDERER_HOST:-}
       SEED_BUILTIN_DIR: /app/seeds/builtin
       SEED_VOLUME_DIR: /app/seeds/volume
       STORAGE_ROOT: /app/storage

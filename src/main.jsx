@@ -1,8 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, List, Plus, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, List, MonitorPlay, Plus, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
+import RendererView, { RendererPreview } from './renderer-view.jsx';
 import { requestJson, triggerGraphicAction } from './api.js';
 import './styles.css';
 
@@ -10,6 +11,7 @@ const PAGE_SIZE = 6;
 
 export function parseRoute(hash) {
   if (hash === '#my-graphics') return { view: 'my-graphics' };
+  if (hash === '#renderer') return { view: 'renderer' };
   const match = /^#graphic\/(.+)$/.exec(hash);
   if (match) {
     try { return { view: 'graphic', versionId: decodeURIComponent(match[1]) }; } catch { /* fall through to catalog */ }
@@ -238,8 +240,9 @@ function App() {
     <aside className="sidebar">
       <a className="brand-mark" href="#catalog"><span>O</span>GRAF</a>
       <nav className="view-tabs" aria-label="Graphics views">
-        <a href="#catalog" aria-current={view !== 'my-graphics' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
+        <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#my-graphics" aria-current={view === 'my-graphics' ? 'page' : undefined}><List size={17} />My Graphics{account && <span className="entry-count">{entries.length}</span>}</a>
+        <a href="#renderer" aria-current={view === 'renderer' ? 'page' : undefined}><MonitorPlay size={17} />Renderer</a>
       </nav>
       <div className="sidebar-account">
         {authLoading ? null : account ? <span className="account-chip">{account.twitch_display_name ?? account.displayName}</span> : <a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a>}
@@ -247,7 +250,8 @@ function App() {
     </aside>
     <main className="app-shell">
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
       : view === 'graphic' ? <GraphicDetail versionId={route.versionId} summary={catalog.find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>
       {!authLoading && !account && <section className="hero">

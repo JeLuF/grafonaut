@@ -28,13 +28,15 @@ const myGraphicsUrl = compiled.url;
 const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-graphics.jsx': myGraphicsUrl })).url;
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
 const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
+const rendererViewUrl = (await compileModule('./renderer-view.jsx')).url;
+const { default: RendererView } = await import(rendererViewUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
 const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   filename: mainUrl.pathname, configFile: false, babelrc: false, plugins: [jsx, () => ({ visitor: {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -341,6 +343,7 @@ test('delete and manifest failures stay visible in their dialogs', async () => {
 test('hash routes resolve catalog, my graphics and graphic detail views', () => {
   assert.deepEqual(parseRoute(''), { view: 'catalog' });
   assert.deepEqual(parseRoute('#my-graphics'), { view: 'my-graphics' });
+  assert.deepEqual(parseRoute('#renderer'), { view: 'renderer' });
   assert.deepEqual(parseRoute('#graphic/abc%2Fdef'), { view: 'graphic', versionId: 'abc/def' });
   assert.deepEqual(parseRoute('#graphic/%E0%A4%A'), { view: 'catalog' });
 });
@@ -523,4 +526,97 @@ test('the manifest dialog is wider than the other dialogs', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'More options for Left' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Show manifest' }));
   assert.ok(screen.getByRole('dialog').classList.contains('manifest-dialog'));
+});
+
+test('the renderer page shows the URL with open and copy actions', async () => {
+  const fetchMock = mock.method(globalThis, 'fetch', async () => Response.json({ url: 'https://render.example.com/render/' }));
+  const copied = [];
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { copied.push(text); } } });
+  render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByText('https://render.example.com/render/')));
+  assert.equal(fetchMock.mock.calls[0].arguments[0], '/api/renderer');
+  const open = screen.getByRole('link', { name: 'Open renderer' });
+  assert.equal(open.getAttribute('href'), 'https://render.example.com/render/');
+  assert.equal(open.getAttribute('target'), '_blank');
+  assert.equal(open.getAttribute('rel'), 'noopener noreferrer');
+  fireEvent.click(screen.getByRole('button', { name: 'Copy renderer URL' }));
+  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Renderer URL copied' })));
+  assert.deepEqual(copied, ['https://render.example.com/render/']);
+  delete navigator.clipboard;
+});
+
+test('the renderer page asks signed-out users to sign in and reports lookup failures', async () => {
+  const fetchMock = mock.method(globalThis, 'fetch', async () => Response.json({ error: 'Sign-in required' }, { status: 401 }));
+  render(React.createElement(RendererView, { account: null, authLoading: false }));
+  assert.ok(screen.getByText('Sign in to get your renderer URL.'));
+  assert.equal(screen.getByRole('link', { name: 'Sign in with Twitch' }).getAttribute('href'), '/api/auth/twitch');
+  assertAbsent(screen.queryByRole('button', { name: 'New token' }));
+  assert.equal(fetchMock.mock.callCount(), 0);
+  cleanup();
+  render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Sign-in required')));
+  assertAbsent(screen.queryByRole('link', { name: 'Open renderer' }));
+});
+
+test('creating a new renderer token requires confirmation and shows the new URL', async () => {
+  const requests = [];
+  mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    requests.push([url, options.method ?? 'GET']);
+    return Response.json({ url: url === '/api/renderer/token' ? 'https://app.example.com/render/new/' : 'https://app.example.com/render/old/' });
+  });
+  render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/render/old/')));
+  fireEvent.click(screen.getByRole('button', { name: 'New token' }));
+  assert.ok(screen.getByText('All renderer URLs with the current token stop working.'));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  assert.deepEqual(requests, [['/api/renderer', 'GET']]);
+  fireEvent.click(screen.getByRole('button', { name: 'New token' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create new token' }));
+  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/render/new/')));
+  assert.deepEqual(requests.at(-1), ['/api/renderer/token', 'POST']);
+  assert.equal(screen.getByRole('link', { name: 'Open renderer' }).getAttribute('href'), 'https://app.example.com/render/new/');
+  assert.ok(screen.getByText('New URL created. Update your browser sources.'));
+});
+
+test('an unreadable token can still be replaced', async () => {
+  mock.method(globalThis, 'fetch', async (url) => url === '/api/renderer/token'
+    ? Response.json({ url: 'https://app.example.com/render/new/' })
+    : Response.json({ error: 'The renderer token cannot be read with the current encryption key. Create a new token.' }, { status: 409 }));
+  render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('cannot be read')));
+  fireEvent.click(screen.getByRole('button', { name: 'New token' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Create new token' }));
+  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/render/new/')));
+  assertAbsent(screen.queryByRole('alert'));
+});
+
+test('my graphics shows a sandboxed renderer preview scaled from 1920x1080 to 640x360', async () => {
+  mock.method(globalThis, 'fetch', async () => Response.json({ url: 'https://render.example.com/render/token/' }));
+  const { RendererPreview } = await import(rendererViewUrl);
+  showView({ rendererPreview: React.createElement(RendererPreview, { account: { id: 'account' } }) });
+  const frame = await waitFor(() => screen.getByTitle('Renderer preview'));
+  assert.equal(frame.getAttribute('src'), 'https://render.example.com/render/token/');
+  assert.equal(frame.getAttribute('width'), '1920');
+  assert.equal(frame.getAttribute('height'), '1080');
+  assert.equal(frame.style.transform, `scale(${640 / 1920})`);
+  assert.equal(frame.getAttribute('sandbox'), 'allow-scripts');
+  assert.equal(frame.getAttribute('referrerpolicy'), 'no-referrer');
+  assert.equal(screen.getByRole('link', { name: 'Open renderer' }).getAttribute('href'), 'https://render.example.com/render/token/');
+  fireEvent.click(screen.getByRole('button', { name: 'Reload preview' }));
+  assert.ok(screen.getByTitle('Renderer preview') !== frame, 'Reload should replace the frame');
+  assert.equal(screen.getAllByRole('listitem').length, 2);
+  const styles = await fs.readFile(new URL('./styles.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.renderer-preview\s*\{[^}]*width:\s*min\(640px, 100%\);/);
+  assert.match(styles, /\.renderer-preview-frame\s*\{[^}]*aspect-ratio:\s*16 \/ 9;/);
+});
+
+test('the renderer preview reports a missing URL instead of an empty frame', async () => {
+  mock.method(globalThis, 'fetch', async () => Response.json({ error: 'Renderer URL unavailable' }, { status: 503 }));
+  const { RendererPreview } = await import(rendererViewUrl);
+  render(React.createElement(RendererPreview, { account: { id: 'account' } }));
+  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Renderer URL unavailable')));
+  assertAbsent(screen.queryByTitle('Renderer preview'));
+  cleanup();
+  render(React.createElement(RendererPreview, { account: null }));
+  assertAbsent(screen.queryByRole('heading', { name: 'Renderer preview' }));
 });

@@ -288,7 +288,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
   );
 }
 
-export default function MyGraphicsView({ account, entries, loading, error, pending, Preview, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
+export default function MyGraphicsView({ account, entries, loading, error, pending, Preview, rendererPreview, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
   const [editing, setEditing] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
   const [ordering, setOrdering] = useState(false);
@@ -309,7 +309,9 @@ export default function MyGraphicsView({ account, entries, loading, error, pendi
   return (
     <section className="my-graphics-section" aria-labelledby="my-graphics-heading">
       <div className="working-set-heading"><h1 id="my-graphics-heading">My Graphics</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled</span>}</div>
-      {!account ? <div className="empty-state"><strong>Sign in to view My Graphics.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <>
+      {!account ? <div className="empty-state"><strong>Sign in to view My Graphics.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <div className="my-graphics-layout">
+        {rendererPreview}
+        <div className="my-graphics-entries">
         {loading && <p role="status" className="status">Loading My Graphics...</p>}
         {ordering && <p role="status" className="status">Saving order...</p>}
         {orderError && <div className="load-error" role="alert"><p>{orderError}</p><button className="text-button" type="button" onClick={() => { setOrderError(''); onRetry(); }}><RefreshCw size={16} />Refresh list</button></div>}
@@ -324,7 +326,8 @@ export default function MyGraphicsView({ account, entries, loading, error, pendi
               onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>
           </SortableContext>
         </DndContext>}
-      </>}
+        </div>
+      </div>}
       {editing && <PropertiesDialog key={editing.entryId} entry={editing} onSave={onSave} onClose={() => setEditing(null)} />}
       {entryDialog && <EntryDialog key={`${entryDialog.entry.entryId}-${entryDialog.mode}`} {...entryDialog} onDelete={onDelete} onManifest={onManifest} onClose={() => setEntryDialog(null)} />}
     </section>

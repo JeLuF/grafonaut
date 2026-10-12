@@ -4,6 +4,7 @@ import mysql from 'mysql2/promise';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
 import { resolvePropertySchema } from './asset-files.js';
+import { decryptToken, encryptToken, generateToken, hashToken, tokenPattern } from './tokens.js';
 
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST ?? 'localhost',
@@ -38,7 +39,45 @@ export async function upsertTwitchAccount(profile) {
     ON DUPLICATE KEY UPDATE twitch_login = VALUES(twitch_login), twitch_display_name = VALUES(twitch_display_name), updated_at = CURRENT_TIMESTAMP`,
   [profile.id, profile.login, profile.display_name ?? profile.login]);
   const [rows] = await pool.query('SELECT id, twitch_login, twitch_display_name, is_approver FROM accounts WHERE twitch_user_id = ?', [profile.id]);
+  await ensureAccountToken(rows[0].id);
   return rows[0];
+}
+
+// Gives the account a random token unless it already has one (new accounts, and accounts created before tokens existed).
+export async function ensureAccountToken(accountId) {
+  const token = generateToken();
+  await pool.query('INSERT IGNORE INTO account_tokens (account_id, token_hash, token_ciphertext) VALUES (?, ?, ?)',
+    [accountId, hashToken(token), encryptToken(token)]);
+}
+
+export async function findAccountToken(accountId) {
+  let [rows] = await pool.query('SELECT token_ciphertext AS ciphertext FROM account_tokens WHERE account_id = ?', [accountId]);
+  if (!rows.length) {
+    await ensureAccountToken(accountId);
+    [rows] = await pool.query('SELECT token_ciphertext AS ciphertext FROM account_tokens WHERE account_id = ?', [accountId]);
+  }
+  try { return decryptToken(rows[0].ciphertext); }
+  catch {
+    const error = new Error('The renderer token cannot be read with the current encryption key. Create a new token.');
+    error.code = 'TOKEN_UNREADABLE';
+    throw error;
+  }
+}
+
+// Replaces the account token; every URL containing the previous token stops working.
+export async function rotateAccountToken(accountId) {
+  const token = generateToken();
+  await pool.query(`INSERT INTO account_tokens (account_id, token_hash, token_ciphertext) VALUES (?, ?, ?)
+    ON DUPLICATE KEY UPDATE token_hash = VALUES(token_hash), token_ciphertext = VALUES(token_ciphertext), created_at = CURRENT_TIMESTAMP`,
+  [accountId, hashToken(token), encryptToken(token)]);
+  return token;
+}
+
+export async function findAccountByToken(token) {
+  if (typeof token !== 'string' || !tokenPattern.test(token)) return null;
+  const [rows] = await pool.query(`SELECT a.id, a.twitch_login, a.twitch_display_name FROM account_tokens t
+    JOIN accounts a ON a.id = t.account_id WHERE t.token_hash = ?`, [hashToken(token)]);
+  return rows[0] ?? null;
 }
 
 export async function listPublishedCatalog() {

@@ -44,9 +44,9 @@ input {
     overflow-wrap: anywhere;
 }
 
+
 .app-shell {
     width: 100%;
-    max-width: 1360px;
     margin: 0 auto;
     padding: 30px 4vw 0;
 }
@@ -1082,8 +1082,9 @@ footer {
     .view-tabs {
         order: 3;
         flex-direction: row;
-        gap: 22px;
+        gap: 18px;
         width: 100%;
+        overflow-x: auto;
     }
 
     .view-tabs a,
@@ -1436,5 +1437,197 @@ footer {
 
     .pagination {
         justify-content: center;
+    }
+}
+
+.renderer-page {
+    padding: 20px 0 90px;
+}
+
+.renderer-page h1 {
+    font-size: clamp(40px, 5vw, 64px);
+    line-height: 1;
+}
+
+.renderer-lead {
+    max-width: 680px;
+    margin: 22px 0 34px;
+    color: #52635d;
+    font: 16px/1.6 Arial, sans-serif;
+}
+
+.renderer-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 760px;
+    padding: 24px;
+    border: 1px solid #d8d6ca;
+    background: #fffdf7;
+}
+
+.renderer-card h2,
+.renderer-info h2 {
+    font-size: 24px;
+}
+
+.renderer-card .status,
+.renderer-card .error-message {
+    margin: 0;
+}
+
+.renderer-url {
+    display: block;
+    padding: 12px 14px;
+    border: 1px solid #d8d6ca;
+    border-radius: 4px;
+    background: #f3f0e8;
+    font: 14px/1.5 Consolas, monospace;
+    overflow-wrap: anywhere;
+    user-select: all;
+}
+
+.renderer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.renderer-actions .primary-button {
+    text-decoration: none;
+}
+
+.renderer-notice {
+    margin: 0;
+    color: #198548;
+    font: 14px Arial, sans-serif;
+}
+
+.renderer-info {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 40px;
+    max-width: 1000px;
+    margin-top: 44px;
+}
+
+.renderer-info section {
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    gap: 14px;
+    padding-top: 22px;
+    border-top: 1px solid #c7c9bb;
+    font: 14px/1.6 Arial, sans-serif;
+    color: #34473f;
+}
+
+.renderer-info h2 {
+    margin: 0;
+}
+
+.renderer-info p,
+.renderer-info ol {
+    margin: 0;
+}
+
+.renderer-info ol {
+    padding-left: 20px;
+}
+
+.token-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-self: stretch;
+    padding: 14px;
+    border: 1px solid #a52d23;
+    border-radius: 4px;
+    background: #fffdf7;
+}
+
+.token-confirm p {
+    color: #a52d23;
+}
+
+.my-graphics-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+}
+
+.my-graphics-entries {
+    min-width: 0;
+}
+
+.renderer-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(640px, 100%);
+}
+
+.renderer-preview-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.renderer-preview-heading h2 {
+    font: 700 11px/1 Arial, sans-serif;
+    letter-spacing: .19em;
+    text-transform: uppercase;
+    color: #e45e37;
+}
+
+.renderer-preview-heading .icon-button {
+    width: 32px;
+    height: 32px;
+}
+
+.renderer-preview-frame {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border: 1px solid #17332f;
+    background-color: #2a3d39;
+    background-image: linear-gradient(45deg, #24352f 25%, transparent 25%, transparent 75%, #24352f 75%),
+        linear-gradient(45deg, #24352f 25%, transparent 25%, transparent 75%, #24352f 75%);
+    background-position: 0 0, 10px 10px;
+    background-size: 20px 20px;
+}
+
+.renderer-preview-frame iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border: 0;
+    background: transparent;
+    transform-origin: 0 0;
+}
+
+.renderer-preview-frame .status,
+.renderer-preview-frame .error-message {
+    margin: 0;
+    padding: 16px;
+    color: #c7c9bb;
+    text-align: center;
+}
+
+@media (min-width: 1600px) {
+    .my-graphics-layout {
+        grid-template-columns: minmax(0, 1fr) 640px;
+    }
+
+    .renderer-preview {
+        position: sticky;
+        top: 24px;
+        grid-column: 2;
+        grid-row: 1;
     }
 }

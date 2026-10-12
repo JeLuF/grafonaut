@@ -11,7 +11,7 @@ This is the first runnable slice of the OGraf hosting platform. It covers:
 
 ## Run with Docker
 
-1. Copy `.env.example` to `.env` and set `SESSION_SECRET` and Twitch OAuth values.
+1. Copy `.env.example` to `.env` and set `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
 2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://app.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
 3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/`.
 4. Start the stack:
@@ -36,6 +36,12 @@ location / {
 ```
 
 This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie. Keep `SESSION_SECRET` stable across restarts and identical across app replicas; changing it invalidates existing sessions.
+
+### Renderer host
+
+The Renderer page (sidebar link) shows signed-in users the URL of their renderer (to use as an OBS/vMix browser source), opens it in a new tab and lets them create a new token. Set `RENDERER_HOST` to the renderer's host name (`render.example.com`, optionally with a port) or full origin (`https://render.example.com`). When it is empty, the renderer URL uses the same host and protocol as the main page. Until the sandboxed render host exists, `/render/<token>/` shows a placeholder page.
+
+The renderer URL contains the account token: 32 random bytes created with the account, permanent so the URL can stay in a browser source. Users can create a new token on the Renderer page if a URL leaked; every URL with the old token stops working. Tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones.
 
 ## Local development
 
