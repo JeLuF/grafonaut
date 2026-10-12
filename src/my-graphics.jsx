@@ -23,6 +23,32 @@ function PropertyDescription({ id, description }) {
   return description ? <span id={id} className="visually-hidden">{description}</span> : null;
 }
 
+// Larger, styled replacement for the native title tooltip. Fixed positioning keeps it from being clipped by the scrolling dialog.
+function TooltipRow({ text, className, children }) {
+  const [position, setPosition] = useState(null);
+  const row = useRef(null);
+  useEffect(() => {
+    if (!position) return;
+    const hide = () => setPosition(null);
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+    return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('resize', hide); };
+  }, [position]);
+  function show() {
+    if (!text || !row.current) return;
+    const rect = row.current.getBoundingClientRect();
+    setPosition(rect.top > 140 ? { left: rect.left, top: rect.top - 8, above: true } : { left: rect.left, top: rect.bottom + 8, above: false });
+  }
+  function leave(event) {
+    if (!row.current?.contains(event.relatedTarget)) setPosition(null);
+  }
+  return <div ref={row} className={className} onMouseEnter={show} onMouseLeave={() => { if (!row.current?.contains(document.activeElement)) setPosition(null); }}
+    onFocus={show} onBlur={leave} data-has-tooltip={text ? '' : undefined}>
+    {children}
+    {text && position && <div className={`property-tooltip${position.above ? ' is-above' : ''}`} style={{ left: position.left, top: position.top }} aria-hidden="true">{text}</div>}
+  </div>;
+}
+
 function PropertyField(props) {
   const { id, label, children, errors, help, description, rawDescription, hidden, required, displayLabel, registry, uiSchema, schema, formData } = props;
   if (hidden) return <div className="hidden">{children}</div>;
@@ -34,10 +60,10 @@ function PropertyField(props) {
   const WrapIfAdditionalTemplate = getTemplate('WrapIfAdditionalTemplate', registry, uiOptions);
   const title = tooltip(rawDescription);
   return <WrapIfAdditionalTemplate {...props}>
-    {displayLabel && uiOptions.widget !== 'checkbox' ? <div className="property-row" title={title}>
+    {displayLabel && uiOptions.widget !== 'checkbox' ? <TooltipRow className="property-row" text={title}>
       <label className="control-label" htmlFor={id}>{label}{required && <span className="required">*</span>}{title && <Info size={13} aria-hidden="true" />}</label>
       <div className="property-input">{children}{errors}{help}</div>
-    </div> : <div title={id === 'root' ? undefined : title}>{children}{errors}{help}</div>}
+    </TooltipRow> : <TooltipRow text={id === 'root' ? undefined : title}>{children}{errors}{help}</TooltipRow>}
     {description}
   </WrapIfAdditionalTemplate>;
 }
@@ -163,7 +189,7 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
     catch (failure) { setError(failure.message); }
     finally { setDeleting(false); }
   }
-  return <dialog ref={dialog} className={`properties-dialog${mode === 'manifest' ? ' manifest-dialog' : ''}`} aria-labelledby={headingId} onCancel={(event) => {
+  return <dialog ref={dialog} className={`properties-dialog ${mode === 'manifest' ? 'manifest-dialog' : 'confirm-dialog'}`} aria-labelledby={headingId} onCancel={(event) => {
     if (deleting) event.preventDefault(); else onClose();
   }}>
     <header className="dialog-heading">

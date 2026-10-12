@@ -46,6 +46,12 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   } })]
 });
 const { AddGraphicButton, Pagination, Toast, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
+// Never hand DOM nodes to assert.equal/deepEqual: a failing comparison makes Node inspect and diff the whole jsdom
+// object graph, which exhausts memory instead of failing (and inside waitFor's first, expected miss, it stalls the run).
+const describeNode = (node) => node?.outerHTML?.slice(0, 160) ?? String(node);
+const assertAbsent = (node) => assert.ok(node === null, `Expected no element, found ${describeNode(node)}`);
+const assertFocused = (node) => assert.ok(document.activeElement === node,
+  `Expected focus on ${describeNode(node)}, found ${describeNode(document.activeElement)}`);
 afterEach(() => { cleanup(); mock.restoreAll(); mock.timers.reset(); });
 after(() => dom.window.close());
 
@@ -78,7 +84,7 @@ test('duplicate package entries render independent labels and enabled states', (
   assert.equal(screen.getAllByRole('listitem').length, 2);
   assert.ok(screen.getByRole('heading', { name: 'Left' }));
   assert.ok(screen.getByRole('heading', { name: 'Right' }));
-  assert.equal(screen.queryByRole('textbox', { name: 'Label' }), null);
+  assertAbsent(screen.queryByRole('textbox', { name: 'Label' }));
   assert.equal(screen.getAllByText('Lower third').length, 2);
   assert.equal(screen.getAllByRole('checkbox').length, 2);
   assert.equal(screen.getAllByRole('button', { name: 'Play' })[0].disabled, true);
@@ -87,7 +93,7 @@ test('duplicate package entries render independent labels and enabled states', (
 test('saving a label and toggling enabled only target the selected entry', async () => {
   const calls = showView();
   fireEvent.click(screen.getByRole('button', { name: 'Edit label for Left' }));
-  assert.equal(document.activeElement, screen.getByRole('textbox', { name: 'Label' }));
+  assertFocused(screen.getByRole('textbox', { name: 'Label' }));
   fireEvent.change(screen.getByDisplayValue('Left'), { target: { value: 'Host A' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save label' }));
   await waitFor(() => assert.deepEqual(calls[0], ['1', { label: 'Host A' }]));
@@ -100,7 +106,7 @@ test('unchanged labels show the graphic name once and keep metadata below it', (
   showView({ entries: [{ ...entry, label: null }, { ...entry, entryId: '2', label: entry.display_name }] });
   for (const row of screen.getAllByRole('listitem')) {
     assert.ok(within(row).getByRole('heading', { name: 'Lower third' }));
-    assert.equal(row.querySelector('.entry-original-name'), null);
+    assertAbsent(row.querySelector('.entry-original-name'));
     assert.ok(row.querySelector('.entry-meta').textContent.includes('v1.0.0'));
   }
 });
@@ -111,7 +117,7 @@ test('cancelling a label edit restores the saved heading without saving', () => 
   fireEvent.change(screen.getByRole('textbox', { name: 'Label' }), { target: { value: 'Unsaved' } });
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'Label' }), { key: 'Escape' });
   assert.ok(screen.getByRole('heading', { name: 'Left' }));
-  assert.equal(screen.queryByRole('textbox', { name: 'Label' }), null);
+  assertAbsent(screen.queryByRole('textbox', { name: 'Label' }));
   assert.equal(calls.length, 0);
 });
 
@@ -211,7 +217,7 @@ test('the property dialog includes hidden fields and saves one independent state
   fireEvent.change(dialog.getByLabelText(/Name/), { target: { value: 'Second host' } });
   fireEvent.click(dialog.getByRole('button', { name: 'Save properties' }));
   await waitFor(() => assert.deepEqual(calls[0], ['2', { schemaData: { name: 'Second host', hiddenValue: 1 } }]));
-  await waitFor(() => assert.equal(screen.queryByRole('dialog'), null));
+  await waitFor(() => assertAbsent(screen.queryByRole('dialog')));
   assert.deepEqual(entry.schemaData, { name: 'Host', hiddenValue: 1 });
 });
 test('cancelling properties leaves stored entry data unchanged', async () => {
@@ -221,7 +227,7 @@ test('cancelling properties leaves stored entry data unchanged', async () => {
   fireEvent.change(dialog.getByLabelText(/Name/), { target: { value: 'Unsaved' } });
   fireEvent.click(dialog.getByRole('button', { name: 'Cancel' }));
   assert.equal(calls.length, 0);
-  assert.equal(screen.queryByRole('dialog'), null);
+  assertAbsent(screen.queryByRole('dialog'));
 });
 test('property save failures stay visible and keep the dialog open', async () => {
   render(React.createElement(PropertiesDialog, { entry, onSave: async () => { throw new Error('Save unavailable'); }, onClose: () => {} }));
@@ -285,16 +291,16 @@ test('the menu opens, supports keyboard navigation and closes on Escape', () => 
   fireEvent.click(trigger);
   assert.equal(trigger.getAttribute('aria-expanded'), 'true');
   const details = screen.getByRole('menuitem', { name: 'Show details' });
-  assert.equal(document.activeElement, details);
+  assertFocused(details);
   assert.equal(details.getAttribute('href'), '#graphic/version');
   fireEvent.keyDown(details, { key: 'ArrowDown' });
   const manifest = screen.getByRole('menuitem', { name: 'Show manifest' });
-  assert.equal(document.activeElement, manifest);
+  assertFocused(manifest);
   fireEvent.keyDown(manifest, { key: 'ArrowDown' });
-  assert.equal(document.activeElement, screen.getByRole('menuitem', { name: 'Delete' }));
+  assertFocused(screen.getByRole('menuitem', { name: 'Delete' }));
   fireEvent.keyDown(document.activeElement, { key: 'Escape' });
-  assert.equal(screen.queryByRole('menu'), null);
-  assert.equal(document.activeElement, trigger);
+  assertAbsent(screen.queryByRole('menu'));
+  assertFocused(trigger);
 });
 
 test('delete requires confirmation and targets only the selected entry', async () => {
@@ -310,7 +316,7 @@ test('delete requires confirmation and targets only the selected entry', async (
   dialog = within(screen.getByRole('dialog'));
   fireEvent.click(dialog.getByRole('button', { name: 'Delete' }));
   await waitFor(() => assert.deepEqual(calls, [['delete', '2']]));
-  await waitFor(() => assert.equal(screen.queryByRole('dialog'), null));
+  await waitFor(() => assertAbsent(screen.queryByRole('dialog')));
 });
 
 test('show manifest displays the selected entry manifest as formatted JSON', async () => {
@@ -357,7 +363,7 @@ test('pagination shows the visible range and switches pages without navigation',
   assert.deepEqual(pages, [1, 2]);
   cleanup();
   render(React.createElement(Pagination, { page: 0, pageCount: 1, total: 4, onChange: () => {} }));
-  assert.equal(screen.queryByRole('navigation'), null);
+  assertAbsent(screen.queryByRole('navigation'));
 });
 
 test('catalog descriptions are clamped to three lines', async () => {
@@ -434,7 +440,7 @@ test('the details menu item is only offered for available catalog graphics', () 
     onRetry: () => {}, onSave: async () => {}, onAction: () => {}, onDelete: async () => {}, onReorder: async () => {}, onManifest: async () => ({}) }));
   for (const name of ['More options for Left', 'More options for Gone']) {
     fireEvent.click(screen.getByRole('button', { name }));
-    assert.equal(screen.queryByRole('menuitem', { name: 'Show details' }), null);
+    assertAbsent(screen.queryByRole('menuitem', { name: 'Show details' }));
     fireEvent.keyDown(document.activeElement, { key: 'Escape' });
   }
 });
@@ -471,7 +477,7 @@ test('the detail page menu shows the graphic manifest', async () => {
   await waitFor(() => assert.ok(screen.getByRole('dialog').textContent.includes('"main": "graphic.mjs"')));
   assert.ok(fetchMock.mock.calls.some(({ arguments: [url] }) => url === '/api/catalog/v1/manifest'));
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close dialog' }));
-  assert.equal(screen.queryByRole('dialog'), null);
+  assertAbsent(screen.queryByRole('dialog'));
 });
 
 test('properties show inline labels, description tooltips and SPX instructions as text', async () => {
@@ -484,14 +490,25 @@ test('properties show inline labels, description tooltips and SPX instructions a
   render(React.createElement(PropertiesDialog, { entry: described, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
   const instruction = screen.getByText('Pick a theme first.');
   assert.equal(instruction.tagName, 'P');
-  assert.equal(screen.queryByRole('textbox', { name: 'Instruction' }), null);
+  assertAbsent(screen.queryByRole('textbox', { name: 'Instruction' }));
   const name = screen.getByRole('textbox', { name: 'Name' });
   const row = name.closest('.property-row');
-  assert.equal(row.getAttribute('title'), 'Shown on the first line');
   assert.equal(row.firstElementChild.tagName, 'LABEL');
+  assertAbsent(row.querySelector('.property-tooltip'));
+  fireEvent.mouseEnter(row);
+  assert.equal(row.querySelector('.property-tooltip').textContent, 'Shown on the first line');
+  fireEvent.mouseLeave(row);
+  assertAbsent(row.querySelector('.property-tooltip'));
+  fireEvent.focus(name);
+  assert.ok(row.querySelector('.property-tooltip'));
+  fireEvent.blur(name);
+  assertAbsent(row.querySelector('.property-tooltip'));
   assert.equal(screen.getByText('Shown on the first line').className, 'visually-hidden');
   assert.ok(name.getAttribute('aria-describedby').split(' ').includes(screen.getByText('Shown on the first line').id));
-  assert.equal(screen.getByRole('checkbox', { name: 'Live' }).closest('[title]').getAttribute('title'), 'Adds a live badge');
+  const live = screen.getByRole('checkbox', { name: 'Live' }).closest('[data-has-tooltip]');
+  fireEvent.mouseEnter(live);
+  assert.equal(live.querySelector('.property-tooltip').textContent, 'Adds a live badge');
+  fireEvent.mouseLeave(live);
   fireEvent.change(name, { target: { value: 'Host' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save properties' }));
   await waitFor(() => assert.deepEqual(saved, [['1', { schemaData: { instruction: 'Pick a theme first.', name: 'Host' } }]]));
@@ -500,6 +517,8 @@ test('properties show inline labels, description tooltips and SPX instructions a
 test('the manifest dialog is wider than the other dialogs', async () => {
   const styles = await fs.readFile(new URL('./styles.css', import.meta.url), 'utf8');
   assert.match(styles, /\.manifest-dialog\s*\{[^}]*width:\s*min\(1100px/);
+  assert.match(styles, /\.properties-dialog\s*\{[^}]*width:\s*min\(880px/);
+  assert.match(styles, /\.property-tooltip\s*\{[^}]*position:\s*fixed;[^}]*font:\s*15px/);
   showView();
   fireEvent.click(screen.getByRole('button', { name: 'More options for Left' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Show manifest' }));

@@ -19,22 +19,41 @@ input {
     font: inherit;
 }
 
-.app-shell {
-    max-width: 1360px;
-    margin: auto;
-    padding: 0 5vw;
+.app-layout {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    min-height: 100vh;
 }
 
-.topbar {
+.sidebar {
+    position: sticky;
+    top: 0;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 27px 0;
-    border-bottom: 1px solid #c7c9bb;
+    flex-direction: column;
+    gap: 36px;
+    height: 100vh;
+    padding: 30px 22px;
+    overflow-y: auto;
+    border-right: 1px solid #c7c9bb;
+    background: #ebe7dc;
     font-family: Arial, sans-serif;
 }
 
+.sidebar-account {
+    margin-top: auto;
+    overflow-wrap: anywhere;
+}
+
+.app-shell {
+    width: 100%;
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 30px 4vw 0;
+}
+
 .brand-mark {
+    color: #17332f;
+    text-decoration: none;
     letter-spacing: .2em;
     font-size: 14px;
     font-weight: 700;
@@ -68,7 +87,7 @@ input {
 }
 
 .hero {
-    padding: 96px 0 105px;
+    padding: 66px 0 105px;
     max-width: 850px;
 }
 
@@ -354,28 +373,35 @@ footer {
 
 .view-tabs {
     display: flex;
-    gap: 28px;
-    margin: 24px 0;
-    border-bottom: 1px solid #c7c9bb;
+    flex-direction: column;
+    gap: 4px;
     font: 14px Arial, sans-serif;
 }
 
 .view-tabs a {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 12px 0;
+    gap: 10px;
+    padding: 10px 12px;
+    border-left: 3px solid transparent;
+    border-radius: 0 4px 4px 0;
     color: #52635d;
     text-decoration: none;
-    border-bottom: 2px solid transparent;
+}
+
+.view-tabs a:hover {
+    background: #e0ddd0;
+    color: #17332f;
 }
 
 .view-tabs a[aria-current] {
+    border-left-color: #e45e37;
+    background: #fffdf7;
     color: #17332f;
-    border-bottom-color: #e45e37;
 }
 
 .entry-count {
+    margin-left: auto;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
 }
@@ -662,13 +688,17 @@ footer {
 }
 
 .properties-dialog {
-    width: min(680px, calc(100vw - 32px));
+    width: min(880px, calc(100vw - 32px));
     max-height: 85vh;
     padding: 0;
     border: 1px solid #abb5aa;
     border-radius: 6px;
     color: #17332f;
     background: #fffdf7;
+}
+
+.confirm-dialog {
+    width: min(520px, calc(100vw - 32px));
 }
 
 .manifest-dialog {
@@ -772,8 +802,27 @@ footer {
     color: #6b756e;
 }
 
-.property-row[title] > label {
+.property-row[data-has-tooltip] > label {
     cursor: help;
+}
+
+.property-tooltip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(440px, calc(100vw - 32px));
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: #17332f;
+    color: #fdf9ef;
+    box-shadow: 0 6px 20px #17332f40;
+    font: 15px/1.5 Arial, sans-serif;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+}
+
+.property-tooltip.is-above {
+    transform: translateY(-100%);
 }
 
 .property-input {
@@ -1001,9 +1050,62 @@ footer {
     }
 }
 
+@media (max-width: 1100px) {
+    .catalog-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 760px) {
+    .app-layout {
+        display: block;
+    }
+
+    .sidebar {
+        z-index: 30;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 18px;
+        height: auto;
+        padding: 14px 22px 0;
+        overflow: visible;
+        border-right: 0;
+        border-bottom: 1px solid #c7c9bb;
+    }
+
+    .sidebar-account {
+        margin-left: auto;
+        margin-top: 0;
+    }
+
+    .view-tabs {
+        order: 3;
+        flex-direction: row;
+        gap: 22px;
+        width: 100%;
+    }
+
+    .view-tabs a,
+    .view-tabs a:hover,
+    .view-tabs a[aria-current] {
+        padding: 10px 0;
+        border-left: 0;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+    }
+
+    .view-tabs a[aria-current] {
+        border-bottom-color: #e45e37;
+    }
+
+    .entry-count {
+        margin-left: 0;
+    }
+
     .app-shell {
-        padding: 0 22px;
+        padding: 22px 22px 0;
     }
 
     .hero {

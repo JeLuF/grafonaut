@@ -234,26 +234,27 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div className="brand-mark"><span>O</span>GRAF</div>
-        <div className="topbar-actions">
-          {account ? <span className="account-chip">{account.twitch_display_name ?? account.displayName}</span> : <a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a>}
-        </div>
-      </header>
+    <div className="app-layout">
+    <aside className="sidebar">
+      <a className="brand-mark" href="#catalog"><span>O</span>GRAF</a>
       <nav className="view-tabs" aria-label="Graphics views">
         <a href="#catalog" aria-current={view !== 'my-graphics' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#my-graphics" aria-current={view === 'my-graphics' ? 'page' : undefined}><List size={17} />My Graphics{account && <span className="entry-count">{entries.length}</span>}</a>
       </nav>
+      <div className="sidebar-account">
+        {authLoading ? null : account ? <span className="account-chip">{account.twitch_display_name ?? account.displayName}</span> : <a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a>}
+      </div>
+    </aside>
+    <main className="app-shell">
       {notice && <p className="notice" role="status">{notice}</p>}
       {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'graphic' ? <GraphicDetail versionId={route.versionId} summary={catalog.find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>
-      <section className="hero">
+      {!authLoading && !account && <section className="hero">
         <p className="eyebrow">PUBLIC CATALOG / MVP</p>
         <h1>Broadcast graphics,<br /><em>ready to play.</em></h1>
         <p className="hero-copy">Browse the shared OGraf library and build a working set for your next live production.</p>
-      </section>
+      </section>}
       <section className="catalog-section" aria-labelledby="catalog-heading">
         <div className="section-heading" ref={catalogHeading}>
           <div><p className="eyebrow">THE LIBRARY</p><h2 id="catalog-heading">Published graphics</h2></div>
@@ -273,6 +274,7 @@ function App() {
       <footer><span>OGRAF PLATFORM</span><span>Catalog preview · {new Date().getFullYear()}</span></footer>
       {toast && <Toast key={toast.id} toast={toast} onDismiss={setToast} />}
     </main>
+    </div>
   );
 }
 
