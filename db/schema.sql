@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS package_versions (
   manifest_name VARCHAR(255) NOT NULL,
   manifest_description TEXT NULL,
   manifest_json JSON NOT NULL,
+  manifest_file_relpath VARCHAR(512) NULL,
   main_file_relpath VARCHAR(512) NOT NULL,
   zip_checksum_sha256 CHAR(64) NOT NULL,
   zip_size_bytes INT UNSIGNED NOT NULL,
@@ -47,6 +48,8 @@ CREATE TABLE IF NOT EXISTS package_versions (
   KEY idx_mvp_versions_catalog (package_id, review_state),
   CONSTRAINT fk_mvp_versions_package FOREIGN KEY (package_id) REFERENCES packages (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE package_versions ADD COLUMN manifest_file_relpath VARCHAR(512) NULL;
 
 ALTER TABLE packages
   ADD CONSTRAINT fk_mvp_packages_latest FOREIGN KEY (latest_version_id) REFERENCES package_versions (id) ON DELETE SET NULL,

@@ -2,8 +2,10 @@ import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
 import cookieSession from 'cookie-session';
-import { addMyGraphic, findAccountById, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
+import { addMyGraphic, findAccountById, findPublishedVersion, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
+import { storageRoot } from './storage.js';
+import { findThumbnail } from './thumbnails.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -15,6 +17,20 @@ app.get('/health', (_request, response) => response.json({ ok: true }));
 app.get('/api/catalog', async (_request, response) => {
   try { response.json({ items: await listPublishedCatalog() }); }
   catch (error) { response.status(503).json({ error: 'Catalog unavailable', detail: error.message }); }
+});
+app.get('/api/catalog/:versionId/thumbnail', async (request, response) => {
+  try {
+    const version = await findPublishedVersion(request.params.versionId);
+    const thumbnail = version ? await findThumbnail(version, storageRoot) : null;
+    if (!thumbnail) return response.sendStatus(404);
+    response.sendFile(thumbnail, { headers: {
+      'Cache-Control': 'public, max-age=3600',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "sandbox; default-src 'none'"
+    } }, (error) => {
+      if (error && !response.headersSent) response.sendStatus(error.statusCode ?? 500);
+    });
+  } catch { response.sendStatus(503); }
 });
 app.post('/api/my-graphics', async (request, response) => {
   if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });

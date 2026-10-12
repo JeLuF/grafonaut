@@ -2,6 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
+function GraphicPreview({ item }) {
+  const [failedThumbnail, setFailedThumbnail] = useState(null);
+  const showThumbnail = item.thumbnailUrl && failedThumbnail !== item.thumbnailUrl;
+  return (
+    <div className={`card-art${showThumbnail ? ' has-thumbnail' : ''}`}>
+      {showThumbnail
+        ? <img className="card-thumbnail" src={item.thumbnailUrl} alt={`${item.display_name} preview`} loading="lazy" decoding="async" onError={() => setFailedThumbnail(item.thumbnailUrl)} />
+        : <span className="art-index">{String(item.display_name ?? 'OG').slice(0, 2).toUpperCase()}</span>}
+      <span className="version-tag">v{item.versionLabel}</span>
+    </div>
+  );
+}
+
 function App() {
   const [catalog, setCatalog] = useState([]);
   const [query, setQuery] = useState('');
@@ -53,7 +66,7 @@ function App() {
         {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>Seed packages will appear here after the first startup import.</span></div>}
         <div className="catalog-grid">
           {filteredCatalog.map((item) => <article className="graphic-card" key={item.versionId}>
-            <div className="card-art"><span className="art-index">{String(item.display_name ?? 'OG').slice(0, 2).toUpperCase()}</span><span className="version-tag">v{item.versionLabel}</span></div>
+            <GraphicPreview item={item} />
             <div className="card-body"><div><h3>{item.display_name}</h3><p>{item.description || 'A published OGraf package.'}</p></div><button type="button" onClick={() => addToMyGraphics(item.versionId)} disabled={!account} title={account ? 'Add to your working set' : 'Sign in to add graphics'}>＋</button></div>
           </article>)}
         </div>

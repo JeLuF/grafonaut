@@ -62,6 +62,7 @@ after(() => fs.rm(root, { recursive: true, force: true }));
 test("imports every animation with distinct IDs, checksums and storage", async () => {
   assert.equal(await importSeedZip(archivePath, undefined, "builtin"), 2);
   assert.deepEqual(saved.map(({ versionRecord }) => versionRecord.mainFile), ["intro.mjs", "outro/outro.mjs"]);
+  assert.deepEqual(saved.map(({ versionRecord }) => versionRecord.manifestFile), ["intro.json", "outro/manifest.json"]);
   assert.equal(new Set(saved.map(({ packageRecord }) => packageRecord.id)).size, 2);
   assert.equal(new Set(saved.map(({ versionRecord }) => versionRecord.id)).size, 2);
   assert.equal(new Set(saved.map(({ versionRecord }) => versionRecord.checksum)).size, 2);

@@ -20,7 +20,10 @@ h2 { margin: 0; font-size: 37px; font-weight: 400; letter-spacing: -.03em; }
 .search-box input { border: 0; outline: 0; width: 100%; background: transparent; color: #17332f; }
 .catalog-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
 .graphic-card { min-width: 0; background: #fffdf7; border: 1px solid #d8d6ca; }
-.card-art { aspect-ratio: 1.45; display: flex; align-items: end; justify-content: space-between; padding: 19px; color: #fdf9ef; background: #25645c; }
+.card-art { position: relative; aspect-ratio: 1.45; display: flex; align-items: end; justify-content: space-between; padding: 19px; color: #fdf9ef; background: #25645c; overflow: hidden; }
+.card-art.has-thumbnail { background: #e7e9e5; }
+.card-thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.has-thumbnail .version-tag { position: absolute; right: 19px; bottom: 19px; background: #17332f; color: #fdf9ef; }
 .graphic-card:nth-child(3n+2) .card-art { background: #d36a43; }
 .graphic-card:nth-child(3n+3) .card-art { background: #5c6a47; }
 .art-index { font-size: clamp(40px, 5vw, 72px); line-height: .8; font-style: italic; }

@@ -84,6 +84,7 @@ export async function importSeedZip(
         manifestName: String(manifest.name ?? manifest.id ?? fallbackName),
         description: manifest.description ?? null,
         manifest,
+        manifestFile: relativeManifest,
         mainFile: path.relative(stored.extractionRoot, mainPath).replaceAll(path.sep, "/"),
         checksum: animationDigest,
         zipSize,
