@@ -12,7 +12,7 @@ This is the first runnable slice of the OGraf hosting platform. It covers:
 ## Run with Docker
 
 1. Copy `.env.example` to `.env` and set `SESSION_SECRET` and Twitch OAuth values.
-2. Register the callback URL in Twitch as `http://localhost:3000/api/auth/twitch/callback`.
+2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://app.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
 3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/`.
 4. Start the stack:
 
@@ -20,7 +20,22 @@ This is the first runnable slice of the OGraf hosting platform. It covers:
 docker compose up --build
 ```
 
-Open `http://localhost:3000`. The app exposes `GET /health` and `GET /api/catalog`.
+Open the public HTTPS hostname served by your reverse proxy. The app exposes `GET /health` and `GET /api/catalog`; these also work on `http://localhost:3000`, but production sign-in requires HTTPS.
+
+### Proxy and sessions
+
+The container runs in production mode and uses `Secure`, `HttpOnly`, `SameSite=Lax` signed session cookies. When nginx terminates HTTPS and forwards HTTP to the container, Express must trust the proxy to recognize the original connection as HTTPS. `TRUST_PROXY` defaults to loopback and private-network addresses; restrict it to your proxy's IP address or CIDR ranges in deployments where other clients can reach the backend. Keep the backend reachable only through trusted infrastructure, and configure nginx to overwrite forwarded headers:
+
+```nginx
+location / {
+	proxy_pass http://127.0.0.1:3000;
+	proxy_set_header Host $host;
+	proxy_set_header X-Forwarded-Proto $scheme;
+	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie. Keep `SESSION_SECRET` stable across restarts and identical across app replicas; changing it invalidates existing sessions.
 
 ## Local development
 
@@ -32,6 +47,8 @@ npm run dev
 ```
 
 The React development server runs on `http://localhost:5173`; API requests are proxied to Node on port 3000. `npm run build` creates the production frontend bundle.
+
+For local development without HTTPS, leave `NODE_ENV` unset (or set it to `development`) and register `http://localhost:3000/api/auth/twitch/callback` as the Twitch callback URL. Development sessions do not require secure cookies.
 
 ## Seed package expectations
 

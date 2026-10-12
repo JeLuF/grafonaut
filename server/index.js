@@ -1,18 +1,18 @@
 import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
-import cookieSession from 'cookie-session';
 import { findAccountById, findPublishedVersion, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail } from './thumbnails.js';
 import myGraphicsRouter from './my-graphics.js';
+import { configureSession } from './session.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const publicDirectory = path.resolve('dist');
 app.use(express.json());
-app.use(cookieSession({ name: 'ograf_session', keys: [process.env.SESSION_SECRET ?? 'local-development-secret'], httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' }));
+configureSession(app);
 
 app.get('/health', (_request, response) => response.json({ ok: true }));
 app.get('/api/catalog', async (_request, response) => {
