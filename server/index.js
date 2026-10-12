@@ -49,7 +49,7 @@ app.get('/api/auth/twitch/callback', async (request, response) => {
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(publicDirectory));
-  app.get('*', (_request, response) => response.sendFile(path.join(publicDirectory, 'index.html')));
+  app.use((_request, response) => response.sendFile(path.join(publicDirectory, 'index.html')));
 }
 
 await initializeDatabase();
