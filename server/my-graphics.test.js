@@ -108,6 +108,12 @@ test('properties are validated against the selected version schema including hid
   assert.equal((await requestApi('PATCH', '/7', { schemaData: { name: 'Host', hiddenValue: 2 } })).status, 200);
   assert.deepEqual(queries.at(-1).parameters, ['{"name":"Host","hiddenValue":2}', 'account', '7']);
 });
+test('file list properties only accept paths offered by the package', async () => {
+  rows = [{ manifest: { schema: { type: 'object', properties: { theme: { type: 'string', default: './themes/Default.css',
+    v_spx: { ftype: 'filelist', extension: 'css', assetfolder: './themes/' } } } } } }];
+  assert.equal((await requestApi('PATCH', '/7', { schemaData: { theme: '../../../etc/passwd' } })).status, 422);
+  assert.equal((await requestApi('PATCH', '/7', { schemaData: { theme: './themes/Default.css' } })).status, 200);
+});
 test('repeatable HTTP additions return the new entry ID', async () => {
   const versionId = '11111111-1111-4111-8111-111111111111';
   const first = await requestApi('POST', '', { versionId });

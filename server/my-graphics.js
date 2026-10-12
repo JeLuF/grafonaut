@@ -4,6 +4,7 @@ import addFormats from 'ajv-formats';
 import { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, reorderMyGraphics, updateMyGraphic } from './db.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail } from './thumbnails.js';
+import { resolvePropertySchema } from './asset-files.js';
 
 const validator = new Ajv({ allErrors: true, strict: false });
 addFormats(validator);
@@ -71,10 +72,12 @@ router.patch('/:entryId', async (request, response) => {
       return response.status(409).json({ error: 'This graphic package is disabled' });
     }
     if (Object.hasOwn(changes, 'schemaData')) {
-      let valid;
-      try { valid = validator.validate(entry.manifest?.schema ?? {}, changes.schemaData); }
+      const schema = await resolvePropertySchema(entry, storageRoot);
+      let validate;
+      try { validate = validator.compile(schema); }
       catch { return response.status(422).json({ error: 'This graphic has an unsupported property schema' }); }
-      if (!valid) return response.status(422).json({ error: 'Properties do not match this graphic\'s schema', details: validator.errors });
+      finally { validator.removeSchema(schema); }
+      if (!validate(changes.schemaData)) return response.status(422).json({ error: 'Properties do not match this graphic\'s schema', details: validate.errors });
     }
     await updateMyGraphic(request.session.accountId, request.params.entryId, changes);
     response.json({ ok: true });

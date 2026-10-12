@@ -36,6 +36,13 @@ app.get('/api/catalog/:versionId', async (request, response) => {
     response.json({ item });
   } catch (error) { response.status(503).json({ error: 'Catalog unavailable', detail: error.message }); }
 });
+app.get('/api/catalog/:versionId/manifest', async (request, response) => {
+  try {
+    const version = await findPublishedVersion(request.params.versionId);
+    if (!version) return response.status(404).json({ error: 'Graphic not found' });
+    response.json({ manifest: version.manifest });
+  } catch { response.status(503).json({ error: 'Unable to load graphic manifest' }); }
+});
 app.get('/api/catalog/:versionId/thumbnail', async (request, response) => {
   try {
     const version = await findPublishedVersion(request.params.versionId);

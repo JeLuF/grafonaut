@@ -15,17 +15,17 @@ dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = tru
 dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
 const { render, fireEvent, screen, within, cleanup, waitFor, act } = await import('@testing-library/react');
 
-async function compileModule(file) {
+async function compileModule(file, local = {}) {
   const url = new URL(file, import.meta.url);
   const result = await transformAsync(await fs.readFile(url, 'utf8'), { filename: url.pathname, configFile: false, babelrc: false,
     plugins: [jsx, () => ({ visitor: { ImportDeclaration({ node }) {
-      node.source.value = node.source.value.startsWith('.') ? new URL(node.source.value, url).href : import.meta.resolve(node.source.value);
+      node.source.value = local[node.source.value] ?? (node.source.value.startsWith('.') ? new URL(node.source.value, url).href : import.meta.resolve(node.source.value));
     } } })] });
   return { code: result.code, url: `data:text/javascript,${encodeURIComponent(result.code)}` };
 }
 const compiled = await compileModule('./my-graphics.jsx');
 const myGraphicsUrl = compiled.url;
-const graphicDetailUrl = (await compileModule('./graphic-detail.jsx')).url;
+const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-graphics.jsx': myGraphicsUrl })).url;
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
 const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
@@ -444,4 +444,32 @@ test('property dialog actions stay pinned to the bottom while the form scrolls',
   assert.match(styles, /\.properties-form \.dialog-actions\s*\{[^}]*position:\s*sticky;[^}]*bottom:\s*0;/);
   render(React.createElement(PropertiesDialog, { entry, onSave: async () => {}, onClose: () => {} }));
   assert.ok(screen.getByRole('button', { name: 'Save properties' }).closest('.properties-form'));
+});
+
+test('file list properties render as a select of the package files and save the chosen path', async () => {
+  const saved = [];
+  const themes = { ...entry, schemaData: { theme: './themes/Default.css' }, schema: { type: 'object', properties: {
+    theme: { type: 'string', title: 'Visual Theme', default: './themes/Default.css', v_spx: { ftype: 'filelist', extension: 'css', assetfolder: './themes/' },
+      oneOf: [{ const: './themes/Bank.css', title: 'Bank.css' }, { const: './themes/Default.css', title: 'Default.css' }] }
+  } } };
+  render(React.createElement(PropertiesDialog, { entry: themes, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const select = screen.getByRole('combobox', { name: 'Visual Theme' });
+  assert.deepEqual(within(select).getAllByRole('option').map((option) => option.textContent).filter(Boolean), ['Bank.css', 'Default.css']);
+  fireEvent.change(select, { target: { value: within(select).getByRole('option', { name: 'Bank.css' }).value } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved, [['1', { schemaData: { theme: './themes/Bank.css' } }]]));
+});
+
+test('the detail page menu shows the graphic manifest', async () => {
+  const manifest = { id: 'scoreboard', name: 'Scoreboard', main: 'graphic.mjs' };
+  const fetchMock = mock.method(globalThis, 'fetch', async (url) => url.endsWith('/manifest') ? Response.json({ manifest })
+    : Response.json({ error: 'Detail unavailable' }, { status: 503 }));
+  render(React.createElement(GraphicDetail, { versionId: 'v1', summary: { versionId: 'v1', display_name: 'Scoreboard', versionLabel: '1.0.0' },
+    account: null, Preview: () => null, AddButton: AddGraphicButton, onAdd: async () => {} }));
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Scoreboard' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Show manifest' }));
+  await waitFor(() => assert.ok(screen.getByRole('dialog').textContent.includes('"main": "graphic.mjs"')));
+  assert.ok(fetchMock.mock.calls.some(({ arguments: [url] }) => url === '/api/catalog/v1/manifest'));
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close dialog' }));
+  assert.equal(screen.queryByRole('dialog'), null);
 });

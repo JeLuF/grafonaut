@@ -10,7 +10,7 @@ function containedPath(root, file, directory = root) {
   return target.startsWith(`${root}${path.sep}`) ? target : null;
 }
 
-async function findManifest(root, version) {
+export async function findManifest(root, version) {
   if (version.manifestFile) return containedPath(root, version.manifestFile);
   async function visit(directory) {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
@@ -32,12 +32,17 @@ async function findManifest(root, version) {
   return visit(root);
 }
 
+export function extractedRoot(version, storageRoot) {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidPattern.test(version.packageId) || !uuidPattern.test(version.versionId)) return null;
+  return path.resolve(storageRoot, 'packages', version.packageId, version.versionId, 'extracted');
+}
+
 export async function findThumbnails(version, storageRoot, limit = Infinity) {
   const thumbnails = version.manifest?.thumbnails;
   if (!Array.isArray(thumbnails) || !thumbnails.length) return [];
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidPattern.test(version.packageId) || !uuidPattern.test(version.versionId)) return [];
-  const root = path.resolve(storageRoot, 'packages', version.packageId, version.versionId, 'extracted');
+  const root = extractedRoot(version, storageRoot);
+  if (!root) return [];
   const found = [];
   try {
     const manifestPath = await findManifest(root, version);

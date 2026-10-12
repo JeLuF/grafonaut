@@ -57,7 +57,7 @@ export function PropertiesDialog({ entry, onSave, onClose }) {
   );
 }
 
-function EntryMenu({ entry, busy, onDelete, onManifest }) {
+export function ActionMenu({ label, busy, items }) {
   const [open, setOpen] = useState(false);
   const container = useRef(null);
   const trigger = useRef(null);
@@ -74,7 +74,7 @@ function EntryMenu({ entry, busy, onDelete, onManifest }) {
   function choose(callback) {
     setOpen(false);
     trigger.current?.focus();
-    callback(entry);
+    callback();
   }
   return <div className="entry-menu" ref={container} onKeyDown={(event) => {
     if (event.key === 'Escape') { event.preventDefault(); setOpen(false); trigger.current?.focus(); }
@@ -87,17 +87,24 @@ function EntryMenu({ entry, busy, onDelete, onManifest }) {
     }
   }}>
     <button ref={trigger} className="icon-button" type="button" disabled={busy} onClick={() => setOpen(!open)}
-      aria-label={`More options for ${entry.label || entry.display_name}`} title="More options" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}><MoreHorizontal size={19} /></button>
+      aria-label={label} title="More options" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}><MoreHorizontal size={19} /></button>
     {open && <div ref={menu} id={menuId} className="entry-menu-popup" role="menu" aria-label="Graphic options">
-      {entry.origin === 'catalog' && !entry.packageDisabled && <a role="menuitem" href={`#graphic/${encodeURIComponent(entry.versionId)}`}
-        onClick={() => setOpen(false)}><Info size={16} />Show details</a>}
-      <button type="button" role="menuitem" onClick={() => choose(onManifest)}><FileJson size={16} />Show manifest</button>
-      <button className="danger-menu-item" type="button" role="menuitem" onClick={() => choose(onDelete)}><Trash2 size={16} />Delete</button>
+      {items.filter(Boolean).map(({ key, label: itemLabel, icon: Icon, href, onSelect, danger }) => href
+        ? <a key={key} role="menuitem" href={href} onClick={() => setOpen(false)}><Icon size={16} />{itemLabel}</a>
+        : <button key={key} className={danger ? 'danger-menu-item' : undefined} type="button" role="menuitem" onClick={() => choose(onSelect)}><Icon size={16} />{itemLabel}</button>)}
     </div>}
   </div>;
 }
 
-function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
+function EntryMenu({ entry, busy, onDelete, onManifest }) {
+  return <ActionMenu label={`More options for ${entry.label || entry.display_name}`} busy={busy} items={[
+    entry.origin === 'catalog' && !entry.packageDisabled && { key: 'details', label: 'Show details', icon: Info, href: `#graphic/${encodeURIComponent(entry.versionId)}` },
+    { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => onManifest(entry) },
+    { key: 'delete', label: 'Delete', icon: Trash2, onSelect: () => onDelete(entry), danger: true }
+  ]} />;
+}
+
+export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
   const dialog = useRef(null);
   const headingId = useId();
   const [manifest, setManifest] = useState(null);

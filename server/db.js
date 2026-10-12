@@ -3,6 +3,7 @@ import path from 'node:path';
 import mysql from 'mysql2/promise';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
+import { resolvePropertySchema } from './asset-files.js';
 
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST ?? 'localhost',
@@ -101,7 +102,9 @@ export function catalogDetails(manifest) {
       width: constraint(requirement.resolution?.width), height: constraint(requirement.resolution?.height), frameRate: constraint(requirement.frameRate)
     })),
     properties: Object.entries(properties).filter(([, property]) => isObject(property) && property.hidden !== true).map(([key, property]) => ({
-      key, title: text(property.title) ?? key, type: typeof property.type === 'string' ? property.type : null, description: text(property.description)
+      key, title: text(property.title) ?? key, description: text(property.description),
+      type: property.v_spx?.ftype === 'filelist' && typeof property.v_spx.extension === 'string' ? `file (${property.v_spx.extension})`
+        : typeof property.type === 'string' ? property.type : null
     }))
   };
 }
@@ -164,9 +167,8 @@ export async function listMyGraphics(accountId) {
     WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
   return Promise.all(rows.map(async (row) => {
     const { manifest, manifestFile, mainFile, ...item } = row;
-    const thumbnail = !row.packageDisabled && await findThumbnail(row, storageRoot);
-    return { ...item, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled),
-      schema: manifest?.schema ?? { type: 'object', properties: {} },
+    const [thumbnail, schema] = await Promise.all([!row.packageDisabled && findThumbnail(row, storageRoot), resolvePropertySchema(row, storageRoot)]);
+    return { ...item, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled), schema,
       thumbnailUrl: thumbnail ? `/api/my-graphics/${encodeURIComponent(row.entryId)}/thumbnail` : null };
   }));
 }

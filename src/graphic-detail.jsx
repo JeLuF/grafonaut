@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, Mail, Play, RefreshCw, Square, User, Zap } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, FileJson, Mail, Play, RefreshCw, Square, User, Zap } from 'lucide-react';
 import { requestJson } from './api.js';
+import { ActionMenu, EntryDialog } from './my-graphics.jsx';
 
 const sourceLabels = { seed_builtin: 'Built-in library', seed_volume: 'Imported library', user_upload: 'Community upload' };
 const standardActions = {
@@ -71,7 +72,10 @@ export function ThumbnailCarousel({ images, name, fallback }) {
 export default function GraphicDetail({ versionId, summary, account, Preview, AddButton, onAdd }) {
   const [item, setItem] = useState(null);
   const [error, setError] = useState('');
+  const [showManifest, setShowManifest] = useState(false);
+  const loadManifest = useCallback(async () => (await requestJson(`/api/catalog/${encodeURIComponent(versionId)}/manifest`)).manifest, [versionId]);
   useEffect(() => {
+    setShowManifest(false);
     const controller = new AbortController();
     setItem(null);
     setError('');
@@ -102,6 +106,9 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
           <h1 id="graphic-heading">{graphic.display_name}</h1>
           <div className="detail-cta">
             <AddButton item={graphic} disabled={!account} onAdd={onAdd} label="Add to My Graphics" />
+            <ActionMenu label={`More options for ${graphic.display_name}`} items={[
+              { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => setShowManifest(true) }
+            ]} />
             {!account && <a className="login-link" href="/api/auth/twitch">Sign in to add</a>}
           </div>
           <dl className="detail-facts">
@@ -112,6 +119,7 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
           </dl>
         </div>
       </div>
+      {showManifest && <EntryDialog entry={summary ?? graphic} mode="manifest" onManifest={loadManifest} onClose={() => setShowManifest(false)} />}
       {error && <p className="error-message" role="alert">{error}</p>}
       {!item && !error && <p className="status" role="status">Loading details...</p>}
 
