@@ -473,3 +473,35 @@ test('the detail page menu shows the graphic manifest', async () => {
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close dialog' }));
   assert.equal(screen.queryByRole('dialog'), null);
 });
+
+test('properties show inline labels, description tooltips and SPX instructions as text', async () => {
+  const saved = [];
+  const described = { ...entry, schemaData: {}, schema: { type: 'object', properties: {
+    instruction: { type: 'string', title: 'Instruction', default: 'Pick a theme first.', v_spx: { ftype: 'instruction' } },
+    name: { type: 'string', title: 'Name', description: 'Shown on the first line' },
+    live: { type: 'boolean', title: 'Live', description: 'Adds a live badge' }
+  } } };
+  render(React.createElement(PropertiesDialog, { entry: described, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const instruction = screen.getByText('Pick a theme first.');
+  assert.equal(instruction.tagName, 'P');
+  assert.equal(screen.queryByRole('textbox', { name: 'Instruction' }), null);
+  const name = screen.getByRole('textbox', { name: 'Name' });
+  const row = name.closest('.property-row');
+  assert.equal(row.getAttribute('title'), 'Shown on the first line');
+  assert.equal(row.firstElementChild.tagName, 'LABEL');
+  assert.equal(screen.getByText('Shown on the first line').className, 'visually-hidden');
+  assert.ok(name.getAttribute('aria-describedby').split(' ').includes(screen.getByText('Shown on the first line').id));
+  assert.equal(screen.getByRole('checkbox', { name: 'Live' }).closest('[title]').getAttribute('title'), 'Adds a live badge');
+  fireEvent.change(name, { target: { value: 'Host' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved, [['1', { schemaData: { instruction: 'Pick a theme first.', name: 'Host' } }]]));
+});
+
+test('the manifest dialog is wider than the other dialogs', async () => {
+  const styles = await fs.readFile(new URL('./styles.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.manifest-dialog\s*\{[^}]*width:\s*min\(1100px/);
+  showView();
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Left' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Show manifest' }));
+  assert.ok(screen.getByRole('dialog').classList.contains('manifest-dialog'));
+});

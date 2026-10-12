@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
+import { getTemplate, getUiOptions } from '@rjsf/utils';
 import { ArrowDown, ArrowUp, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -14,6 +15,34 @@ class PropertyFormBoundary extends React.Component {
     return this.state.error ? <p role="alert">This graphic has an unsupported property schema.</p> : this.props.children;
   }
 }
+
+const tooltip = (description) => typeof description === 'string' && description.trim() ? description : undefined;
+
+// Descriptions are shown as tooltips; the text stays in the DOM for the inputs' aria-describedby.
+function PropertyDescription({ id, description }) {
+  return description ? <span id={id} className="visually-hidden">{description}</span> : null;
+}
+
+function PropertyField(props) {
+  const { id, label, children, errors, help, description, rawDescription, hidden, required, displayLabel, registry, uiSchema, schema, formData } = props;
+  if (hidden) return <div className="hidden">{children}</div>;
+  if (schema?.v_spx?.ftype === 'instruction') {
+    const text = formData ?? schema.default;
+    return text ? <p className="property-instruction" id={id}>{String(text)}</p> : null;
+  }
+  const uiOptions = getUiOptions(uiSchema);
+  const WrapIfAdditionalTemplate = getTemplate('WrapIfAdditionalTemplate', registry, uiOptions);
+  const title = tooltip(rawDescription);
+  return <WrapIfAdditionalTemplate {...props}>
+    {displayLabel && uiOptions.widget !== 'checkbox' ? <div className="property-row" title={title}>
+      <label className="control-label" htmlFor={id}>{label}{required && <span className="required">*</span>}{title && <Info size={13} aria-hidden="true" />}</label>
+      <div className="property-input">{children}{errors}{help}</div>
+    </div> : <div title={id === 'root' ? undefined : title}>{children}{errors}{help}</div>}
+    {description}
+  </WrapIfAdditionalTemplate>;
+}
+
+const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription };
 
 export function PropertiesDialog({ entry, onSave, onClose }) {
   const dialog = useRef(null);
@@ -44,7 +73,7 @@ export function PropertiesDialog({ entry, onSave, onClose }) {
       <div className="dialog-content properties-form">
         {error && <p role="alert" className="error-message">{error}</p>}
         <PropertyFormBoundary>
-          <Form schema={entry.schema} validator={validator} formData={data} onChange={(event) => setData(event.formData)}
+          <Form schema={entry.schema} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
             onSubmit={saveProperties} disabled={saving} noHtml5Validate>
             <div className="dialog-actions">
               <button className="text-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
@@ -134,7 +163,7 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
     catch (failure) { setError(failure.message); }
     finally { setDeleting(false); }
   }
-  return <dialog ref={dialog} className="properties-dialog" aria-labelledby={headingId} onCancel={(event) => {
+  return <dialog ref={dialog} className={`properties-dialog${mode === 'manifest' ? ' manifest-dialog' : ''}`} aria-labelledby={headingId} onCancel={(event) => {
     if (deleting) event.preventDefault(); else onClose();
   }}>
     <header className="dialog-heading">
