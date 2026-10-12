@@ -369,6 +369,24 @@ footer {
     overflow-wrap: anywhere;
 }
 
+.entry-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 7px;
+}
+
+.entry-title h3 {
+    min-width: 0;
+    margin: 0;
+}
+
+.entry-title .edit-label-button {
+    width: 28px;
+    height: 28px;
+    border: 0;
+}
+
 .entry-meta {
     display: flex;
     flex-wrap: wrap;
@@ -378,10 +396,16 @@ footer {
     font: 12px Arial, sans-serif;
 }
 
+.entry-original-name {
+    margin-bottom: 7px;
+    overflow-wrap: anywhere;
+}
+
 .entry-label {
     display: flex;
     align-items: center;
     gap: 10px;
+    margin-bottom: 7px;
     font: 13px Arial, sans-serif;
 }
 
@@ -759,16 +783,13 @@ footer {
     }
 
     .entry-label {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         gap: 6px;
     }
 
-    .entry-label label {
-        width: 100%;
-    }
-
     .entry-label input {
-        width: calc(100% - 42px);
+        flex: 1;
+        width: 0;
     }
 
     .dialog-heading,

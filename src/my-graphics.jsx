@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { FileJson, MoreHorizontal, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { FileJson, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
 import { canControlGraphic } from './api.js';
 
 class PropertyFormBoundary extends React.Component {
@@ -146,9 +146,15 @@ function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
 }
 
 function GraphicEntry({ entry, busy, Preview, onSave, onProperties, onAction, onDelete, onManifest }) {
-  const [label, setLabel] = useState(entry.label ?? '');
+  const [label, setLabel] = useState(entry.label ?? entry.display_name);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [savingLabel, setSavingLabel] = useState(false);
+  const labelInput = useRef(null);
   const [error, setError] = useState('');
-  useEffect(() => setLabel(entry.label ?? ''), [entry.label]);
+  useEffect(() => setLabel(entry.label ?? entry.display_name), [entry.label, entry.display_name]);
+  useEffect(() => {
+    if (editingLabel) { labelInput.current?.focus(); labelInput.current?.select(); }
+  }, [editingLabel]);
   const actionable = entry.enabled && !entry.packageDisabled && canControlGraphic(entry.control);
   const unavailableReason = entry.packageDisabled ? 'Package disabled' : !entry.enabled ? 'Enable this entry to play or update' : 'Renderer controls are not available';
   async function save(changes) {
@@ -156,17 +162,39 @@ function GraphicEntry({ entry, busy, Preview, onSave, onProperties, onAction, on
     try { await onSave(entry.entryId, changes); }
     catch (failure) { setError(failure.message); }
   }
+  function cancelLabel() {
+    setLabel(entry.label ?? entry.display_name);
+    setEditingLabel(false);
+    setError('');
+  }
+  async function saveLabel(event) {
+    event.preventDefault();
+    if (savingLabel || busy) return;
+    setSavingLabel(true);
+    setError('');
+    const value = label.trim();
+    try {
+      await onSave(entry.entryId, { label: value && value !== entry.display_name ? value : null });
+      setEditingLabel(false);
+    } catch (failure) { setError(failure.message); }
+    finally { setSavingLabel(false); }
+  }
   return (
     <li className={`graphic-entry${entry.enabled ? '' : ' is-disabled'}`}>
       <div className="entry-preview"><Preview item={entry} /></div>
       <div className="entry-details">
-        <h3>{entry.display_name}</h3>
+        {editingLabel ? <form className="entry-label" onSubmit={saveLabel} onKeyDown={(event) => {
+          if (event.key === 'Escape' && !savingLabel && !busy) { event.preventDefault(); cancelLabel(); }
+        }}>
+          <input ref={labelInput} id={`label-${entry.entryId}`} aria-label="Label" value={label} onChange={(event) => setLabel(event.target.value)} maxLength={100} placeholder={entry.display_name} disabled={busy || savingLabel} />
+          <button className="icon-button" type="submit" disabled={busy || savingLabel} title="Save label" aria-label="Save label"><Save size={16} /></button>
+          <button className="icon-button" type="button" onClick={cancelLabel} disabled={busy || savingLabel} title="Cancel label edit" aria-label="Cancel label edit"><X size={16} /></button>
+        </form> : <div className="entry-title">
+          <h3>{entry.label || entry.display_name}</h3>
+          <button className="icon-button edit-label-button" type="button" onClick={() => { setError(''); setEditingLabel(true); }} disabled={busy} title="Edit label" aria-label={`Edit label for ${entry.label || entry.display_name}`}><Pencil size={15} /></button>
+        </div>}
+        {entry.label && entry.label !== entry.display_name && <p className="entry-meta entry-original-name">{entry.display_name}</p>}
         <p className="entry-meta">v{entry.versionLabel} <span>{entry.origin === 'upload' ? 'Upload' : 'Catalog'}</span> <span>Entry {entry.entryId}</span></p>
-        <form className="entry-label" onSubmit={(event) => { event.preventDefault(); save({ label: label.trim() || null }); }}>
-          <label htmlFor={`label-${entry.entryId}`}>Label</label>
-          <input id={`label-${entry.entryId}`} value={label} onChange={(event) => setLabel(event.target.value)} maxLength={100} placeholder={entry.display_name} disabled={busy} />
-          <button className="icon-button" type="submit" disabled={busy || label === (entry.label ?? '')} title="Save label" aria-label="Save label"><Save size={16} /></button>
-        </form>
         {error && <p className="error-message" role="alert">{error}</p>}
       </div>
       <div className="entry-controls">

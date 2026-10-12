@@ -69,20 +69,59 @@ test('both frontend JSX files compile', async () => {
 test('duplicate package entries render independent labels and enabled states', () => {
   showView();
   assert.equal(screen.getAllByRole('listitem').length, 2);
-  assert.equal(screen.getByDisplayValue('Left').id, 'label-1');
-  assert.equal(screen.getByDisplayValue('Right').id, 'label-2');
+  assert.ok(screen.getByRole('heading', { name: 'Left' }));
+  assert.ok(screen.getByRole('heading', { name: 'Right' }));
+  assert.equal(screen.queryByRole('textbox', { name: 'Label' }), null);
+  assert.equal(screen.getAllByText('Lower third').length, 2);
   assert.equal(screen.getAllByRole('checkbox').length, 2);
   assert.equal(screen.getAllByRole('button', { name: 'Play' })[0].disabled, true);
   assert.equal(screen.getAllByText('Renderer unavailable').length, 2);
 });
 test('saving a label and toggling enabled only target the selected entry', async () => {
   const calls = showView();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit label for Left' }));
+  assert.equal(document.activeElement, screen.getByRole('textbox', { name: 'Label' }));
   fireEvent.change(screen.getByDisplayValue('Left'), { target: { value: 'Host A' } });
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save label' })[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Save label' }));
   await waitFor(() => assert.deepEqual(calls[0], ['1', { label: 'Host A' }]));
   fireEvent.click(screen.getAllByRole('checkbox')[1]);
   await waitFor(() => assert.deepEqual(calls[1], ['2', { enabled: false }]));
-  assert.equal(screen.getByDisplayValue('Right').value, 'Right');
+  assert.ok(screen.getByRole('heading', { name: 'Right' }));
+});
+
+test('unchanged labels show the graphic name once and keep metadata below it', () => {
+  showView({ entries: [{ ...entry, label: null }, { ...entry, entryId: '2', label: entry.display_name }] });
+  for (const row of screen.getAllByRole('listitem')) {
+    assert.ok(within(row).getByRole('heading', { name: 'Lower third' }));
+    assert.equal(row.querySelector('.entry-original-name'), null);
+    assert.ok(row.querySelector('.entry-meta').textContent.includes('v1.0.0'));
+  }
+});
+
+test('cancelling a label edit restores the saved heading without saving', () => {
+  const calls = showView();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit label for Left' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Label' }), { target: { value: 'Unsaved' } });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'Label' }), { key: 'Escape' });
+  assert.ok(screen.getByRole('heading', { name: 'Left' }));
+  assert.equal(screen.queryByRole('textbox', { name: 'Label' }), null);
+  assert.equal(calls.length, 0);
+});
+
+test('clearing a label resets it to the original graphic name', async () => {
+  const calls = showView();
+  fireEvent.click(screen.getByRole('button', { name: 'Edit label for Left' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Label' }), { target: { value: ' ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save label' }));
+  await waitFor(() => assert.deepEqual(calls[0], ['1', { label: null }]));
+});
+
+test('a failed label save keeps the editor open with its error', async () => {
+  showView({ onSave: async () => { throw new Error('Label save unavailable'); } });
+  fireEvent.click(screen.getByRole('button', { name: 'Edit label for Left' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save label' }));
+  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Label save unavailable')));
+  assert.ok(screen.getByRole('textbox', { name: 'Label' }));
 });
 test('the property dialog includes hidden fields and saves one independent state', async () => {
   const calls = showView();
