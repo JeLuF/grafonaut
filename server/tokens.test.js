@@ -50,8 +50,7 @@ test('the encryption key must be 32 bytes and is required in production', () => 
 test('new accounts get a token without replacing an existing one', async () => {
   rows = [[{ id: 7, twitch_login: 'host' }]];
   await upsertTwitchAccount({ id: 'twitch-7', login: 'host', display_name: 'Host' });
-  const insert = queries.at(-1);
-  assert.match(insert.sql, /^INSERT IGNORE INTO account_tokens/);
+  const insert = queries.find(({ sql }) => sql.startsWith('INSERT IGNORE INTO account_tokens'));
   assert.equal(insert.parameters[0], 7);
   assert.match(insert.parameters[1], /^[0-9a-f]{64}$/);
   assert.equal(insert.parameters[1], hashToken(decryptToken(insert.parameters[2])));
@@ -80,4 +79,23 @@ test('rotating replaces the token so the old one no longer resolves', async () =
   for (const invalid of [undefined, '', 'short', `${token}x`, '../'.repeat(15)]) assert.equal(await findAccountByToken(invalid), null);
   assert.equal(queries.length, 1);
   await ensureAccountToken(8);
+});
+
+test('API tokens live in their own table so renderer tokens cannot unlock the API', async () => {
+  rows = [[{ id: 7, twitch_login: 'host' }]];
+  await upsertTwitchAccount({ id: 'twitch-7', login: 'host', display_name: 'Host' });
+  const inserts = queries.filter(({ sql }) => sql.startsWith('INSERT IGNORE'));
+  assert.deepEqual(inserts.map(({ sql }) => sql.match(/INTO (\w+)/)[1]), ['account_tokens', 'api_tokens']);
+  assert.notEqual(inserts[0].parameters[1], inserts[1].parameters[1]);
+  queries = [];
+  const token = await rotateAccountToken(7, 'api');
+  rows = [[]];
+  assert.equal(await findAccountByToken(token, 'api'), null);
+  assert.match(queries[0].sql, /INTO api_tokens/);
+  assert.match(queries[1].sql, /FROM api_tokens t/);
+  rows = [[{ ciphertext: encryptToken(token) }]];
+  assert.equal(await findAccountToken(7, 'api'), token);
+  assert.match(queries[2].sql, /FROM api_tokens WHERE/);
+  await assert.rejects(findAccountToken(7, 'accounts; DROP TABLE accounts'), /Unknown token kind/);
+  await assert.rejects(rotateAccountToken(7, 'other'), /Unknown token kind/);
 });

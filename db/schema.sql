@@ -81,3 +81,13 @@ CREATE TABLE IF NOT EXISTS account_tokens (
   UNIQUE KEY uq_account_tokens_hash (token_hash),
   CONSTRAINT fk_account_tokens_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS api_tokens (
+  account_id BIGINT UNSIGNED NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  token_ciphertext VARCHAR(255) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (account_id),
+  UNIQUE KEY uq_api_tokens_hash (token_hash),
+  CONSTRAINT fk_api_tokens_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

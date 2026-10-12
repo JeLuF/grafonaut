@@ -41,7 +41,11 @@ This location belongs in your existing HTTPS server configuration. Without `X-Fo
 
 The Renderer page (sidebar link) shows signed-in users the URL of their renderer (to use as an OBS/vMix browser source), opens it in a new tab and lets them create a new token. Set `RENDERER_HOST` to the renderer's host name (`render.example.com`, optionally with a port) or full origin (`https://render.example.com`). When it is empty, the renderer URL uses the same host and protocol as the main page. Until the sandboxed render host exists, `/render/<token>/` shows a placeholder page.
 
-The renderer URL contains the account token: 32 random bytes created with the account, permanent so the URL can stay in a browser source. Users can create a new token on the Renderer page if a URL leaked; every URL with the old token stops working. Tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones.
+The renderer URL contains the account's renderer token: 32 random bytes created with the account, permanent so the URL can stay in a browser source.
+
+The same page links the account's OGraf Server API entry point, `https://<main host>/<api-token>/ograf/v1/`. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors; so far only the server information endpoint (`GET /`) is implemented, all other endpoints answer `501 Not Implemented`.
+
+Users can create a new renderer or API token on the Renderer page if a URL leaked; every URL with the old token stops working. Tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones.
 
 ## Local development
 

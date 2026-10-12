@@ -5,7 +5,7 @@ import { requestJson } from './api.js';
 const RENDER_WIDTH = 1920;
 const RENDER_HEIGHT = 1080;
 
-export function useRendererUrl(account) {
+function useTokenUrl(account, kind) {
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
@@ -13,12 +13,14 @@ export function useRendererUrl(account) {
     setError('');
     if (!account) return;
     const controller = new AbortController();
-    requestJson('/api/renderer', { signal: controller.signal }).then((response) => setUrl(response.url))
+    requestJson(`/api/tokens/${kind}`, { signal: controller.signal }).then((response) => setUrl(response.url))
       .catch((failure) => { if (!controller.signal.aborted) setError(failure.message); });
     return () => controller.abort();
-  }, [account]);
+  }, [account, kind]);
   return { url, setUrl, error, setError };
 }
+
+export const useRendererUrl = (account) => useTokenUrl(account, 'renderer');
 
 // Renders the renderer page at full 1920x1080 and scales it down to the frame width (640x360 by default).
 // The sandbox keeps renderer code in an opaque origin, away from the app's cookies and storage.
@@ -52,8 +54,17 @@ export function RendererPreview({ account }) {
   </section>;
 }
 
-export default function RendererView({ account, authLoading }) {
-  const { url, setUrl, error, setError } = useRendererUrl(account);
+const tokenTexts = {
+  renderer: { title: 'Renderer URL', open: 'Open renderer', copy: 'renderer URL', newToken: 'New renderer token',
+    warning: 'All renderer URLs with the current token stop working.', created: 'New URL created. Update your browser sources.' },
+  api: { title: 'OGraf Server API', open: 'Open API', copy: 'API URL', newToken: 'New API token',
+    warning: 'Controllers using the current API URL stop working.', created: 'New API URL created. Update your controllers.' }
+};
+
+// Shows one secret account URL with open/copy actions and a confirmed "new token" action that invalidates the old URL.
+function TokenCard({ account, kind, children }) {
+  const text = tokenTexts[kind];
+  const { url, setUrl, error, setError } = useTokenUrl(account, kind);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -74,7 +85,7 @@ export default function RendererView({ account, authLoading }) {
     setRotating(true);
     setError('');
     try {
-      const response = await requestJson('/api/renderer/token', { method: 'POST' });
+      const response = await requestJson(`/api/tokens/${kind}`, { method: 'POST' });
       setUrl(response.url);
       setConfirming(false);
       setRotated(true);
@@ -83,6 +94,33 @@ export default function RendererView({ account, authLoading }) {
     finally { setRotating(false); }
   }
 
+  return <section className="renderer-card" aria-labelledby={`${kind}-url-heading`}>
+    <h2 id={`${kind}-url-heading`}>{text.title}</h2>
+    {children}
+    {error && <p className="error-message" role="alert">{error}</p>}
+    {!url && !error && <p className="status" role="status">Loading URL...</p>}
+    {url && <code className="renderer-url">{url}</code>}
+    {(url || error) && <div className="renderer-actions">
+      {url && <>
+        <a className="primary-button" href={url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />{text.open}</a>
+        <button className="icon-button" type="button" onClick={copy} aria-label={copied ? `${text.copy[0].toUpperCase()}${text.copy.slice(1)} copied` : `Copy ${text.copy}`}
+          title={copied ? 'Copied' : `Copy ${text.copy}`}>{copied ? <Check size={17} /> : <Copy size={17} />}</button>
+      </>}
+      {!confirming && <button className="text-button token-button" type="button" onClick={() => { setConfirming(true); setRotated(false); }}>
+        <KeyRound size={16} />{text.newToken}</button>}
+    </div>}
+    {rotated && <p className="renderer-notice" role="status">{text.created}</p>}
+    {confirming && <div className="token-confirm" role="group" aria-label={`Confirm ${text.newToken.toLowerCase()}`}>
+      <p>{text.warning}</p>
+      <div className="renderer-actions">
+        <button className="text-button" type="button" onClick={() => setConfirming(false)} disabled={rotating}>Cancel</button>
+        <button className="danger-button" type="button" onClick={rotate} disabled={rotating}>{rotating ? 'Creating...' : 'Create new token'}</button>
+      </div>
+    </div>}
+  </section>;
+}
+
+export default function RendererView({ account, authLoading }) {
   return (
     <section className="renderer-page" aria-labelledby="renderer-heading">
       <p className="eyebrow">RENDERER</p>
@@ -92,20 +130,7 @@ export default function RendererView({ account, authLoading }) {
       {authLoading ? <p className="status" role="status">Loading account...</p>
         : !account ? <div className="empty-state"><strong>Sign in to get your renderer URL.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div>
           : <>
-            <div className="renderer-card">
-              <h2>Renderer URL</h2>
-              {error && <p className="error-message" role="alert">{error}</p>}
-              {!url ? !error && <p className="status" role="status">Loading renderer...</p> : <>
-                <code className="renderer-url">{url}</code>
-                <div className="renderer-actions">
-                  <a className="primary-button" href={url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />Open renderer</a>
-                  <button className="icon-button" type="button" onClick={copy} aria-label={copied ? 'Renderer URL copied' : 'Copy renderer URL'}
-                    title={copied ? 'Copied' : 'Copy renderer URL'}>{copied ? <Check size={17} /> : <Copy size={17} />}</button>
-                </div>
-              </>}
-              {rotated && <p className="renderer-notice" role="status">New URL created. Update your browser sources.</p>}
-            </div>
-
+            <TokenCard account={account} kind="renderer" />
             <div className="renderer-info">
               <section aria-labelledby="renderer-setup-heading">
                 <h2 id="renderer-setup-heading">Use it as a browser source</h2>
@@ -118,19 +143,17 @@ export default function RendererView({ account, authLoading }) {
                   once, for example in OBS and in a browser tab for testing; all of them show the same graphics.</p>
               </section>
               <section aria-labelledby="renderer-token-heading">
-                <h2 id="renderer-token-heading">Keep the URL private</h2>
-                <p>The URL contains a secret token that links it to your account. Anyone who has it can watch your graphics. If
-                  it leaked, create a new token: the old URL stops working immediately and you need to update your browser sources.</p>
-                {confirming ? <div className="token-confirm" role="group" aria-label="Confirm new token">
-                  <p>All renderer URLs with the current token stop working.</p>
-                  <div className="renderer-actions">
-                    <button className="text-button" type="button" onClick={() => setConfirming(false)} disabled={rotating}>Cancel</button>
-                    <button className="danger-button" type="button" onClick={rotate} disabled={rotating}>{rotating ? 'Creating...' : 'Create new token'}</button>
-                  </div>
-                </div> : (url || error) && <button className="text-button" type="button" onClick={() => { setConfirming(true); setRotated(false); }}>
-                  <KeyRound size={16} />New token</button>}
+                <h2 id="renderer-token-heading">Keep your URLs private</h2>
+                <p>The renderer URL and the API URL each contain their own secret token. Anyone with the renderer URL can watch
+                  your graphics; anyone with the API URL can control them. If a URL leaked, create a new token for it: the old URL
+                  stops working immediately, and you need to update your browser sources or controllers.</p>
               </section>
             </div>
+            <TokenCard account={account} kind="api">
+              <p className="renderer-card-copy">Control your graphics from Bitfocus Companion, a Stream Deck or your own scripts
+                through the <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf Server API</a>. Use
+                this URL as the API base; it uses a different token than the renderer.</p>
+            </TokenCard>
           </>}
     </section>
   );

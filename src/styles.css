@@ -1508,7 +1508,21 @@ footer {
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 40px;
     max-width: 1000px;
-    margin-top: 44px;
+    margin: 44px 0;
+}
+
+.renderer-card-copy {
+    margin: 0;
+    color: #52635d;
+    font: 14px/1.6 Arial, sans-serif;
+}
+
+.renderer-card-copy a {
+    color: #25645c;
+}
+
+.renderer-actions .token-button {
+    margin-left: auto;
 }
 
 .renderer-info section {

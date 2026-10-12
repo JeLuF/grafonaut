@@ -528,20 +528,38 @@ test('the manifest dialog is wider than the other dialogs', async () => {
   assert.ok(screen.getByRole('dialog').classList.contains('manifest-dialog'));
 });
 
-test('the renderer page shows the URL with open and copy actions', async () => {
-  const fetchMock = mock.method(globalThis, 'fetch', async () => Response.json({ url: 'https://render.example.com/render/' }));
+const tokenUrls = { renderer: 'https://app.example.com/render/old/', api: 'https://app.example.com/api-old/ograf/v1/' };
+function mockTokenApi({ failGet = {} } = {}) {
+  const requests = [];
+  mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    const kind = url.split('/').at(-1);
+    requests.push([url, options.method ?? 'GET']);
+    if (options.method === 'POST') return Response.json({ url: tokenUrls[kind].replace('old', 'new') });
+    if (failGet[kind]) return Response.json({ error: failGet[kind] }, { status: 409 });
+    return Response.json({ url: tokenUrls[kind] });
+  });
+  return requests;
+}
+
+test('the renderer page shows the renderer and API URLs with open and copy actions', async () => {
+  const requests = mockTokenApi();
   const copied = [];
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { copied.push(text); } } });
   render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
-  await waitFor(() => assert.ok(screen.getByText('https://render.example.com/render/')));
-  assert.equal(fetchMock.mock.calls[0].arguments[0], '/api/renderer');
-  const open = screen.getByRole('link', { name: 'Open renderer' });
-  assert.equal(open.getAttribute('href'), 'https://render.example.com/render/');
-  assert.equal(open.getAttribute('target'), '_blank');
-  assert.equal(open.getAttribute('rel'), 'noopener noreferrer');
+  await waitFor(() => assert.ok(screen.getByText(tokenUrls.api)));
+  assert.ok(screen.getByText(tokenUrls.renderer));
+  assert.deepEqual(requests.map(([url]) => url).sort(), ['/api/tokens/api', '/api/tokens/renderer']);
+  for (const [name, url] of [['Open renderer', tokenUrls.renderer], ['Open API', tokenUrls.api]]) {
+    const link = screen.getByRole('link', { name });
+    assert.equal(link.getAttribute('href'), url);
+    assert.equal(link.getAttribute('target'), '_blank');
+    assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
+  }
   fireEvent.click(screen.getByRole('button', { name: 'Copy renderer URL' }));
   await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Renderer URL copied' })));
-  assert.deepEqual(copied, ['https://render.example.com/render/']);
+  fireEvent.click(screen.getByRole('button', { name: 'Copy API URL' }));
+  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'API URL copied' })));
+  assert.deepEqual(copied, [tokenUrls.renderer, tokenUrls.api]);
   delete navigator.clipboard;
 });
 
@@ -550,43 +568,46 @@ test('the renderer page asks signed-out users to sign in and reports lookup fail
   render(React.createElement(RendererView, { account: null, authLoading: false }));
   assert.ok(screen.getByText('Sign in to get your renderer URL.'));
   assert.equal(screen.getByRole('link', { name: 'Sign in with Twitch' }).getAttribute('href'), '/api/auth/twitch');
-  assertAbsent(screen.queryByRole('button', { name: 'New token' }));
+  assertAbsent(screen.queryByRole('button', { name: 'New renderer token' }));
   assert.equal(fetchMock.mock.callCount(), 0);
   cleanup();
   render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
-  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Sign-in required')));
+  await waitFor(() => assert.equal(screen.getAllByRole('alert').length, 2));
   assertAbsent(screen.queryByRole('link', { name: 'Open renderer' }));
+  assertAbsent(screen.queryByRole('link', { name: 'Open API' }));
 });
 
-test('creating a new renderer token requires confirmation and shows the new URL', async () => {
-  const requests = [];
-  mock.method(globalThis, 'fetch', async (url, options = {}) => {
-    requests.push([url, options.method ?? 'GET']);
-    return Response.json({ url: url === '/api/renderer/token' ? 'https://app.example.com/render/new/' : 'https://app.example.com/render/old/' });
-  });
+test('creating a new token requires confirmation and only replaces that token', async () => {
+  const requests = mockTokenApi();
   render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
-  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/render/old/')));
-  fireEvent.click(screen.getByRole('button', { name: 'New token' }));
+  await waitFor(() => assert.ok(screen.getByText(tokenUrls.api)));
+  fireEvent.click(screen.getByRole('button', { name: 'New renderer token' }));
   assert.ok(screen.getByText('All renderer URLs with the current token stop working.'));
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  assert.deepEqual(requests, [['/api/renderer', 'GET']]);
-  fireEvent.click(screen.getByRole('button', { name: 'New token' }));
+  assert.equal(requests.filter(([, method]) => method === 'POST').length, 0);
+  fireEvent.click(screen.getByRole('button', { name: 'New renderer token' }));
   fireEvent.click(screen.getByRole('button', { name: 'Create new token' }));
   await waitFor(() => assert.ok(screen.getByText('https://app.example.com/render/new/')));
-  assert.deepEqual(requests.at(-1), ['/api/renderer/token', 'POST']);
+  assert.deepEqual(requests.at(-1), ['/api/tokens/renderer', 'POST']);
   assert.equal(screen.getByRole('link', { name: 'Open renderer' }).getAttribute('href'), 'https://app.example.com/render/new/');
   assert.ok(screen.getByText('New URL created. Update your browser sources.'));
+  assert.ok(screen.getByText(tokenUrls.api));
+  fireEvent.click(screen.getByRole('button', { name: 'New API token' }));
+  assert.ok(screen.getByText('Controllers using the current API URL stop working.'));
+  fireEvent.click(screen.getByRole('button', { name: 'Create new token' }));
+  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/api-new/ograf/v1/')));
+  assert.deepEqual(requests.at(-1), ['/api/tokens/api', 'POST']);
+  assert.ok(screen.getByText('New API URL created. Update your controllers.'));
 });
 
 test('an unreadable token can still be replaced', async () => {
-  mock.method(globalThis, 'fetch', async (url) => url === '/api/renderer/token'
-    ? Response.json({ url: 'https://app.example.com/render/new/' })
-    : Response.json({ error: 'The renderer token cannot be read with the current encryption key. Create a new token.' }, { status: 409 }));
+  mockTokenApi({ failGet: { api: 'This token cannot be read with the current encryption key. Create a new token.' } });
   render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
   await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('cannot be read')));
-  fireEvent.click(screen.getByRole('button', { name: 'New token' }));
+  assert.ok(screen.getByText(tokenUrls.renderer));
+  fireEvent.click(screen.getByRole('button', { name: 'New API token' }));
   fireEvent.click(screen.getByRole('button', { name: 'Create new token' }));
-  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/render/new/')));
+  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/api-new/ograf/v1/')));
   assertAbsent(screen.queryByRole('alert'));
 });
 

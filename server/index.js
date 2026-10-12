@@ -9,6 +9,7 @@ import myGraphicsRouter from './my-graphics.js';
 import { configureSession } from './session.js';
 import { parseRendererHost, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
 import { tokenKey } from './tokens.js';
+import ografApiRouter, { apiMountPath, apiUrl } from './ograf-api.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -63,28 +64,33 @@ app.get('/api/catalog/:versionId/thumbnails/:index', async (request, response) =
   } catch { response.sendStatus(503); }
 });
 app.use('/api/my-graphics', myGraphicsRouter);
-app.get('/api/renderer', async (request, response) => {
+app.use(apiMountPath, ografApiRouter);
+// Account token URLs: GET shows the current one, POST replaces the token (the old URL stops working).
+const tokenUrls = { renderer: (request, token) => rendererUrl(request, rendererHost, token), api: apiUrl };
+app.get('/api/tokens/:kind', async (request, response) => {
   if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });
+  if (!Object.hasOwn(tokenUrls, request.params.kind)) return response.status(404).json({ error: 'Unknown token' });
   try {
-    const token = await findAccountToken(request.session.accountId);
-    response.set('Cache-Control', 'private, no-store').json({ url: rendererUrl(request, rendererHost, token) });
+    const token = await findAccountToken(request.session.accountId, request.params.kind);
+    response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token) });
   } catch (error) {
     if (error.code === 'TOKEN_UNREADABLE') return response.status(409).json({ error: error.message });
-    response.status(503).json({ error: 'Renderer URL unavailable' });
+    response.status(503).json({ error: 'URL unavailable' });
   }
 });
-app.post('/api/renderer/token', async (request, response) => {
+app.post('/api/tokens/:kind', async (request, response) => {
   if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });
+  if (!Object.hasOwn(tokenUrls, request.params.kind)) return response.status(404).json({ error: 'Unknown token' });
   try {
-    const token = await rotateAccountToken(request.session.accountId);
-    response.set('Cache-Control', 'private, no-store').json({ url: rendererUrl(request, rendererHost, token) });
-  } catch { response.status(503).json({ error: 'Unable to create a new renderer token' }); }
+    const token = await rotateAccountToken(request.session.accountId, request.params.kind);
+    response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token) });
+  } catch { response.status(503).json({ error: 'Unable to create a new token' }); }
 });
 // Placeholder until the sandboxed render host (RN-1) exists; it already rejects unknown or replaced tokens.
 app.get(rendererRoute, async (request, response) => {
   response.set(rendererHeaders).type('html');
   try {
-    if (!await findAccountByToken(request.params.token)) return response.status(404).send(rendererPage('Unknown renderer URL.'));
+    if (!await findAccountByToken(request.params.token, 'renderer')) return response.status(404).send(rendererPage('Unknown renderer URL.'));
     response.send(rendererPage('OGraf renderer: not available yet.'));
   } catch { response.status(503).send(rendererPage('Renderer unavailable.')); }
 });
