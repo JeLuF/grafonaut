@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import mysql from 'mysql2/promise';
 import { storageRoot } from './storage.js';
-import { findThumbnail } from './thumbnails.js';
+import { findThumbnail, findThumbnails } from './thumbnails.js';
 
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST ?? 'localhost',
@@ -55,6 +55,78 @@ export async function listPublishedCatalog() {
     const thumbnail = await findThumbnail(row, storageRoot);
     return { ...item, thumbnailUrl: thumbnail ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null };
   }));
+}
+
+const text = (value) => typeof value === 'string' && value.trim() ? value.trim() : null;
+const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+
+function authorInfo(author) {
+  if (typeof author === 'string') return text(author) ? { name: text(author), email: null, url: null } : null;
+  if (!isObject(author)) return null;
+  let url = text(author.url);
+  if (url) {
+    try {
+      const parsed = new URL(/^[a-z][a-z\d+.-]*:/i.test(url) ? url : `https://${url}`);
+      url = ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+    } catch { url = null; }
+  }
+  const email = text(author.email);
+  const info = { name: text(author.name), email: email && /^[^\s@]+@[^\s@]+$/.test(email) ? email : null, url };
+  return info.name || info.email || info.url ? info : null;
+}
+
+function constraint(value) {
+  if (typeof value === 'number') return { exact: value };
+  if (!isObject(value)) return null;
+  const result = Object.fromEntries(['exact', 'ideal', 'min', 'max'].filter((key) => typeof value[key] === 'number').map((key) => [key, value[key]]));
+  return Object.keys(result).length ? result : null;
+}
+
+export function catalogDetails(manifest) {
+  const durations = Array.isArray(manifest?.actionDurations) ? manifest.actionDurations.filter(isObject) : [];
+  const durationOf = (type, id) => durations.find((item) => item.type === type && (id === undefined || item.customActionId === id))?.duration ?? null;
+  const properties = isObject(manifest?.schema?.properties) ? manifest.schema.properties : {};
+  return {
+    manifestVersion: text(manifest?.version),
+    author: authorInfo(manifest?.author),
+    supportsRealTime: manifest?.supportsRealTime === true,
+    supportsNonRealTime: manifest?.supportsNonRealTime === true,
+    stepCount: Number.isInteger(manifest?.stepCount) ? manifest.stepCount : null,
+    actions: ['playAction', 'updateAction', 'stopAction'].map((type) => ({ type, duration: durationOf(type) })),
+    customActions: (Array.isArray(manifest?.customActions) ? manifest.customActions : [])
+      .filter((action) => isObject(action) && text(action.id))
+      .map((action) => ({ id: text(action.id), name: text(action.name) ?? text(action.id), description: text(action.description),
+        hasParameters: isObject(action.schema), duration: durationOf('customAction', action.id) })),
+    renderRequirements: (Array.isArray(manifest?.renderRequirements) ? manifest.renderRequirements : []).filter(isObject).map((requirement) => ({
+      width: constraint(requirement.resolution?.width), height: constraint(requirement.resolution?.height), frameRate: constraint(requirement.frameRate)
+    })),
+    properties: Object.entries(properties).filter(([, property]) => isObject(property) && property.hidden !== true).map(([key, property]) => ({
+      key, title: text(property.title) ?? key, type: typeof property.type === 'string' ? property.type : null, description: text(property.description)
+    }))
+  };
+}
+
+export async function findPublishedCatalogItem(versionId) {
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.version_label AS versionLabel,
+      pv.manifest_name AS display_name, pv.manifest_description AS description,
+      pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile,
+      pv.main_file_relpath AS mainFile, pv.source, pv.created_at AS publishedAt,
+      p.id AS packageId, p.manifest_id AS manifestId
+    FROM package_versions pv JOIN packages p ON p.id = pv.package_id
+    WHERE pv.id = ? AND pv.review_state = 'published' AND p.disabled = FALSE`, [versionId]);
+  const row = rows[0];
+  if (!row) return null;
+  const { manifest, manifestFile, mainFile, ...item } = row;
+  const thumbnails = await findThumbnails(row, storageRoot);
+  return { ...item, ...catalogDetails(manifest),
+    thumbnailUrl: thumbnails.length ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null,
+    thumbnails: thumbnails.map(({ index }) => {
+      const declared = manifest.thumbnails[index];
+      const width = declared.resolution?.width;
+      const height = declared.resolution?.height;
+      return { url: `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnails/${index}`,
+        width: Number.isFinite(width) ? width : null, height: Number.isFinite(height) ? height : null, animated: declared.animated === true };
+    }) };
 }
 
 export async function findPublishedVersion(versionId) {

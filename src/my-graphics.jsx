@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { ArrowDown, ArrowUp, FileJson, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -41,7 +41,7 @@ export function PropertiesDialog({ entry, onSave, onClose }) {
         <div><h2 id={headingId}>Properties</h2><p>{entry.label || entry.display_name} <span>v{entry.versionLabel}</span></p></div>
         <button className="icon-button" type="button" onClick={onClose} disabled={saving} aria-label="Close properties" title="Close properties"><X size={18} /></button>
       </header>
-      <div className="dialog-content">
+      <div className="dialog-content properties-form">
         {error && <p role="alert" className="error-message">{error}</p>}
         <PropertyFormBoundary>
           <Form schema={entry.schema} validator={validator} formData={data} onChange={(event) => setData(event.formData)}
@@ -65,7 +65,7 @@ function EntryMenu({ entry, busy, onDelete, onManifest }) {
   const menuId = useId();
   useEffect(() => {
     if (!open) return;
-    menu.current?.querySelector('button')?.focus();
+    menu.current?.querySelector('[role="menuitem"]')?.focus();
     const closeOutside = (event) => { if (!container.current?.contains(event.target)) setOpen(false); };
     document.addEventListener('pointerdown', closeOutside);
     document.addEventListener('focusin', closeOutside);
@@ -80,7 +80,7 @@ function EntryMenu({ entry, busy, onDelete, onManifest }) {
     if (event.key === 'Escape') { event.preventDefault(); setOpen(false); trigger.current?.focus(); }
     if (open && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
-      const buttons = Array.from(menu.current.querySelectorAll('button'));
+      const buttons = Array.from(menu.current.querySelectorAll('[role="menuitem"]'));
       const index = buttons.indexOf(document.activeElement);
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
       buttons[next]?.focus();
@@ -89,6 +89,8 @@ function EntryMenu({ entry, busy, onDelete, onManifest }) {
     <button ref={trigger} className="icon-button" type="button" disabled={busy} onClick={() => setOpen(!open)}
       aria-label={`More options for ${entry.label || entry.display_name}`} title="More options" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}><MoreHorizontal size={19} /></button>
     {open && <div ref={menu} id={menuId} className="entry-menu-popup" role="menu" aria-label="Graphic options">
+      {entry.origin === 'catalog' && !entry.packageDisabled && <a role="menuitem" href={`#graphic/${encodeURIComponent(entry.versionId)}`}
+        onClick={() => setOpen(false)}><Info size={16} />Show details</a>}
       <button type="button" role="menuitem" onClick={() => choose(onManifest)}><FileJson size={16} />Show manifest</button>
       <button className="danger-menu-item" type="button" role="menuitem" onClick={() => choose(onDelete)}><Trash2 size={16} />Delete</button>
     </div>}

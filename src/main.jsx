@@ -1,9 +1,45 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CircleCheck, CircleAlert, LayoutGrid, List, Plus, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, List, Plus, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
+import GraphicDetail from './graphic-detail.jsx';
 import { requestJson, triggerGraphicAction } from './api.js';
 import './styles.css';
+
+const PAGE_SIZE = 6;
+
+export function parseRoute(hash) {
+  if (hash === '#my-graphics') return { view: 'my-graphics' };
+  const match = /^#graphic\/(.+)$/.exec(hash);
+  if (match) {
+    try { return { view: 'graphic', versionId: decodeURIComponent(match[1]) }; } catch { /* fall through to catalog */ }
+  }
+  return { view: 'catalog' };
+}
+
+export const graphicHref = (item) => `#graphic/${encodeURIComponent(item.versionId)}`;
+
+export function pageNumbers(count, current) {
+  if (count <= 7) return Array.from({ length: count }, (_, page) => page);
+  const pages = [...new Set([0, count - 1, current - 1, current, current + 1])].filter((page) => page >= 0 && page < count).sort((a, b) => a - b);
+  return pages.flatMap((page, position) => position && page - pages[position - 1] > 1 ? [null, page] : [page]);
+}
+
+export function Pagination({ page, pageCount, total, onChange }) {
+  if (pageCount <= 1) return null;
+  const first = page * PAGE_SIZE + 1;
+  return <nav className="pagination" aria-label="Catalog pages">
+    <span className="pagination-range">{first}–{Math.min(first + PAGE_SIZE - 1, total)} of {total}</span>
+    <div className="pagination-pages">
+      <button className="icon-button" type="button" onClick={() => onChange(page - 1)} disabled={page === 0} aria-label="Previous page" title="Previous page"><ChevronLeft size={18} /></button>
+      {pageNumbers(pageCount, page).map((number, position) => number === null
+        ? <span key={`gap-${position}`} className="pagination-gap" aria-hidden="true">…</span>
+        : <button key={number} className="icon-button" type="button" onClick={() => onChange(number)}
+          aria-label={`Page ${number + 1}`} aria-current={number === page ? 'page' : undefined}>{number + 1}</button>)}
+      <button className="icon-button" type="button" onClick={() => onChange(page + 1)} disabled={page === pageCount - 1} aria-label="Next page" title="Next page"><ChevronRight size={18} /></button>
+    </div>
+  </nav>;
+}
 
 function GraphicPreview({ item }) {
   const [failedThumbnail, setFailedThumbnail] = useState(null);
@@ -18,7 +54,7 @@ function GraphicPreview({ item }) {
   );
 }
 
-export function AddGraphicButton({ item, disabled, onAdd }) {
+export function AddGraphicButton({ item, disabled, onAdd, label }) {
   const [state, setState] = useState('idle');
   const timer = useRef(null);
   const adding = useRef(false);
@@ -35,9 +71,12 @@ export function AddGraphicButton({ item, disabled, onAdd }) {
     } catch { setState('idle'); }
     finally { adding.current = false; }
   }
-  return <button className={`add-graphic-button${state === 'added' ? ' is-added' : ''}`} type="button" onClick={add}
-    disabled={disabled || state === 'adding'} aria-busy={state === 'adding'} aria-label={`Add ${item.display_name} to My Graphics`}
-    title={disabled ? 'Sign in to add graphics' : state === 'added' ? 'Added to My Graphics' : 'Add to My Graphics'}><Plus size={20} /></button>;
+  const added = state === 'added';
+  return <button className={`add-graphic-button${label ? ' primary-button' : ''}${added ? ' is-added' : ''}`} type="button" onClick={add}
+    disabled={disabled || state === 'adding'} aria-busy={state === 'adding'} aria-label={label ? undefined : `Add ${item.display_name} to My Graphics`}
+    title={disabled ? 'Sign in to add graphics' : added ? 'Added to My Graphics' : 'Add to My Graphics'}>
+    {label ? <>{added ? <Check size={18} /> : <Plus size={18} />}{added ? 'Added to My Graphics' : label}</> : <Plus size={20} />}
+  </button>;
 }
 
 export function Toast({ toast, onDismiss }) {
@@ -58,7 +97,12 @@ function App() {
   const [account, setAccount] = useState(null);
   const [status, setStatus] = useState('Loading catalog');
   const [notice, setNotice] = useState('');
-  const [view, setView] = useState(window.location.hash === '#my-graphics' ? 'my-graphics' : 'catalog');
+  const [route, setRoute] = useState(() => parseRoute(window.location.hash));
+  const view = route.view;
+  const [page, setPage] = useState(0);
+  const catalogHeading = useRef(null);
+  const catalogScroll = useRef(null);
+  const previousView = useRef(view);
   const [entries, setEntries] = useState([]);
   const [myLoading, setMyLoading] = useState(false);
   const [myError, setMyError] = useState('');
@@ -81,10 +125,22 @@ function App() {
       if (active) setAccount(response.account ?? null);
     }).catch((error) => { if (active) setNotice(error.message); })
       .finally(() => { if (active) setAuthLoading(false); });
-    const changeView = () => setView(window.location.hash === '#my-graphics' ? 'my-graphics' : 'catalog');
+    const changeView = () => {
+      const next = parseRoute(window.location.hash);
+      if (previousView.current === 'catalog' && next.view === 'graphic') catalogScroll.current = window.scrollY;
+      setRoute(next);
+    };
     window.addEventListener('hashchange', changeView);
     return () => { active = false; window.removeEventListener('hashchange', changeView); };
   }, []);
+
+  useLayoutEffect(() => {
+    if (previousView.current === view && view !== 'graphic') return;
+    if (view === 'graphic') window.scrollTo?.(0, 0);
+    else if (view === 'catalog' && previousView.current === 'graphic' && catalogScroll.current !== null) window.scrollTo?.(0, catalogScroll.current);
+    if (view !== 'graphic') catalogScroll.current = null;
+    previousView.current = view;
+  }, [view, route.versionId]);
 
   useEffect(() => {
     if (!account) { setEntries([]); return; }
@@ -114,6 +170,15 @@ function App() {
     const haystack = `${item.display_name} ${item.description ?? ''}`.toLowerCase();
     return haystack.includes(query.toLowerCase());
   });
+  const pageCount = Math.max(1, Math.ceil(filteredCatalog.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageItems = filteredCatalog.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+  function changePage(next) {
+    setPage(next);
+    const heading = catalogHeading.current;
+    if (heading && heading.getBoundingClientRect().top < 0) heading.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }
 
   async function addToMyGraphics(item) {
     try {
@@ -177,29 +242,32 @@ function App() {
         </div>
       </header>
       <nav className="view-tabs" aria-label="Graphics views">
-        <a href="#catalog" aria-current={view === 'catalog' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
+        <a href="#catalog" aria-current={view !== 'my-graphics' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#my-graphics" aria-current={view === 'my-graphics' ? 'page' : undefined}><List size={17} />My Graphics{account && <span className="entry-count">{entries.length}</span>}</a>
       </nav>
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} /> : <>
+      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      : view === 'graphic' ? <GraphicDetail versionId={route.versionId} summary={catalog.find((item) => item.versionId === route.versionId)}
+        account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>
       <section className="hero">
         <p className="eyebrow">PUBLIC CATALOG / MVP</p>
         <h1>Broadcast graphics,<br /><em>ready to play.</em></h1>
         <p className="hero-copy">Browse the shared OGraf library and build a working set for your next live production.</p>
       </section>
       <section className="catalog-section" aria-labelledby="catalog-heading">
-        <div className="section-heading">
+        <div className="section-heading" ref={catalogHeading}>
           <div><p className="eyebrow">THE LIBRARY</p><h2 id="catalog-heading">Published graphics</h2></div>
-          <label className="search-box"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search graphics" /></label>
+          <label className="search-box"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="Search graphics" /></label>
         </div>
         {status && <p className="status">{status}</p>}
         {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>Seed packages will appear here after the first startup import.</span></div>}
         <div className="catalog-grid">
-          {filteredCatalog.map((item) => <article className="graphic-card" key={item.versionId}>
-            <GraphicPreview item={item} />
-            <div className="card-body"><div><h3>{item.display_name}</h3><p>{item.description || 'A published OGraf package.'}</p></div><AddGraphicButton item={item} disabled={!account} onAdd={addToMyGraphics} /></div>
+          {pageItems.map((item) => <article className="graphic-card" key={item.versionId}>
+            <a className="card-art-link" href={graphicHref(item)} tabIndex={-1} aria-hidden="true"><GraphicPreview item={item} /></a>
+            <div className="card-body"><div><h3><a href={graphicHref(item)}>{item.display_name}</a></h3><p className="card-description">{item.description || 'A published OGraf package.'}</p></div><AddGraphicButton item={item} disabled={!account} onAdd={addToMyGraphics} /></div>
           </article>)}
         </div>
+        <Pagination page={currentPage} pageCount={pageCount} total={filteredCatalog.length} onChange={changePage} />
       </section>
       </>}
       <footer><span>OGRAF PLATFORM</span><span>Catalog preview · {new Date().getFullYear()}</span></footer>

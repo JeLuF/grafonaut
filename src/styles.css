@@ -222,6 +222,68 @@ h3 {
     font: 13px/1.4 Arial, sans-serif;
 }
 
+.card-body .card-description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
+.card-art-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+
+.card-body h3 a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.card-body h3 a:hover {
+    text-decoration: underline;
+    text-decoration-color: #e45e37;
+    text-underline-offset: 4px;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 30px;
+    font: 13px Arial, sans-serif;
+    color: #52635d;
+}
+
+.pagination-range {
+    font-variant-numeric: tabular-nums;
+}
+
+.pagination-pages {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pagination-pages .icon-button {
+    font: 13px Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+
+.pagination-pages .icon-button[aria-current] {
+    background: #17332f;
+    border-color: #17332f;
+    color: #fdf9ef;
+}
+
+.pagination-gap {
+    padding: 0 4px;
+}
+
 .card-body button {
     flex: 0 0 38px;
     align-self: center;
@@ -243,6 +305,15 @@ h3 {
     display: inline-grid;
     place-items: center;
     transition: background-color .16s, color .16s, box-shadow .16s;
+}
+
+.primary-button.add-graphic-button {
+    transition: background-color .16s, border-color .16s;
+}
+
+.primary-button.add-graphic-button.is-added {
+    background: #198548;
+    border-color: #198548;
 }
 
 .card-body .add-graphic-button.is-added {
@@ -484,7 +555,8 @@ footer {
     box-shadow: 0 5px 18px #17332f26;
 }
 
-.entry-menu-popup button {
+.entry-menu-popup button,
+.entry-menu-popup a {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -499,8 +571,14 @@ footer {
     cursor: pointer;
 }
 
+.entry-menu-popup a {
+    text-decoration: none;
+}
+
 .entry-menu-popup button:hover,
-.entry-menu-popup button:focus-visible {
+.entry-menu-popup button:focus-visible,
+.entry-menu-popup a:hover,
+.entry-menu-popup a:focus-visible {
     background: #d8e5d7;
 }
 
@@ -590,6 +668,23 @@ footer {
     border: 1px solid #abb5aa;
     border-radius: 6px;
     color: #17332f;
+    background: #fffdf7;
+}
+
+.properties-dialog[open] {
+    overflow: auto;
+}
+
+.dialog-content.properties-form {
+    padding-bottom: 0;
+}
+
+.properties-form .dialog-actions {
+    position: sticky;
+    z-index: 1;
+    bottom: 0;
+    margin-inline: -24px;
+    padding: 18px 24px 24px;
     background: #fffdf7;
 }
 
@@ -756,7 +851,8 @@ footer {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .card-body .add-graphic-button {
+    .card-body .add-graphic-button,
+    .primary-button.add-graphic-button {
         transition: none;
     }
 }
@@ -828,6 +924,15 @@ footer {
     .dialog-content {
         padding: 18px;
     }
+
+    .dialog-content.properties-form {
+        padding-bottom: 0;
+    }
+
+    .properties-form .dialog-actions {
+        margin-inline: -18px;
+        padding: 14px 18px 18px;
+    }
 }
 
 @media (max-width: 760px) {
@@ -855,5 +960,313 @@ footer {
     footer {
         gap: 12px;
         flex-direction: column;
+    }
+}
+.graphic-detail {
+    padding: 20px 0 90px;
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 26px;
+    color: #52635d;
+    font: 13px Arial, sans-serif;
+    text-decoration: none;
+}
+
+.back-link:hover {
+    color: #17332f;
+}
+
+.detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 40px;
+    align-items: start;
+    padding-bottom: 40px;
+}
+
+.detail-summary h1 {
+    font-size: clamp(40px, 5vw, 64px);
+    line-height: 1;
+    overflow-wrap: anywhere;
+}
+
+.detail-cta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin: 28px 0 30px;
+}
+
+.detail-facts {
+    margin: 0;
+    font: 14px/1.5 Arial, sans-serif;
+}
+
+.detail-facts > div {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid #d8d6ca;
+}
+
+.detail-facts dt {
+    color: #6b756e;
+}
+
+.detail-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.mono {
+    font-family: Consolas, monospace;
+    font-size: 12px;
+}
+
+.carousel {
+    min-width: 0;
+    background: #fffdf7;
+    border: 1px solid #d8d6ca;
+}
+
+.carousel-empty .card-art {
+    aspect-ratio: 16 / 9;
+}
+
+.carousel-stage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 16 / 9;
+    background: #e7e9e5;
+    overflow: hidden;
+}
+
+.carousel-stage img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.carousel-missing {
+    color: #6b756e;
+    font: 14px Arial, sans-serif;
+}
+
+.carousel-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #17332fcc;
+    color: #fdf9ef;
+    cursor: pointer;
+}
+
+.carousel-nav:hover {
+    background: #17332f;
+}
+
+.carousel-prev {
+    left: 14px;
+}
+
+.carousel-next {
+    right: 14px;
+}
+
+.carousel-caption {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    color: #6b756e;
+    font: 12px Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+
+.carousel-strip {
+    display: flex;
+    gap: 8px;
+    padding: 0 14px 14px;
+    overflow-x: auto;
+}
+
+.carousel-strip button {
+    flex: 0 0 96px;
+    aspect-ratio: 16 / 9;
+    padding: 0;
+    border: 2px solid transparent;
+    background: #e7e9e5;
+    cursor: pointer;
+    opacity: .65;
+}
+
+.carousel-strip button[aria-current] {
+    border-color: #e45e37;
+    opacity: 1;
+}
+
+.carousel-strip button:hover {
+    opacity: 1;
+}
+
+.carousel-strip img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.detail-section {
+    padding: 28px 0;
+    border-top: 1px solid #c7c9bb;
+}
+
+.detail-section h2 {
+    margin-bottom: 18px;
+    font-size: 26px;
+}
+
+.detail-description {
+    max-width: 760px;
+    margin: 0;
+    color: #34473f;
+    font: 16px/1.65 Arial, sans-serif;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.muted {
+    margin: 0;
+    color: #6b756e;
+    font: 14px Arial, sans-serif;
+}
+
+.creator-list,
+.action-list,
+.property-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font: 14px/1.5 Arial, sans-serif;
+}
+
+.creator-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    overflow-wrap: anywhere;
+}
+
+.creator-list svg {
+    flex-shrink: 0;
+    color: #6b756e;
+}
+
+.creator-list a {
+    color: #25645c;
+}
+
+.action-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+}
+
+.action-list li {
+    display: flex;
+    align-items: start;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #fffdf7;
+    border: 1px solid #d8d6ca;
+}
+
+.action-list svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #25645c;
+}
+
+.action-list div {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.action-list span {
+    color: #6b756e;
+    font-size: 13px;
+}
+
+.action-list em {
+    color: #6b756e;
+    font-size: 12px;
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.detail-facts-grid {
+    max-width: 760px;
+}
+
+.property-list {
+    columns: 2 280px;
+    column-gap: 32px;
+}
+
+.property-list li {
+    break-inside: avoid;
+    padding: 8px 0;
+    border-top: 1px solid #d8d6ca;
+}
+
+.property-list .mono {
+    margin-left: 10px;
+    color: #6b756e;
+}
+
+.property-list p {
+    margin: 4px 0 0;
+    color: #6b756e;
+    font-size: 13px;
+}
+
+@media (max-width: 900px) {
+    .detail-layout {
+        grid-template-columns: 1fr;
+        gap: 28px;
+    }
+}
+
+@media (max-width: 480px) {
+    .detail-facts > div {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+
+    .carousel-nav {
+        width: 34px;
+        height: 34px;
+    }
+
+    .pagination {
+        justify-content: center;
     }
 }

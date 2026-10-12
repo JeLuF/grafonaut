@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
-import { findAccountById, findPublishedVersion, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
+import { findAccountById, findPublishedCatalogItem, findPublishedVersion, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
-import { findThumbnail } from './thumbnails.js';
+import { findThumbnail, findThumbnails } from './thumbnails.js';
 import myGraphicsRouter from './my-graphics.js';
 import { configureSession } from './session.js';
 
@@ -19,18 +19,36 @@ app.get('/api/catalog', async (_request, response) => {
   try { response.json({ items: await listPublishedCatalog() }); }
   catch (error) { response.status(503).json({ error: 'Catalog unavailable', detail: error.message }); }
 });
+function sendThumbnail(response, thumbnail) {
+  if (!thumbnail) return response.sendStatus(404);
+  response.sendFile(thumbnail, { headers: {
+    'Cache-Control': 'public, max-age=3600',
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "sandbox; default-src 'none'"
+  } }, (error) => {
+    if (error && !response.headersSent) response.sendStatus(error.statusCode ?? 500);
+  });
+}
+app.get('/api/catalog/:versionId', async (request, response) => {
+  try {
+    const item = await findPublishedCatalogItem(request.params.versionId);
+    if (!item) return response.status(404).json({ error: 'Graphic not found' });
+    response.json({ item });
+  } catch (error) { response.status(503).json({ error: 'Catalog unavailable', detail: error.message }); }
+});
 app.get('/api/catalog/:versionId/thumbnail', async (request, response) => {
   try {
     const version = await findPublishedVersion(request.params.versionId);
-    const thumbnail = version ? await findThumbnail(version, storageRoot) : null;
-    if (!thumbnail) return response.sendStatus(404);
-    response.sendFile(thumbnail, { headers: {
-      'Cache-Control': 'public, max-age=3600',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "sandbox; default-src 'none'"
-    } }, (error) => {
-      if (error && !response.headersSent) response.sendStatus(error.statusCode ?? 500);
-    });
+    sendThumbnail(response, version ? await findThumbnail(version, storageRoot) : null);
+  } catch { response.sendStatus(503); }
+});
+app.get('/api/catalog/:versionId/thumbnails/:index', async (request, response) => {
+  try {
+    if (!/^\d{1,4}$/.test(request.params.index)) return response.sendStatus(404);
+    const index = Number(request.params.index);
+    const version = await findPublishedVersion(request.params.versionId);
+    const thumbnails = version ? await findThumbnails(version, storageRoot) : [];
+    sendThumbnail(response, thumbnails.find((thumbnail) => thumbnail.index === index)?.file);
   } catch { response.sendStatus(503); }
 });
 app.use('/api/my-graphics', myGraphicsRouter);

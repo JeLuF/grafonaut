@@ -32,24 +32,26 @@ async function findManifest(root, version) {
   return visit(root);
 }
 
-export async function findThumbnail(version, storageRoot) {
+export async function findThumbnails(version, storageRoot, limit = Infinity) {
   const thumbnails = version.manifest?.thumbnails;
-  if (!Array.isArray(thumbnails) || !thumbnails.length) return null;
+  if (!Array.isArray(thumbnails) || !thumbnails.length) return [];
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidPattern.test(version.packageId) || !uuidPattern.test(version.versionId)) return null;
+  if (!uuidPattern.test(version.packageId) || !uuidPattern.test(version.versionId)) return [];
   const root = path.resolve(storageRoot, 'packages', version.packageId, version.versionId, 'extracted');
+  const found = [];
   try {
     const manifestPath = await findManifest(root, version);
-    if (!manifestPath) return null;
+    if (!manifestPath) return [];
     const realRoot = await fs.realpath(root);
-    for (const thumbnail of thumbnails) {
+    for (const [index, thumbnail] of thumbnails.entries()) {
+      if (found.length >= limit) break;
       const file = thumbnail?.file;
       if (typeof file !== 'string' || !imageExtensions.has(path.extname(file).toLowerCase())) continue;
       const target = containedPath(root, file, path.dirname(manifestPath));
       if (!target || !target.startsWith(`${root}${path.sep}`)) continue;
       try {
         const realTarget = await fs.realpath(target);
-        if (realTarget.startsWith(`${realRoot}${path.sep}`) && (await fs.stat(realTarget)).isFile()) return realTarget;
+        if (realTarget.startsWith(`${realRoot}${path.sep}`) && (await fs.stat(realTarget)).isFile()) found.push({ index, file: realTarget });
       } catch (error) {
         if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
       }
@@ -57,5 +59,9 @@ export async function findThumbnail(version, storageRoot) {
   } catch (error) {
     if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
   }
-  return null;
+  return found;
+}
+
+export async function findThumbnail(version, storageRoot) {
+  return (await findThumbnails(version, storageRoot, 1))[0]?.file ?? null;
 }

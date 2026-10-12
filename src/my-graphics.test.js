@@ -15,21 +15,27 @@ dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = tru
 dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
 const { render, fireEvent, screen, within, cleanup, waitFor, act } = await import('@testing-library/react');
 
-const sourceUrl = new URL('./my-graphics.jsx', import.meta.url);
-const source = await fs.readFile(sourceUrl, 'utf8');
-const compiled = await transformAsync(source, { filename: sourceUrl.pathname, configFile: false, babelrc: false,
-  plugins: [jsx, () => ({ visitor: { ImportDeclaration({ node }) {
-    node.source.value = node.source.value.startsWith('.') ? new URL(node.source.value, sourceUrl).href : import.meta.resolve(node.source.value);
-  } } })] });
-const myGraphicsUrl = `data:text/javascript,${encodeURIComponent(compiled.code)}`;
+async function compileModule(file) {
+  const url = new URL(file, import.meta.url);
+  const result = await transformAsync(await fs.readFile(url, 'utf8'), { filename: url.pathname, configFile: false, babelrc: false,
+    plugins: [jsx, () => ({ visitor: { ImportDeclaration({ node }) {
+      node.source.value = node.source.value.startsWith('.') ? new URL(node.source.value, url).href : import.meta.resolve(node.source.value);
+    } } })] });
+  return { code: result.code, url: `data:text/javascript,${encodeURIComponent(result.code)}` };
+}
+const compiled = await compileModule('./my-graphics.jsx');
+const myGraphicsUrl = compiled.url;
+const graphicDetailUrl = (await compileModule('./graphic-detail.jsx')).url;
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
+const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
 const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   filename: mainUrl.pathname, configFile: false, babelrc: false, plugins: [jsx, () => ({ visitor: {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      importPath.node.source.value = file === './my-graphics.jsx' ? myGraphicsUrl : file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file);
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl };
+      importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
       const expression = statement.node.expression;
@@ -39,7 +45,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     }
   } })]
 });
-const { AddGraphicButton, Toast } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
+const { AddGraphicButton, Pagination, Toast, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
 afterEach(() => { cleanup(); mock.restoreAll(); mock.timers.reset(); });
 after(() => dom.window.close());
 
@@ -278,6 +284,10 @@ test('the menu opens, supports keyboard navigation and closes on Escape', () => 
   const trigger = screen.getByRole('button', { name: 'More options for Left' });
   fireEvent.click(trigger);
   assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  const details = screen.getByRole('menuitem', { name: 'Show details' });
+  assert.equal(document.activeElement, details);
+  assert.equal(details.getAttribute('href'), '#graphic/version');
+  fireEvent.keyDown(details, { key: 'ArrowDown' });
   const manifest = screen.getByRole('menuitem', { name: 'Show manifest' });
   assert.equal(document.activeElement, manifest);
   fireEvent.keyDown(manifest, { key: 'ArrowDown' });
@@ -321,4 +331,117 @@ test('delete and manifest failures stay visible in their dialogs', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'More options for Left' }));
   fireEvent.click(screen.getByRole('menuitem', { name: 'Show manifest' }));
   await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Unable to load manifest')));
+});
+test('hash routes resolve catalog, my graphics and graphic detail views', () => {
+  assert.deepEqual(parseRoute(''), { view: 'catalog' });
+  assert.deepEqual(parseRoute('#my-graphics'), { view: 'my-graphics' });
+  assert.deepEqual(parseRoute('#graphic/abc%2Fdef'), { view: 'graphic', versionId: 'abc/def' });
+  assert.deepEqual(parseRoute('#graphic/%E0%A4%A'), { view: 'catalog' });
+});
+
+test('page numbers collapse long ranges around the current page', () => {
+  assert.deepEqual(pageNumbers(3, 0), [0, 1, 2]);
+  assert.deepEqual(pageNumbers(12, 0), [0, 1, null, 11]);
+  assert.deepEqual(pageNumbers(12, 5), [0, null, 4, 5, 6, null, 11]);
+  assert.deepEqual(pageNumbers(12, 11), [0, null, 10, 11]);
+});
+
+test('pagination shows the visible range and switches pages without navigation', () => {
+  const pages = [];
+  render(React.createElement(Pagination, { page: 0, pageCount: 3, total: 14, onChange: (page) => pages.push(page) }));
+  assert.ok(screen.getByText('1–6 of 14'));
+  assert.equal(screen.getByRole('button', { name: 'Previous page' }).disabled, true);
+  assert.equal(screen.getByRole('button', { name: 'Page 1' }).getAttribute('aria-current'), 'page');
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
+  assert.deepEqual(pages, [1, 2]);
+  cleanup();
+  render(React.createElement(Pagination, { page: 0, pageCount: 1, total: 4, onChange: () => {} }));
+  assert.equal(screen.queryByRole('navigation'), null);
+});
+
+test('catalog descriptions are clamped to three lines', async () => {
+  const styles = await fs.readFile(new URL('./styles.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.card-description\s*\{[^}]*-webkit-line-clamp:\s*3;[^}]*line-clamp:\s*3;/);
+});
+
+test('the carousel cycles through every thumbnail by button, strip and keyboard', () => {
+  const images = [1, 2, 3].map((index) => ({ url: `/thumb/${index}`, width: 1280, height: 720, animated: index === 3 }));
+  render(React.createElement(ThumbnailCarousel, { images, name: 'Scoreboard', fallback: null }));
+  const current = () => screen.getByRole('img').getAttribute('src');
+  assert.equal(current(), '/thumb/1');
+  fireEvent.click(screen.getByRole('button', { name: 'Previous thumbnail' }));
+  assert.equal(current(), '/thumb/3');
+  assert.ok(screen.getByText('1280 × 720 · Animated'));
+  fireEvent.click(screen.getByRole('button', { name: 'Next thumbnail' }));
+  assert.equal(current(), '/thumb/1');
+  fireEvent.click(screen.getByRole('button', { name: 'Show thumbnail 2' }));
+  assert.equal(current(), '/thumb/2');
+  fireEvent.keyDown(screen.getByRole('region'), { key: 'ArrowRight' });
+  assert.equal(current(), '/thumb/3');
+  assert.ok(screen.getByText('3 / 3'));
+});
+
+test('render requirements are summarized in plain language', () => {
+  assert.equal(formatRequirement({ width: { exact: 1920 }, height: { exact: 1080 }, frameRate: { exact: 25 } }), '1920 × 1080 px @ 25 fps');
+  assert.equal(formatRequirement({ width: { min: 600, max: 4000, ideal: 1920 }, height: null, frameRate: null }), '600–4000 (ideal 1920) × any px');
+  assert.equal(formatRequirement({ width: null, height: null, frameRate: null }), 'No constraints');
+});
+
+test('the detail page shows full description, creator, actions and properties', async () => {
+  const detail = { versionId: 'v1', versionLabel: '1.0.0', display_name: 'Scoreboard', description: 'Line one\nLine two',
+    source: 'seed_builtin', manifestId: 'scoreboard', author: { name: 'EBU', email: 'ograf@example.org', url: 'https://ebu.io/' },
+    supportsRealTime: true, supportsNonRealTime: false, stepCount: 5, manifestVersion: '1.0.0',
+    actions: [{ type: 'playAction', duration: 1500 }, { type: 'updateAction', duration: null }, { type: 'stopAction', duration: null }],
+    customActions: [{ id: 'goal', name: 'Goal (Home)', description: 'Adds a goal.', hasParameters: false, duration: null }],
+    renderRequirements: [], properties: [{ key: 'home', title: 'Home team', type: 'string', description: null }],
+    thumbnails: [{ url: '/t/0', width: 1280, height: 720, animated: false }] };
+  const fetchMock = mock.method(globalThis, 'fetch', async () => Response.json({ item: detail }));
+  const added = [];
+  render(React.createElement(GraphicDetail, { versionId: 'v1', summary: { versionId: 'v1', display_name: 'Scoreboard', versionLabel: '1.0.0' },
+    account: { id: 'account' }, Preview: () => null, AddButton: AddGraphicButton, onAdd: async (item) => { added.push(item.versionId); } }));
+  assert.ok(screen.getByRole('heading', { level: 1, name: 'Scoreboard' }));
+  await waitFor(() => assert.ok(screen.getByText('Goal (Home)')));
+  assert.equal(fetchMock.mock.calls[0].arguments[0], '/api/catalog/v1');
+  assert.equal(screen.getByText(/Line one/).textContent, 'Line one\nLine two');
+  assert.equal(screen.getByRole('link', { name: 'ebu.io' }).getAttribute('href'), 'https://ebu.io/');
+  assert.equal(screen.getByRole('link', { name: 'ograf@example.org' }).getAttribute('href'), 'mailto:ograf@example.org');
+  assert.ok(screen.getByText('Animates the graphic in and advances through 5 steps.'));
+  assert.ok(screen.getByText('1.5 s'));
+  assert.ok(screen.getByText('Home team'));
+  assert.ok(screen.getByText('Built-in library'));
+  fireEvent.click(screen.getByRole('button', { name: 'Add to My Graphics' }));
+  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Added to My Graphics' })));
+  assert.deepEqual(added, ['v1']);
+});
+
+test('the detail page reports unknown graphics and requires sign-in to add', async () => {
+  mock.method(globalThis, 'fetch', async () => Response.json({ error: 'Graphic not found' }, { status: 404 }));
+  render(React.createElement(GraphicDetail, { versionId: 'missing', summary: undefined, account: null,
+    Preview: () => null, AddButton: AddGraphicButton, onAdd: async () => {} }));
+  await waitFor(() => assert.ok(screen.getByText('Graphic not found')));
+  assert.ok(screen.getByRole('link', { name: 'Back to catalog' }));
+  cleanup();
+  render(React.createElement(GraphicDetail, { versionId: 'missing', summary: { versionId: 'missing', display_name: 'Old', versionLabel: '1' }, account: null,
+    Preview: () => null, AddButton: AddGraphicButton, onAdd: async () => {} }));
+  assert.equal(screen.getByRole('button', { name: 'Add to My Graphics' }).disabled, true);
+  assert.ok(screen.getByRole('link', { name: 'Sign in to add' }));
+});
+
+test('the details menu item is only offered for available catalog graphics', () => {
+  render(React.createElement(MyGraphicsView, { account: { id: 'account' }, loading: false, error: '', pending: new Set(), Preview: () => null,
+    entries: [{ ...entry, origin: 'upload' }, { ...entry, entryId: '2', label: 'Gone', packageDisabled: true }],
+    onRetry: () => {}, onSave: async () => {}, onAction: () => {}, onDelete: async () => {}, onReorder: async () => {}, onManifest: async () => ({}) }));
+  for (const name of ['More options for Left', 'More options for Gone']) {
+    fireEvent.click(screen.getByRole('button', { name }));
+    assert.equal(screen.queryByRole('menuitem', { name: 'Show details' }), null);
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+  }
+});
+
+test('property dialog actions stay pinned to the bottom while the form scrolls', async () => {
+  const styles = await fs.readFile(new URL('./styles.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.properties-form \.dialog-actions\s*\{[^}]*position:\s*sticky;[^}]*bottom:\s*0;/);
+  render(React.createElement(PropertiesDialog, { entry, onSave: async () => {}, onClose: () => {} }));
+  assert.ok(screen.getByRole('button', { name: 'Save properties' }).closest('.properties-form'));
 });

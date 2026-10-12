@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, beforeEach, mock, test } from 'node:test';
-import { findThumbnail } from './thumbnails.js';
+import { findThumbnail, findThumbnails } from './thumbnails.js';
 
 let rows = [];
 let queries = [];
@@ -15,7 +15,7 @@ mock.module('mysql2/promise', { defaultExport: {
 } });
 const storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ograf-thumbnails-'));
 mock.module('./storage.js', { namedExports: { storageRoot } });
-const { listPublishedCatalog, findPublishedVersion } = await import('./db.js');
+const { catalogDetails, findPublishedCatalogItem, listPublishedCatalog, findPublishedVersion } = await import('./db.js');
 const packageId = '11111111-1111-4111-8111-111111111111';
 const versionId = '22222222-2222-4222-8222-222222222222';
 const root = path.join(storageRoot, 'packages', packageId, versionId, 'extracted');
@@ -87,4 +87,42 @@ test('thumbnail lookup only queries published versions of enabled packages', asy
   assert.match(queries[0].sql, /pv.id = \? AND pv.review_state = 'published' AND p.disabled = FALSE/);
   rows = [];
   assert.equal(await findPublishedVersion(versionId), null);
+});
+test('lists every available thumbnail with its manifest index', async () => {
+  version.manifest.thumbnails.splice(1, 0, { file: '../escape.png' }, { file: 'thumbnails/missing.png' });
+  const found = await findThumbnails(version, storageRoot);
+  assert.deepEqual(found.map(({ index }) => index), [0, 3]);
+  assert.ok(found[1].file.endsWith('animated.webp'));
+});
+
+test('catalog detail exposes all thumbnails and sanitized manifest metadata', async () => {
+  rows = [{ ...version, display_name: 'Theme', versionLabel: '1.0.0', source: 'seed_builtin', manifestId: 'theme',
+    manifest: { ...version.manifest, author: { name: 'Studio', url: 'studio.example' }, stepCount: 2,
+      customActions: [{ id: 'flash', name: 'Flash', schema: { type: 'object' } }, { name: 'no id' }],
+      actionDurations: [{ type: 'playAction', duration: 800 }, { type: 'customAction', customActionId: 'flash', duration: 100 }],
+      schema: { type: 'object', properties: { title: { type: 'string', title: 'Title' }, secret: { type: 'string', hidden: true } } } } }];
+  const item = await findPublishedCatalogItem(versionId);
+  assert.deepEqual(queries[0].parameters, [versionId]);
+  assert.match(queries[0].sql, /pv.review_state = 'published' AND p.disabled = FALSE/);
+  assert.deepEqual(item.thumbnails.map((thumbnail) => thumbnail.url), [`/api/catalog/${versionId}/thumbnails/0`, `/api/catalog/${versionId}/thumbnails/1`]);
+  assert.deepEqual(item.thumbnails[0], { url: `/api/catalog/${versionId}/thumbnails/0`, width: 1920, height: 1080, animated: false });
+  assert.deepEqual(item.author, { name: 'Studio', email: null, url: 'https://studio.example/' });
+  assert.deepEqual(item.actions[0], { type: 'playAction', duration: 800 });
+  assert.deepEqual(item.customActions, [{ id: 'flash', name: 'Flash', description: null, hasParameters: true, duration: 100 }]);
+  assert.deepEqual(item.properties, [{ key: 'title', title: 'Title', type: 'string', description: null }]);
+  for (const key of ['manifest', 'manifestFile', 'mainFile']) assert.equal(key in item, false);
+  rows = [];
+  assert.equal(await findPublishedCatalogItem(versionId), null);
+});
+
+test('manifest metadata rejects unsafe or malformed author links', () => {
+  assert.equal(catalogDetails({ author: { name: 'X', url: 'javascript:alert(1)' } }).author.url, null);
+  assert.equal(catalogDetails({ author: { email: 'not an email' } }).author, null);
+  assert.equal(catalogDetails({ author: 'Plain Name' }).author.name, 'Plain Name');
+  const empty = catalogDetails(null);
+  assert.equal(empty.author, null);
+  assert.deepEqual(empty.customActions, []);
+  assert.deepEqual(empty.renderRequirements, []);
+  assert.deepEqual(catalogDetails({ renderRequirements: [{ resolution: { width: { min: 600, ideal: 1920, bogus: 'x' } }, frameRate: 50 }] }).renderRequirements,
+    [{ width: { ideal: 1920, min: 600 }, height: null, frameRate: { exact: 50 } }]);
 });
