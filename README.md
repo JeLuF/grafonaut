@@ -34,6 +34,6 @@ The React development server runs on `http://localhost:5173`; API requests are p
 
 ## Seed package expectations
 
-A seed archive must contain a JSON manifest (`manifest.json`, `ograf.json`, `package.json`, or another root JSON file) with `id`, `name`, `version`, and `main`. The importer stores the original archive and extracts it under `storage/packages/<package-uuid>/<version-uuid>/`. Seed packages are marked published for the MVP catalog.
+A seed archive can contain multiple animation manifests, either alongside each other or in nested folders. Each JSON manifest with `main` (or `mainFile`) is imported as a separate animation; entry points are resolved relative to the manifest's folder. Other JSON assets without an entry point are ignored. The importer stores the original archive and extracts it under `storage/packages/<package-uuid>/<version-uuid>/` for each animation, preserving shared assets. Repeat scans skip animations already imported, and the reported import count is the number of new animations. Seed packages are marked published for the MVP catalog.
 
 The ingestion pipeline is intentionally not part of this MVP. Upload validation, moderation, API tokens, rendering, and My Graphics actions remain follow-up work packages.

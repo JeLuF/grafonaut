@@ -7,7 +7,7 @@
     "dev": "concurrently \"node --watch server/index.js\" \"vite\"",
     "build": "vite build",
     "start": "node server/index.js",
-    "test": "node --test"
+    "test": "node --experimental-test-module-mocks --test"
   },
   "dependencies": {
     "cookie-session": "^2.1.0",
