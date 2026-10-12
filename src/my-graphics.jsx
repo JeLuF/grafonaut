@@ -1,7 +1,10 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { FileJson, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, FileJson, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { canControlGraphic } from './api.js';
 
 class PropertyFormBoundary extends React.Component {
@@ -145,11 +148,14 @@ function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
   </dialog>;
 }
 
-function GraphicEntry({ entry, busy, Preview, onSave, onProperties, onAction, onDelete, onManifest }) {
+function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, onSave, onProperties, onAction, onDelete, onManifest }) {
   const [label, setLabel] = useState(entry.label ?? entry.display_name);
   const [editingLabel, setEditingLabel] = useState(false);
   const [savingLabel, setSavingLabel] = useState(false);
   const labelInput = useRef(null);
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id: entry.entryId, disabled: orderDisabled || editingLabel || savingLabel
+  });
   const [error, setError] = useState('');
   useEffect(() => setLabel(entry.label ?? entry.display_name), [entry.label, entry.display_name]);
   useEffect(() => {
@@ -180,7 +186,13 @@ function GraphicEntry({ entry, busy, Preview, onSave, onProperties, onAction, on
     finally { setSavingLabel(false); }
   }
   return (
-    <li className={`graphic-entry${entry.enabled ? '' : ' is-disabled'}`}>
+    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={`graphic-entry${entry.enabled ? '' : ' is-disabled'}${isDragging ? ' is-dragging' : ''}`}>
+      <div className="entry-order-controls">
+        <button ref={setActivatorNodeRef} {...attributes} {...listeners} className="icon-button drag-handle" type="button"
+          disabled={orderDisabled || editingLabel || savingLabel} title="Drag to reorder" aria-label={`Drag ${entry.label || entry.display_name} to reorder`}><GripVertical size={18} /></button>
+        <button className="icon-button" type="button" disabled={orderDisabled || first || editingLabel || savingLabel} onClick={() => onMove(-1)} title="Move up" aria-label={`Move ${entry.label || entry.display_name} up`}><ArrowUp size={15} /></button>
+        <button className="icon-button" type="button" disabled={orderDisabled || last || editingLabel || savingLabel} onClick={() => onMove(1)} title="Move down" aria-label={`Move ${entry.label || entry.display_name} down`}><ArrowDown size={15} /></button>
+      </div>
       <div className="entry-preview"><Preview item={entry} /></div>
       <div className="entry-details">
         {editingLabel ? <form className="entry-label" onSubmit={saveLabel} onKeyDown={(event) => {
@@ -212,18 +224,42 @@ function GraphicEntry({ entry, busy, Preview, onSave, onProperties, onAction, on
   );
 }
 
-export default function MyGraphicsView({ account, entries, loading, error, pending, Preview, onRetry, onSave, onAction, onDelete, onManifest }) {
+export default function MyGraphicsView({ account, entries, loading, error, pending, Preview, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
   const [editing, setEditing] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
+  const [ordering, setOrdering] = useState(false);
+  const [orderError, setOrderError] = useState('');
+  const reorderInFlight = useRef(false);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const orderDisabled = ordering || pending.size > 0 || entries.length < 2;
+  async function moveEntry(from, to) {
+    if (orderDisabled || reorderInFlight.current || from === to || from < 0 || to < 0 || to >= entries.length) return;
+    reorderInFlight.current = true;
+    setOrdering(true);
+    setOrderError('');
+    try { await onReorder(arrayMove(entries, from, to).map((entry) => entry.entryId)); }
+    catch (failure) { setOrderError(failure.message); }
+    finally { reorderInFlight.current = false; setOrdering(false); }
+  }
   return (
     <section className="my-graphics-section" aria-labelledby="my-graphics-heading">
       <div className="working-set-heading"><h1 id="my-graphics-heading">My Graphics</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled</span>}</div>
       {!account ? <div className="empty-state"><strong>Sign in to view My Graphics.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <>
         {loading && <p role="status" className="status">Loading My Graphics...</p>}
+        {ordering && <p role="status" className="status">Saving order...</p>}
+        {orderError && <div className="load-error" role="alert"><p>{orderError}</p><button className="text-button" type="button" onClick={() => { setOrderError(''); onRetry(); }}><RefreshCw size={16} />Refresh list</button></div>}
         {error && <div className="load-error" role="alert"><p>{error}</p><button className="text-button" type="button" onClick={onRetry}><RefreshCw size={16} />Retry</button></div>}
         {!loading && !error && entries.length === 0 && <div className="empty-state"><strong>No graphics added yet.</strong><a className="login-link" href="#catalog">Browse catalog</a></div>}
-        {!loading && !error && <ul className="graphics-list">{entries.map((entry) => <GraphicEntry key={entry.entryId} entry={entry} busy={pending.has(entry.entryId)} Preview={Preview} onSave={onSave} onProperties={setEditing} onAction={onAction}
-          onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>}
+        {!loading && !error && <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => {
+          if (over) void moveEntry(entries.findIndex((entry) => entry.entryId === active.id), entries.findIndex((entry) => entry.entryId === over.id));
+        }}>
+          <SortableContext items={entries.map((entry) => entry.entryId)} strategy={verticalListSortingStrategy}>
+            <ul className="graphics-list">{entries.map((entry, index) => <GraphicEntry key={entry.entryId} entry={entry} busy={ordering || pending.has(entry.entryId)}
+              orderDisabled={orderDisabled} first={index === 0} last={index === entries.length - 1} onMove={(direction) => moveEntry(index, index + direction)} Preview={Preview} onSave={onSave} onProperties={setEditing} onAction={onAction}
+              onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>
+          </SortableContext>
+        </DndContext>}
       </>}
       {editing && <PropertiesDialog key={editing.entryId} entry={editing} onSave={onSave} onClose={() => setEditing(null)} />}
       {entryDialog && <EntryDialog key={`${entryDialog.entry.entryId}-${entryDialog.mode}`} {...entryDialog} onDelete={onDelete} onManifest={onManifest} onClose={() => setEntryDialog(null)} />}

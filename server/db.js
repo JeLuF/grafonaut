@@ -89,7 +89,7 @@ const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabl
 
 export async function listMyGraphics(accountId) {
   const [rows] = await pool.query(`${myGraphicsSelect}
-    WHERE g.account_id = ? ORDER BY g.created_at DESC, g.id DESC`, [accountId]);
+    WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
   return Promise.all(rows.map(async (row) => {
     const { manifest, manifestFile, mainFile, ...item } = row;
     const thumbnail = !row.packageDisabled && await findThumbnail(row, storageRoot);
@@ -107,6 +107,30 @@ export async function findMyGraphic(accountId, entryId) {
 export async function deleteMyGraphic(accountId, entryId) {
   const [result] = await pool.query('DELETE FROM my_graphics_entries WHERE account_id = ? AND id = ?', [accountId, entryId]);
   return result.affectedRows === 1;
+}
+
+export async function reorderMyGraphics(accountId, entryIds) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
+    const [entries] = await connection.query('SELECT CAST(id AS CHAR) AS entryId FROM my_graphics_entries WHERE account_id = ? FOR UPDATE', [accountId]);
+    const ownedIds = new Set(entries.map((entry) => entry.entryId));
+    if (entryIds.length !== ownedIds.size || new Set(entryIds).size !== entryIds.length || entryIds.some((entryId) => !ownedIds.has(entryId))) {
+      const error = new Error('My Graphics changed. Refresh the list and try again.');
+      error.code = 'STALE_GRAPHICS_ORDER';
+      throw error;
+    }
+    if (entryIds.length) {
+      const positions = entryIds.map(() => 'WHEN ? THEN ?').join(' ');
+      const values = entryIds.flatMap((entryId, index) => [entryId, index]);
+      await connection.query(`UPDATE my_graphics_entries SET sort_position = CASE id ${positions} ELSE sort_position END WHERE account_id = ?`, [...values, accountId]);
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally { connection.release(); }
 }
 
 export async function updateMyGraphic(accountId, entryId, changes) {

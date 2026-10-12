@@ -7,11 +7,19 @@ let queries;
 let rows;
 let nextId;
 let affectedRows;
+let transactionEvents;
 mock.module('mysql2/promise', { defaultExport: {
-  createPool: () => ({ query: async (sql, parameters) => {
-    queries.push({ sql, parameters });
-    return sql.startsWith('SELECT') ? [rows] : [{ insertId: nextId++, affectedRows }];
-  } })
+  createPool: () => {
+    const query = async (sql, parameters) => {
+      queries.push({ sql, parameters });
+      return sql.startsWith('SELECT') ? [rows] : [{ insertId: nextId++, affectedRows }];
+    };
+    return { query, getConnection: async () => ({ query,
+      beginTransaction: async () => transactionEvents.push('begin'),
+      commit: async () => transactionEvents.push('commit'),
+      rollback: async () => transactionEvents.push('rollback'),
+      release: () => transactionEvents.push('release') }) };
+  }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
 const { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
@@ -34,7 +42,7 @@ function requestApi(method, route = '', body, accountId = 'account') {
     body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
-beforeEach(() => { queries = []; rows = []; nextId = 1; affectedRows = 1; });
+beforeEach(() => { queries = []; rows = []; nextId = 1; affectedRows = 1; transactionEvents = []; });
 
 test('adding the same immutable version creates independent entries', async () => {
   assert.equal(await addMyGraphic('account', 'version'), '1');
@@ -58,6 +66,7 @@ test('lists account-owned entries pinned to their selected version', async () =>
   assert.deepEqual(items[0].schema, { type: 'object' });
   assert.equal('manifest' in items[0], false);
   assert.match(queries[0].sql, /pv.id = g.package_version_id/);
+  assert.match(queries[0].sql, /ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC/);
   assert.deepEqual(queries[0].parameters, ['account']);
 });
 test('entry lookup is scoped to the current account', async () => {
@@ -73,7 +82,7 @@ test('updates only one owned entry without changing its package version', async 
 });
 
 test('entry APIs require authentication', async () => {
-  for (const [method, route, body] of [['GET', '', undefined], ['POST', '', {}], ['PATCH', '/1', { enabled: true }], ['GET', '/1/thumbnail', undefined], ['GET', '/1/manifest', undefined], ['DELETE', '/1', undefined]]) {
+  for (const [method, route, body] of [['GET', '', undefined], ['POST', '', {}], ['PUT', '/order', { entryIds: [] }], ['PATCH', '/1', { enabled: true }], ['GET', '/1/thumbnail', undefined], ['GET', '/1/manifest', undefined], ['DELETE', '/1', undefined]]) {
     assert.equal((await requestApi(method, route, body, null)).status, 401);
   }
   assert.equal(queries.length, 0);
@@ -137,4 +146,28 @@ test('manifest lookup returns the selected version only to its entry owner', asy
   rows = [];
   assert.equal((await requestApi('GET', '/7/manifest', undefined, 'other-account')).status, 404);
   assert.deepEqual(queries.at(-1).parameters, ['other-account', '7']);
+});
+
+test('reordering saves all owned positions atomically', async () => {
+  rows = [{ entryId: '1' }, { entryId: '2' }, { entryId: '3' }];
+  assert.equal((await requestApi('PUT', '/order', { entryIds: ['3', '1', '2'] })).status, 200);
+  assert.deepEqual(queries.at(-1).parameters, ['3', 0, '1', 1, '2', 2, 'account']);
+  assert.match(queries.at(-1).sql, /WHERE account_id = \?/);
+  assert.deepEqual(transactionEvents, ['begin', 'commit', 'release']);
+});
+
+test('reordering rejects stale and foreign entries without changing positions', async () => {
+  rows = [{ entryId: '1' }, { entryId: '2' }];
+  for (const entryIds of [['1'], ['1', '99'], ['1', '2', '3']]) {
+    assert.equal((await requestApi('PUT', '/order', { entryIds })).status, 409);
+  }
+  assert.equal(queries.some(({ sql }) => sql.startsWith('UPDATE')), false);
+  assert.deepEqual(transactionEvents, ['begin', 'rollback', 'release', 'begin', 'rollback', 'release', 'begin', 'rollback', 'release']);
+});
+
+test('reordering validates entry IDs and rejects duplicates', async () => {
+  for (const entryIds of [null, '1', ['1', '1'], [1], ['invalid'], ['0']]) {
+    assert.equal((await requestApi('PUT', '/order', { entryIds })).status, 400);
+  }
+  assert.equal(queries.length, 0);
 });

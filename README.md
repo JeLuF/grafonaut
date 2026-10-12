@@ -64,12 +64,15 @@ Open **My Graphics** after signing in. Each catalog addition creates a new entry
 
 A successful catalog addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show manifest** for its pinned version and **Delete**, with confirmation. Deletion removes only that working-set entry; the package and other copies remain unchanged.
 
+Reorder entries with the drag handle or the up/down arrows. The handle also supports keyboard sorting: focus it, press Space to pick up, use the arrow keys to move, and press Space to drop or Escape to cancel. Ordering is saved per account and survives reloads; failed saves leave the displayed order unchanged. Existing lists keep their creation-time order until first reordered, and new additions follow custom-ordered entries. Startup automatically adds the ordering column to existing databases.
+
 The property dialog is generated from the selected version's JSON `schema`. Fields marked `hidden` remain editable. Saving validates the complete state in both the form and the backend; cancelling changes nothing. Property edits only save configuration, and do not automatically send actions to a live renderer.
 
 Authenticated working-set endpoints:
 
 - `GET /api/my-graphics`: list the current account's entries.
 - `POST /api/my-graphics`: add a published or account-owned enabled version with `{ "versionId": "<uuid>" }`; returns the new `entryId` and permits duplicate additions.
+- `PUT /api/my-graphics/order`: atomically save the complete ordered list with `{ "entryIds": ["<entry-id>", "<entry-id>"] }`. Duplicate or invalid IDs are rejected; missing, foreign, or stale entries return a conflict and require refreshing the list.
 - `PATCH /api/my-graphics/:entryId`: save `label` (nullable, at most 100 characters), `enabled` (boolean), and/or `schemaData` (validated against the pinned version's schema). The package version cannot be changed here.
 - `DELETE /api/my-graphics/:entryId`: delete one entry owned by the current account.
 - `GET /api/my-graphics/:entryId/manifest`: return the pinned version's original manifest, only to the entry owner.

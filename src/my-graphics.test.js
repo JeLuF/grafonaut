@@ -55,6 +55,7 @@ function showView(overrides = {}) {
     loading: false, error: '', pending: new Set(), Preview: () => null, onRetry: () => {},
     onSave: async (...args) => { calls.push(args); }, onAction: (...args) => { calls.push(args); },
     onDelete: async (item) => { calls.push(['delete', item.entryId]); },
+    onReorder: async (entryIds) => { calls.push(['order', entryIds]); },
     onManifest: async (item) => { calls.push(['manifest', item.entryId]); return { id: 'lower-third', version: '1.0.0', name: item.label, main: 'main.mjs' }; }, ...overrides }));
   return calls;
 }
@@ -122,6 +123,79 @@ test('a failed label save keeps the editor open with its error', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Save label' }));
   await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Label save unavailable')));
   assert.ok(screen.getByRole('textbox', { name: 'Label' }));
+});
+
+test('up and down handles move one entry and disable moves past list boundaries', async () => {
+  const calls = showView();
+  assert.equal(screen.getByRole('button', { name: 'Move Left up' }).disabled, true);
+  assert.equal(screen.getByRole('button', { name: 'Move Right down' }).disabled, true);
+  fireEvent.click(screen.getByRole('button', { name: 'Move Left down' }));
+  await waitFor(() => assert.deepEqual(calls[0], ['order', ['2', '1']]));
+  await waitFor(() => assert.equal(screen.getByRole('button', { name: 'Move Right up' }).disabled, false));
+  fireEvent.click(screen.getByRole('button', { name: 'Move Right up' }));
+  await waitFor(() => assert.deepEqual(calls[1], ['order', ['2', '1']]));
+});
+
+test('order save failures preserve the displayed order and offer a refresh', async () => {
+  showView({ onReorder: async () => { throw new Error('Unable to save graphic order'); } });
+  fireEvent.click(screen.getByRole('button', { name: 'Move Right up' }));
+  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Unable to save graphic order')));
+  assert.deepEqual(screen.getAllByRole('listitem').map((row) => within(row).getByRole('heading').textContent), ['Left', 'Right']);
+  assert.ok(screen.getByRole('button', { name: 'Refresh list' }));
+});
+
+test('drag and move handles are unavailable during another entry operation', () => {
+  showView({ pending: new Set(['1']) });
+  for (const name of ['Drag Left to reorder', 'Drag Right to reorder', 'Move Left down', 'Move Right up']) {
+    assert.equal(screen.getByRole('button', { name }).disabled, true);
+  }
+});
+
+test('keyboard dragging reorders through the same save callback', async () => {
+  mock.method(dom.window.HTMLElement.prototype, 'getBoundingClientRect', function () {
+    const index = Array.from(document.querySelectorAll('.graphic-entry')).indexOf(this);
+    const top = index < 0 ? 0 : index * 160;
+    const height = index < 0 ? 640 : 160;
+    return { x: 0, y: top, top, left: 0, bottom: top + height, right: 800, width: 800, height };
+  });
+  const calls = showView();
+  const handle = screen.getByRole('button', { name: 'Drag Left to reorder' });
+  handle.focus();
+  fireEvent.keyDown(handle, { key: ' ', code: 'Space' });
+  await waitFor(() => assert.ok(document.querySelector('.graphic-entry.is-dragging')));
+  await act(async () => {});
+  fireEvent.keyDown(document, { key: 'ArrowDown', code: 'ArrowDown' });
+  await act(async () => {});
+  fireEvent.keyDown(document, { key: ' ', code: 'Space' });
+  await waitFor(() => assert.deepEqual(calls, [['order', ['2', '1']]]));
+});
+
+test('catalog preview canvases use a 16:9 aspect ratio', async () => {
+  const styles = await fs.readFile(new URL('./styles.css', import.meta.url), 'utf8');
+  assert.match(styles, /\.card-art\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9\s*;/);
+});
+
+test('pointer dragging a handle saves the changed order', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  mock.method(dom.window.HTMLElement.prototype, 'getBoundingClientRect', function () {
+    const index = Array.from(document.querySelectorAll('.graphic-entry')).indexOf(this);
+    const top = index < 0 ? 0 : index * 160;
+    const height = index < 0 ? 640 : 160;
+    return { x: 0, y: top, top, left: 0, bottom: top + height, right: 800, width: 800, height };
+  });
+  const calls = showView();
+  const handle = screen.getByRole('button', { name: 'Drag Left to reorder' });
+  const down = new dom.window.MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 15, clientY: 60 });
+  Object.defineProperty(down, 'isPrimary', { value: true });
+  await act(async () => {
+    fireEvent(handle, down);
+    fireEvent(document, new dom.window.MouseEvent('pointermove', { bubbles: true, clientX: 15, clientY: 70 }));
+  });
+  assert.ok(document.querySelector('.graphic-entry.is-dragging'));
+  await act(async () => fireEvent(document, new dom.window.MouseEvent('pointermove', { bubbles: true, clientX: 15, clientY: 220 })));
+  await act(async () => fireEvent(document, new dom.window.MouseEvent('pointerup', { bubbles: true, clientX: 15, clientY: 220 })));
+  assert.deepEqual(calls, [['order', ['2', '1']]]);
+  act(() => mock.timers.tick(100));
 });
 test('the property dialog includes hidden fields and saves one independent state', async () => {
   const calls = showView();

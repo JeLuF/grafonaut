@@ -1,7 +1,7 @@
 import express from 'express';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } from './db.js';
+import { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, reorderMyGraphics, updateMyGraphic } from './db.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail } from './thumbnails.js';
 
@@ -35,6 +35,20 @@ router.post('/', async (request, response) => {
   } catch (error) {
     response.status(error.message === 'Available graphic version not found' ? 404 : 503)
       .json({ error: error.message === 'Available graphic version not found' ? error.message : 'Unable to add graphic' });
+  }
+});
+router.put('/order', async (request, response) => {
+  const entryIds = request.body?.entryIds;
+  if (!Array.isArray(entryIds) || entryIds.some((entryId) => typeof entryId !== 'string' ||
+    !/^[1-9]\d{0,19}$/.test(entryId) || BigInt(entryId) > 18446744073709551615n) || new Set(entryIds).size !== entryIds.length) {
+    return response.status(400).json({ error: 'Provide a unique ordered array of entry IDs' });
+  }
+  try {
+    await reorderMyGraphics(request.session.accountId, entryIds);
+    response.json({ ok: true });
+  } catch (error) {
+    response.status(error.code === 'STALE_GRAPHICS_ORDER' ? 409 : 503)
+      .json({ error: error.code === 'STALE_GRAPHICS_ORDER' ? error.message : 'Unable to save graphic order' });
   }
 });
 router.patch('/:entryId', async (request, response) => {

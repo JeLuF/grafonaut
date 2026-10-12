@@ -140,6 +140,17 @@ function App() {
     return response.manifest;
   }
 
+  async function reorderEntries(entryIds) {
+    await requestJson('/api/my-graphics/order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entryIds }) });
+    graphicsRequest.current += 1;
+    setMyLoading(false);
+    setEntries((current) => {
+      const byId = new Map(current.map((entry) => [entry.entryId, entry]));
+      const orderedIds = new Set(entryIds);
+      return [...entryIds.map((entryId) => byId.get(entryId)).filter(Boolean), ...current.filter((entry) => !orderedIds.has(entry.entryId))];
+    });
+  }
+
   async function saveEntry(entryId, changes) {
     setPending((current) => new Set(current).add(entryId));
     try {
@@ -170,7 +181,7 @@ function App() {
         <a href="#my-graphics" aria-current={view === 'my-graphics' ? 'page' : undefined}><List size={17} />My Graphics{account && <span className="entry-count">{entries.length}</span>}</a>
       </nav>
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} /> : <>
+      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} /> : <>
       <section className="hero">
         <p className="eyebrow">PUBLIC CATALOG / MVP</p>
         <h1>Broadcast graphics,<br /><em>ready to play.</em></h1>

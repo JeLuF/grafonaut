@@ -10,6 +10,9 @@
     "test": "node --experimental-test-module-mocks --test"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@rjsf/core": "^6.0.0",
     "@rjsf/utils": "^6.0.0",
     "@rjsf/validator-ajv8": "^6.0.0",
