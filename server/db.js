@@ -68,9 +68,50 @@ export async function findPublishedVersion(versionId) {
 
 export async function addMyGraphic(accountId, versionId) {
   const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, package_version_id, schema_data)
-    SELECT ?, id, JSON_OBJECT() FROM package_versions
-    WHERE id = ? AND review_state = 'published'`, [accountId, versionId]);
-  if (result.affectedRows !== 1) throw new Error('Published catalog version not found');
+    SELECT ?, pv.id, JSON_OBJECT() FROM package_versions pv
+    JOIN packages p ON p.id = pv.package_id
+    WHERE pv.id = ? AND p.disabled = FALSE
+      AND (pv.review_state = 'published' OR p.owner_account_id = ?)`, [accountId, versionId, accountId]);
+  if (result.affectedRows !== 1) throw new Error('Available graphic version not found');
+  return String(result.insertId);
+}
+
+const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
+    g.schema_data AS schemaData, pv.id AS versionId, pv.version_label AS versionLabel,
+    pv.manifest_name AS display_name, pv.manifest_description AS description,
+    pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile,
+    pv.main_file_relpath AS mainFile, pv.source, p.id AS packageId,
+    p.disabled AS packageDisabled,
+    CASE WHEN p.owner_account_id = g.account_id THEN 'upload' ELSE 'catalog' END AS origin
+  FROM my_graphics_entries g
+  JOIN package_versions pv ON pv.id = g.package_version_id
+  JOIN packages p ON p.id = pv.package_id`;
+
+export async function listMyGraphics(accountId) {
+  const [rows] = await pool.query(`${myGraphicsSelect}
+    WHERE g.account_id = ? ORDER BY g.created_at DESC, g.id DESC`, [accountId]);
+  return Promise.all(rows.map(async (row) => {
+    const { manifest, manifestFile, mainFile, ...item } = row;
+    const thumbnail = !row.packageDisabled && await findThumbnail(row, storageRoot);
+    return { ...item, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled),
+      schema: manifest?.schema ?? { type: 'object', properties: {} },
+      thumbnailUrl: thumbnail ? `/api/my-graphics/${encodeURIComponent(row.entryId)}/thumbnail` : null };
+  }));
+}
+
+export async function findMyGraphic(accountId, entryId) {
+  const [rows] = await pool.query(`${myGraphicsSelect} WHERE g.account_id = ? AND g.id = ?`, [accountId, entryId]);
+  return rows[0] ?? null;
+}
+
+export async function updateMyGraphic(accountId, entryId, changes) {
+  const fields = [];
+  const values = [];
+  if (Object.hasOwn(changes, 'label')) { fields.push('label = ?'); values.push(changes.label); }
+  if (Object.hasOwn(changes, 'enabled')) { fields.push('enabled = ?'); values.push(changes.enabled); }
+  if (Object.hasOwn(changes, 'schemaData')) { fields.push('schema_data = ?'); values.push(JSON.stringify(changes.schemaData)); }
+  if (!fields.length) return;
+  await pool.query(`UPDATE my_graphics_entries SET ${fields.join(', ')} WHERE account_id = ? AND id = ?`, [...values, accountId, entryId]);
 }
 
 export async function findVersionByChecksum(checksum) {

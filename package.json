@@ -10,16 +10,26 @@
     "test": "node --experimental-test-module-mocks --test"
   },
   "dependencies": {
+    "@rjsf/core": "^6.0.0",
+    "@rjsf/utils": "^6.0.0",
+    "@rjsf/validator-ajv8": "^6.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "cookie-session": "^2.1.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "lucide-react": "^0.468.0",
     "mysql2": "^3.14.3",
     "unzipper": "^0.12.3",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/plugin-transform-react-jsx": "^7.25.9",
+    "@testing-library/react": "^16.3.0",
     "@vitejs/plugin-react": "^4.4.1",
     "concurrently": "^9.1.2",
+    "jsdom": "^26.0.0",
     "vite": "^6.3.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

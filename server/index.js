@@ -2,10 +2,11 @@ import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
 import cookieSession from 'cookie-session';
-import { addMyGraphic, findAccountById, findPublishedVersion, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
+import { findAccountById, findPublishedVersion, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail } from './thumbnails.js';
+import myGraphicsRouter from './my-graphics.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -32,14 +33,7 @@ app.get('/api/catalog/:versionId/thumbnail', async (request, response) => {
     });
   } catch { response.sendStatus(503); }
 });
-app.post('/api/my-graphics', async (request, response) => {
-  if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });
-  if (!request.body?.versionId) return response.status(400).json({ error: 'versionId is required' });
-  try {
-    await addMyGraphic(request.session.accountId, request.body.versionId);
-    response.status(201).json({ ok: true });
-  } catch (error) { response.status(400).json({ error: error.message }); }
-});
+app.use('/api/my-graphics', myGraphicsRouter);
 app.get('/api/auth/me', async (request, response) => {
   const account = request.session?.accountId ? await findAccountById(request.session.accountId) : null;
   response.json({ account });

@@ -1,0 +1,117 @@
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import express from 'express';
+import { after, beforeEach, mock, test } from 'node:test';
+
+let queries;
+let rows;
+let nextId;
+let affectedRows;
+mock.module('mysql2/promise', { defaultExport: {
+  createPool: () => ({ query: async (sql, parameters) => {
+    queries.push({ sql, parameters });
+    return sql.startsWith('SELECT') ? [rows] : [{ insertId: nextId++, affectedRows }];
+  } })
+} });
+mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
+const { addMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { default: router } = await import('./my-graphics.js');
+const app = express();
+app.use(express.json());
+app.use((request, _response, next) => {
+  request.session = { accountId: request.headers['x-test-account'] };
+  next();
+});
+app.use('/api/my-graphics', router);
+const server = app.listen(0, '127.0.0.1');
+await once(server, 'listening');
+const baseUrl = `http://127.0.0.1:${server.address().port}/api/my-graphics`;
+after(() => new Promise((resolve) => server.close(resolve)));
+
+function requestApi(method, route = '', body, accountId = 'account') {
+  return fetch(`${baseUrl}${route}`, { method,
+    headers: { 'Content-Type': 'application/json', ...(accountId ? { 'x-test-account': accountId } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body) });
+}
+
+beforeEach(() => { queries = []; rows = []; nextId = 1; affectedRows = 1; });
+
+test('adding the same immutable version creates independent entries', async () => {
+  assert.equal(await addMyGraphic('account', 'version'), '1');
+  assert.equal(await addMyGraphic('account', 'version'), '2');
+  assert.deepEqual(queries[0].parameters, ['account', 'version', 'account']);
+  assert.match(queries[0].sql, /p.disabled = FALSE/);
+  assert.match(queries[0].sql, /pv.review_state = 'published' OR p.owner_account_id = \?/);
+});
+test('adding an unavailable or inaccessible version fails', async () => {
+  affectedRows = 0;
+  await assert.rejects(addMyGraphic('account', 'private-version'), /Available graphic version not found/);
+});
+test('lists account-owned entries pinned to their selected version', async () => {
+  rows = [{ entryId: '1', versionId: 'old-version', enabled: 0, packageDisabled: 0,
+    schemaData: { name: 'Left' }, manifest: { schema: { type: 'object' } } }];
+  const items = await listMyGraphics('account');
+  assert.equal(items[0].enabled, false);
+  assert.equal(items[0].versionId, 'old-version');
+  assert.equal(items[0].thumbnailUrl, null);
+  assert.deepEqual(items[0].schemaData, { name: 'Left' });
+  assert.deepEqual(items[0].schema, { type: 'object' });
+  assert.equal('manifest' in items[0], false);
+  assert.match(queries[0].sql, /pv.id = g.package_version_id/);
+  assert.deepEqual(queries[0].parameters, ['account']);
+});
+test('entry lookup is scoped to the current account', async () => {
+  assert.equal(await findMyGraphic('account', '7'), null);
+  assert.deepEqual(queries[0].parameters, ['account', '7']);
+  assert.match(queries[0].sql, /g.account_id = \? AND g.id = \?/);
+});
+test('updates only one owned entry without changing its package version', async () => {
+  await updateMyGraphic('account', '7', { label: 'Right', enabled: false, schemaData: { name: 'Host' }, versionId: 'new-version' });
+  assert.deepEqual(queries[0].parameters, ['Right', false, '{"name":"Host"}', 'account', '7']);
+  assert.match(queries[0].sql, /WHERE account_id = \? AND id = \?/);
+  assert.doesNotMatch(queries[0].sql, /package_version_id/);
+});
+
+test('entry APIs require authentication', async () => {
+  for (const [method, route, body] of [['GET', '', undefined], ['POST', '', {}], ['PATCH', '/1', { enabled: true }], ['GET', '/1/thumbnail', undefined]]) {
+    assert.equal((await requestApi(method, route, body, null)).status, 401);
+  }
+  assert.equal(queries.length, 0);
+});
+test('HTTP updates cannot mutate an entry missing from the current account', async () => {
+  assert.equal((await requestApi('PATCH', '/7', { label: 'Other account' })).status, 404);
+  assert.equal(queries.length, 1);
+  assert.deepEqual(queries[0].parameters, ['account', '7']);
+});
+test('HTTP updates validate fields and keep the version immutable', async () => {
+  for (const body of [{ enabled: 'false' }, { label: 'x'.repeat(101) }, { versionId: 'other' }, {}, []]) {
+    assert.equal((await requestApi('PATCH', '/7', body)).status, 400);
+  }
+  assert.equal((await requestApi('PATCH', '/invalid', { enabled: true })).status, 400);
+  assert.equal(queries.length, 0);
+});
+test('properties are validated against the selected version schema including hidden fields', async () => {
+  rows = [{ manifest: { schema: { type: 'object', required: ['name'], properties: {
+    name: { type: 'string', minLength: 1 }, hiddenValue: { type: 'integer', hidden: true }
+  } } } }];
+  assert.equal((await requestApi('PATCH', '/7', { schemaData: { name: '' } })).status, 422);
+  assert.equal((await requestApi('PATCH', '/7', { schemaData: { name: 'Host', hiddenValue: 'not a number' } })).status, 422);
+  assert.equal((await requestApi('PATCH', '/7', { schemaData: { name: 'Host', hiddenValue: 2 } })).status, 200);
+  assert.deepEqual(queries.at(-1).parameters, ['{"name":"Host","hiddenValue":2}', 'account', '7']);
+});
+test('repeatable HTTP additions return the new entry ID', async () => {
+  const versionId = '11111111-1111-4111-8111-111111111111';
+  const first = await requestApi('POST', '', { versionId });
+  const second = await requestApi('POST', '', { versionId });
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 201);
+  assert.equal((await first.json()).entryId, '1');
+  assert.equal((await second.json()).entryId, '2');
+});
+
+test('a disabled package cannot be enabled but its entry can be turned off', async () => {
+  rows = [{ packageDisabled: true }];
+  assert.equal((await requestApi('PATCH', '/7', { enabled: true })).status, 409);
+  assert.equal((await requestApi('PATCH', '/7', { enabled: false })).status, 200);
+  assert.deepEqual(queries.at(-1).parameters, [false, 'account', '7']);
+});
