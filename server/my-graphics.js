@@ -1,7 +1,7 @@
 import express from 'express';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { addMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } from './db.js';
+import { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } from './db.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail } from './thumbnails.js';
 
@@ -65,6 +65,21 @@ router.patch('/:entryId', async (request, response) => {
     await updateMyGraphic(request.session.accountId, request.params.entryId, changes);
     response.json({ ok: true });
   } catch { response.status(503).json({ error: 'Unable to save graphic entry' }); }
+});
+router.delete('/:entryId', async (request, response) => {
+  try {
+    if (!await deleteMyGraphic(request.session.accountId, request.params.entryId)) {
+      return response.status(404).json({ error: 'Graphic entry not found' });
+    }
+    response.json({ ok: true });
+  } catch { response.status(503).json({ error: 'Unable to delete graphic entry' }); }
+});
+router.get('/:entryId/manifest', async (request, response) => {
+  try {
+    const entry = await findMyGraphic(request.session.accountId, request.params.entryId);
+    if (!entry) return response.status(404).json({ error: 'Graphic entry not found' });
+    response.set('Cache-Control', 'private, no-store').json({ manifest: entry.manifest });
+  } catch { response.status(503).json({ error: 'Unable to load graphic manifest' }); }
 });
 router.get('/:entryId/thumbnail', async (request, response) => {
   try {

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { LayoutGrid, List, Plus } from 'lucide-react';
+import { CircleCheck, CircleAlert, LayoutGrid, List, Plus, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import { requestJson, triggerGraphicAction } from './api.js';
 import './styles.css';
@@ -18,6 +18,40 @@ function GraphicPreview({ item }) {
   );
 }
 
+export function AddGraphicButton({ item, disabled, onAdd }) {
+  const [state, setState] = useState('idle');
+  const timer = useRef(null);
+  const adding = useRef(false);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  async function add() {
+    if (adding.current) return;
+    adding.current = true;
+    clearTimeout(timer.current);
+    setState('adding');
+    try {
+      await onAdd(item);
+      setState('added');
+      timer.current = setTimeout(() => setState('idle'), 2000);
+    } catch { setState('idle'); }
+    finally { adding.current = false; }
+  }
+  return <button className={`add-graphic-button${state === 'added' ? ' is-added' : ''}`} type="button" onClick={add}
+    disabled={disabled || state === 'adding'} aria-busy={state === 'adding'} aria-label={`Add ${item.display_name} to My Graphics`}
+    title={disabled ? 'Sign in to add graphics' : state === 'added' ? 'Added to My Graphics' : 'Add to My Graphics'}><Plus size={20} /></button>;
+}
+
+export function Toast({ toast, onDismiss }) {
+  useEffect(() => {
+    const timer = setTimeout(() => onDismiss(null), 5000);
+    return () => clearTimeout(timer);
+  }, [toast.id, onDismiss]);
+  return <div className={`toast toast-${toast.kind}`} role={toast.kind === 'error' ? 'alert' : 'status'}>
+    {toast.kind === 'error' ? <CircleAlert size={20} /> : <CircleCheck size={20} />}
+    <span>{toast.message}</span>
+    <button className="icon-button" type="button" onClick={() => onDismiss(null)} title="Dismiss notification" aria-label="Dismiss notification"><X size={16} /></button>
+  </div>;
+}
+
 function App() {
   const [catalog, setCatalog] = useState([]);
   const [query, setQuery] = useState('');
@@ -31,6 +65,12 @@ function App() {
   const [pending, setPending] = useState(new Set());
   const [authLoading, setAuthLoading] = useState(true);
   const graphicsRequest = useRef(0);
+  const [toast, setToast] = useState(null);
+  const toastId = useRef(0);
+
+  function notify(message, kind = 'success') {
+    setToast({ id: ++toastId.current, message, kind });
+  }
 
   useEffect(() => {
     let active = true;
@@ -75,12 +115,29 @@ function App() {
     return haystack.includes(query.toLowerCase());
   });
 
-  async function addToMyGraphics(versionId) {
+  async function addToMyGraphics(item) {
     try {
-      await requestJson('/api/my-graphics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionId }) });
-      setNotice('Added to My Graphics');
-      await refreshMyGraphics();
-    } catch (error) { setNotice(error.message); }
+      await requestJson('/api/my-graphics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionId: item.versionId }) });
+      notify(`${item.display_name} added to My Graphics`);
+      void refreshMyGraphics();
+    } catch (error) { notify(error.message, 'error'); throw error; }
+  }
+
+  async function deleteEntry(entry) {
+    setPending((current) => new Set(current).add(entry.entryId));
+    try {
+      await requestJson(`/api/my-graphics/${encodeURIComponent(entry.entryId)}`, { method: 'DELETE' });
+      graphicsRequest.current += 1;
+      setMyLoading(false);
+      setEntries((current) => current.filter((item) => item.entryId !== entry.entryId));
+      notify(`${entry.label || entry.display_name} deleted from My Graphics`);
+    } catch (error) { notify(error.message, 'error'); throw error; }
+    finally { setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; }); }
+  }
+
+  async function loadManifest(entry) {
+    const response = await requestJson(`/api/my-graphics/${encodeURIComponent(entry.entryId)}/manifest`);
+    return response.manifest;
   }
 
   async function saveEntry(entryId, changes) {
@@ -113,7 +170,7 @@ function App() {
         <a href="#my-graphics" aria-current={view === 'my-graphics' ? 'page' : undefined}><List size={17} />My Graphics{account && <span className="entry-count">{entries.length}</span>}</a>
       </nav>
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} /> : <>
+      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} /> : <>
       <section className="hero">
         <p className="eyebrow">PUBLIC CATALOG / MVP</p>
         <h1>Broadcast graphics,<br /><em>ready to play.</em></h1>
@@ -129,12 +186,13 @@ function App() {
         <div className="catalog-grid">
           {filteredCatalog.map((item) => <article className="graphic-card" key={item.versionId}>
             <GraphicPreview item={item} />
-            <div className="card-body"><div><h3>{item.display_name}</h3><p>{item.description || 'A published OGraf package.'}</p></div><button type="button" onClick={() => addToMyGraphics(item.versionId)} disabled={!account} aria-label={`Add ${item.display_name} to My Graphics`} title={account ? 'Add to My Graphics' : 'Sign in to add graphics'}><Plus size={20} /></button></div>
+            <div className="card-body"><div><h3>{item.display_name}</h3><p>{item.description || 'A published OGraf package.'}</p></div><AddGraphicButton item={item} disabled={!account} onAdd={addToMyGraphics} /></div>
           </article>)}
         </div>
       </section>
       </>}
       <footer><span>OGRAF PLATFORM</span><span>Catalog preview · {new Date().getFullYear()}</span></footer>
+      {toast && <Toast key={toast.id} toast={toast} onDismiss={setToast} />}
     </main>
   );
 }

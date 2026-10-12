@@ -33,6 +33,8 @@ h3 { margin: 0 0 7px; font-size: 22px; font-weight: 400; }
 .card-body p { margin: 0; color: #6b756e; font: 13px/1.4 Arial, sans-serif; }
 .card-body button { flex: 0 0 38px; align-self: center; height: 38px; border: 1px solid #abb5aa; border-radius: 50%; background: transparent; color: #17332f; font-size: 24px; cursor: pointer; }
 .card-body button:disabled { opacity: .35; cursor: not-allowed; }
+.card-body .add-graphic-button { display: inline-grid; place-items: center; transition: background-color .16s, color .16s, box-shadow .16s; }
+.card-body .add-graphic-button.is-added { background: #198548; border-color: #198548; color: #fff; box-shadow: 0 0 0 4px #19854826; }
 .status, .notice, .empty-state { color: #6b756e; font: 14px Arial, sans-serif; }
 .notice { color: #25645c; margin: 0 0 20px; }
 .empty-state { display: flex; flex-direction: column; gap: 8px; padding: 50px 0; }
@@ -59,6 +61,11 @@ footer { display: flex; justify-content: space-between; border-top: 1px solid #c
 .enabled-control { display: flex; align-items: center; gap: 8px; font: 13px Arial, sans-serif; }
 .enabled-control input { accent-color: #25645c; width: 16px; height: 16px; }
 .entry-actions { display: flex; gap: 8px; }
+.entry-menu { position: relative; }
+.entry-menu-popup { position: absolute; z-index: 10; right: 0; top: calc(100% + 6px); width: 180px; padding: 5px; border: 1px solid #abb5aa; border-radius: 4px; background: #fffdf7; box-shadow: 0 5px 18px #17332f26; }
+.entry-menu-popup button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border: 0; border-radius: 3px; background: transparent; color: #17332f; text-align: left; font: 13px Arial, sans-serif; cursor: pointer; }
+.entry-menu-popup button:hover, .entry-menu-popup button:focus-visible { background: #d8e5d7; }
+.entry-menu-popup .danger-menu-item { color: #a52d23; }
 .icon-button { width: 36px; height: 36px; padding: 0; display: inline-grid; place-items: center; flex-shrink: 0; border: 1px solid #abb5aa; border-radius: 4px; color: #17332f; background: transparent; cursor: pointer; }
 .icon-button:hover:not(:disabled) { background: #d8e5d7; }
 .play-button:not(:disabled) { color: #fff; background: #25645c; border-color: #25645c; }
@@ -85,6 +92,17 @@ footer { display: flex; justify-content: space-between; border-top: 1px solid #c
 .dialog-content .help-block { font-size: 12px; color: #6b756e; }
 .dialog-content .btn { padding: 7px 12px; border: 1px solid #abb5aa; background: transparent; border-radius: 4px; color: #17332f; cursor: pointer; }
 .dialog-actions { display: flex; justify-content: end; gap: 10px; padding-top: 18px; border-top: 1px solid #d8d6ca; }
+.danger-button { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border: 1px solid #a52d23; border-radius: 4px; background: #a52d23; color: #fff; font: 14px Arial, sans-serif; cursor: pointer; }
+.danger-button:disabled { opacity: .4; cursor: not-allowed; }
+.manifest-json { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 Consolas, monospace; }
+.toast { position: fixed; z-index: 100; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 12px; width: max-content; max-width: min(440px, calc(100vw - 32px)); padding: 14px 16px; border: 1px solid #198548; border-radius: 6px; color: #fff; background: #176b3b; box-shadow: 0 6px 24px #17332f26; font: 14px/1.5 Arial, sans-serif; }
+.toast > svg { flex-shrink: 0; }
+.toast > span { min-width: 0; overflow-wrap: anywhere; }
+.toast .icon-button { width: 28px; height: 28px; border: 0; color: #fff; }
+.toast .icon-button:hover:not(:disabled) { background: #ffffff26; }
+.toast-error { background: #a52d23; border-color: #a52d23; }
+@media (prefers-reduced-motion: reduce) { .card-body .add-graphic-button { transition: none; } }
+@media (max-width: 480px) { .toast { right: 16px; bottom: 16px; } .entry-controls { grid-column: 1 / -1; align-items: start; } .entry-actions { gap: 5px; } .entry-actions .icon-button { width: 32px; height: 32px; } }
 :focus-visible { outline: 2px solid #25645c; outline-offset: 3px; }
 @media (max-width: 900px) { .graphic-entry { grid-template-columns: 120px minmax(0, 1fr); gap: 16px; } .entry-controls { grid-column: 2; align-items: start; } }
 @media (max-width: 480px) { .working-set-heading { flex-direction: column; gap: 8px; } .graphic-entry { grid-template-columns: 84px minmax(0, 1fr); gap: 14px; } .entry-label { flex-wrap: wrap; gap: 6px; } .entry-label label { width: 100%; } .entry-label input { width: calc(100% - 42px); } .dialog-heading, .dialog-content { padding: 18px; } }

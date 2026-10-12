@@ -62,6 +62,8 @@ Catalog previews use the first available image in the manifest's `thumbnails` ar
 
 Open **My Graphics** after signing in. Each catalog addition creates a new entry pinned to that exact version, with an independent label, enabled flag, and property state. The view also lists entries referencing the account's private uploads; creating uploads remains FE-3/FE-4. Disabled packages stay listed but cannot be enabled or controlled.
 
+A successful catalog addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show manifest** for its pinned version and **Delete**, with confirmation. Deletion removes only that working-set entry; the package and other copies remain unchanged.
+
 The property dialog is generated from the selected version's JSON `schema`. Fields marked `hidden` remain editable. Saving validates the complete state in both the form and the backend; cancelling changes nothing. Property edits only save configuration, and do not automatically send actions to a live renderer.
 
 Authenticated working-set endpoints:
@@ -69,6 +71,8 @@ Authenticated working-set endpoints:
 - `GET /api/my-graphics`: list the current account's entries.
 - `POST /api/my-graphics`: add a published or account-owned enabled version with `{ "versionId": "<uuid>" }`; returns the new `entryId` and permits duplicate additions.
 - `PATCH /api/my-graphics/:entryId`: save `label` (nullable, at most 100 characters), `enabled` (boolean), and/or `schemaData` (validated against the pinned version's schema). The package version cannot be changed here.
+- `DELETE /api/my-graphics/:entryId`: delete one entry owned by the current account.
+- `GET /api/my-graphics/:entryId/manifest`: return the pinned version's original manifest, only to the entry owner.
 - `GET /api/my-graphics/:entryId/thumbnail`: serve an available entry thumbnail, including private-upload thumbnails, only to the entry owner.
 
 Play, stop, and update use the **public OGraf Server API**, not a separate internal action endpoint. Update sends the entire saved property state. Buttons are unavailable until BE-3/BE-7/BE-8 provide a loaded instance binding on each entry: `control: { apiBaseUrl, rendererId, renderTarget, graphicInstanceId }`. FE-2 does not issue tokens, load renderer instances, or claim actions succeeded without a real API response; renderer connectivity and step controls remain FE-6. Stop remains available for a loaded, disabled entry so it can be taken off air.

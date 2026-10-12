@@ -104,6 +104,11 @@ export async function findMyGraphic(accountId, entryId) {
   return rows[0] ?? null;
 }
 
+export async function deleteMyGraphic(accountId, entryId) {
+  const [result] = await pool.query('DELETE FROM my_graphics_entries WHERE account_id = ? AND id = ?', [accountId, entryId]);
+  return result.affectedRows === 1;
+}
+
 export async function updateMyGraphic(accountId, entryId, changes) {
   const fields = [];
   const values = [];

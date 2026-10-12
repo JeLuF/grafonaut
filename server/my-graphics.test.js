@@ -14,7 +14,7 @@ mock.module('mysql2/promise', { defaultExport: {
   } })
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { addMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -73,7 +73,7 @@ test('updates only one owned entry without changing its package version', async 
 });
 
 test('entry APIs require authentication', async () => {
-  for (const [method, route, body] of [['GET', '', undefined], ['POST', '', {}], ['PATCH', '/1', { enabled: true }], ['GET', '/1/thumbnail', undefined]]) {
+  for (const [method, route, body] of [['GET', '', undefined], ['POST', '', {}], ['PATCH', '/1', { enabled: true }], ['GET', '/1/thumbnail', undefined], ['GET', '/1/manifest', undefined], ['DELETE', '/1', undefined]]) {
     assert.equal((await requestApi(method, route, body, null)).status, 401);
   }
   assert.equal(queries.length, 0);
@@ -114,4 +114,27 @@ test('a disabled package cannot be enabled but its entry can be turned off', asy
   assert.equal((await requestApi('PATCH', '/7', { enabled: true })).status, 409);
   assert.equal((await requestApi('PATCH', '/7', { enabled: false })).status, 200);
   assert.deepEqual(queries.at(-1).parameters, [false, 'account', '7']);
+});
+
+test('deletion removes only one account-owned working-set entry', async () => {
+  assert.equal(await deleteMyGraphic('account', '7'), true);
+  assert.equal(queries[0].sql, 'DELETE FROM my_graphics_entries WHERE account_id = ? AND id = ?');
+  assert.deepEqual(queries[0].parameters, ['account', '7']);
+  assert.equal((await requestApi('DELETE', '/7')).status, 200);
+  affectedRows = 0;
+  assert.equal((await requestApi('DELETE', '/7')).status, 404);
+  assert.equal((await requestApi('DELETE', '/invalid')).status, 400);
+});
+
+test('manifest lookup returns the selected version only to its entry owner', async () => {
+  const manifest = { id: 'lower-third', version: '1.0.0', main: 'main.mjs', schema: { type: 'object' } };
+  rows = [{ manifest }];
+  const response = await requestApi('GET', '/7/manifest');
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { manifest });
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual(queries[0].parameters, ['account', '7']);
+  rows = [];
+  assert.equal((await requestApi('GET', '/7/manifest', undefined, 'other-account')).status, 404);
+  assert.deepEqual(queries.at(-1).parameters, ['other-account', '7']);
 });
