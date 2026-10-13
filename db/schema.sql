@@ -39,12 +39,16 @@ CREATE TABLE IF NOT EXISTS packages (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_packages_catalog (disabled, current_published_version_id),
+  UNIQUE KEY uq_packages_owner_manifest (owner_account_id, manifest_id),
   CONSTRAINT fk_mvp_packages_owner FOREIGN KEY (owner_account_id) REFERENCES accounts (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS package_versions (
   id CHAR(36) NOT NULL,
   package_id CHAR(36) NOT NULL,
+  -- The unpacked upload this version's files live in (storage/archives/<archive_id>); all graphics of one
+  -- .ograf.zip share it.
+  archive_id CHAR(36) NOT NULL,
   version_label VARCHAR(64) NOT NULL,
   manifest_name VARCHAR(255) NOT NULL,
   manifest_description TEXT NULL,
@@ -60,7 +64,8 @@ CREATE TABLE IF NOT EXISTS package_versions (
   review_state ENUM('draft','pending','published','rejected') NOT NULL DEFAULT 'draft',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_mvp_version_checksum (zip_checksum_sha256),
+  KEY idx_versions_checksum (zip_checksum_sha256),
+  KEY idx_versions_archive (archive_id),
   KEY idx_mvp_versions_catalog (package_id, review_state),
   CONSTRAINT fk_mvp_versions_package FOREIGN KEY (package_id) REFERENCES packages (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

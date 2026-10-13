@@ -86,14 +86,14 @@ const assetTypes = {
   '.mp4': 'video/mp4', '.webm': 'video/webm'
 };
 
-// Serves the extracted files of published packages to graphic frames. Documents (HTML/SVG) are sandboxed by CSP,
+// Serves the extracted package files of graphic versions to graphic frames. Documents (HTML/SVG) are sandboxed by CSP,
 // so opening one directly never runs package code in the app's origin.
-export function createAssetHandler({ findPublishedVersion, storageRoot, isolated, cacheMs = 60000 }) {
+export function createAssetHandler({ findVersion, storageRoot, isolated, cacheMs = 60000 }) {
   const versions = new Map();
   async function lookup(versionId) {
     const cached = versions.get(versionId);
     if (cached && cached.expires > Date.now()) return cached.version;
-    const version = await findPublishedVersion(versionId);
+    const version = await findVersion(versionId);
     versions.set(versionId, { version, expires: Date.now() + cacheMs });
     return version;
   }

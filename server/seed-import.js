@@ -49,9 +49,9 @@ export async function importSeedZip(
   source,
 ) {
   const digest = await checksum(archivePath);
-  const packageId = uuid();
-  const versionId = uuid();
-  const stored = await storeArchive(archivePath, packageId, versionId);
+  // Unpacked once; every graphic in the archive points at the same files.
+  const archiveId = uuid();
+  const stored = await storeArchive(archivePath, archiveId);
   let storedUsed = false;
   try {
     const manifests = await locateManifests(stored.extractionRoot);
@@ -91,6 +91,7 @@ export async function importSeedZip(
         uncompressedSize: stored.uncompressedSize,
         fileCount: stored.fileCount,
         source,
+        archiveId,
       });
     }
     let imported = 0;
@@ -98,22 +99,7 @@ export async function importSeedZip(
       if (await findVersionByChecksum(record.checksum)) {
         continue;
       }
-      const nextPackageId = storedUsed ? uuid() : packageId;
-      const nextVersionId = storedUsed ? uuid() : versionId;
-      const animationStored = storedUsed
-        ? await storeArchive(archivePath, nextPackageId, nextVersionId)
-        : stored;
-      try {
-        await saveSeedPackage({ id: nextPackageId, ...record }, {
-          ...record,
-          id: nextVersionId,
-        });
-      } catch (error) {
-        if (storedUsed) {
-          await fs.rm(path.dirname(animationStored.extractionRoot), { recursive: true, force: true });
-        }
-        throw error;
-      }
+      await saveSeedPackage({ id: uuid(), ...record }, { ...record, id: uuid() });
       storedUsed = true;
       imported += 1;
     }

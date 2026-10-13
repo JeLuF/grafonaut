@@ -32,10 +32,14 @@ export async function findManifest(root, version) {
   return visit(root);
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Unpacked package files live once per uploaded archive; every graphic version from that archive points at it.
+export const archiveDirectory = (storageRoot, archiveId) => path.resolve(storageRoot, 'archives', archiveId);
+
 export function extractedRoot(version, storageRoot) {
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidPattern.test(version.packageId) || !uuidPattern.test(version.versionId)) return null;
-  return path.resolve(storageRoot, 'packages', version.packageId, version.versionId, 'extracted');
+  if (typeof version.archiveId !== 'string' || !uuidPattern.test(version.archiveId)) return null;
+  return path.join(archiveDirectory(storageRoot, version.archiveId), 'extracted');
 }
 
 export async function findThumbnails(version, storageRoot, limit = Infinity) {

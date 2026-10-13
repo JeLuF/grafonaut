@@ -32,13 +32,15 @@ const rendererViewUrl = (await compileModule('./renderer-view.jsx')).url;
 const { default: RendererView } = await import(rendererViewUrl);
 const rundownsUrl = (await compileModule('./rundowns.jsx')).url;
 const { RundownPanel, useRundowns } = await import(rundownsUrl);
+const privateCatalogUrl = (await compileModule('./private-catalog.jsx')).url;
+const { default: PrivateCatalogView } = await import(privateCatalogUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
 const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   filename: mainUrl.pathname, configFile: false, babelrc: false, plugins: [jsx, () => ({ visitor: {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -251,7 +253,7 @@ test('signed-out and error states offer the appropriate next action', () => {
 test('the add button lights up green only after success and allows another addition', async () => {
   let count = 0;
   render(React.createElement(AddGraphicButton, { item: entry, disabled: false, onAdd: async () => { count += 1; } }));
-  const button = screen.getByRole('button', { name: 'Add Lower third to My Graphics' });
+  const button = screen.getByRole('button', { name: 'Add Lower third to rundown' });
   fireEvent.click(button);
   assert.equal(button.disabled, true);
   await waitFor(() => assert.ok(button.classList.contains('is-added')));
@@ -262,7 +264,7 @@ test('the add button lights up green only after success and allows another addit
 
 test('failed additions never light up green', async () => {
   render(React.createElement(AddGraphicButton, { item: entry, disabled: false, onAdd: async () => { throw new Error('Unavailable'); } }));
-  const button = screen.getByRole('button', { name: 'Add Lower third to My Graphics' });
+  const button = screen.getByRole('button', { name: 'Add Lower third to rundown' });
   fireEvent.click(button);
   await waitFor(() => assert.equal(button.disabled, false));
   assert.equal(button.classList.contains('is-added'), false);
@@ -271,7 +273,7 @@ test('failed additions never light up green', async () => {
 test('success feedback clears after two seconds', async () => {
   mock.timers.enable({ apis: ['setTimeout'] });
   render(React.createElement(AddGraphicButton, { item: entry, disabled: false, onAdd: async () => {} }));
-  const button = screen.getByRole('button', { name: 'Add Lower third to My Graphics' });
+  const button = screen.getByRole('button', { name: 'Add Lower third to rundown' });
   await act(async () => fireEvent.click(button));
   assert.ok(button.classList.contains('is-added'));
   act(() => mock.timers.tick(2000));
@@ -281,7 +283,7 @@ test('success feedback clears after two seconds', async () => {
 test('toast announces success and supports dismissal and automatic expiry', () => {
   mock.timers.enable({ apis: ['setTimeout'] });
   const dismissals = [];
-  render(React.createElement(Toast, { toast: { id: 1, kind: 'success', message: 'Lower third added to My Graphics' }, onDismiss: (value) => dismissals.push(value) }));
+  render(React.createElement(Toast, { toast: { id: 1, kind: 'success', message: 'Lower third added to Sunday show' }, onDismiss: (value) => dismissals.push(value) }));
   assert.ok(screen.getByRole('status').textContent.includes('Lower third added'));
   fireEvent.click(screen.getByRole('button', { name: 'Dismiss notification' }));
   assert.deepEqual(dismissals, [null]);
@@ -344,7 +346,9 @@ test('delete and manifest failures stay visible in their dialogs', async () => {
 });
 test('hash routes resolve catalog, my graphics and graphic detail views', () => {
   assert.deepEqual(parseRoute(''), { view: 'catalog' });
-  assert.deepEqual(parseRoute('#my-graphics'), { view: 'my-graphics' });
+  assert.deepEqual(parseRoute('#rundown'), { view: 'rundown' });
+  assert.deepEqual(parseRoute('#my-graphics'), { view: 'rundown' });
+  assert.deepEqual(parseRoute('#private'), { view: 'private' });
   assert.deepEqual(parseRoute('#renderer'), { view: 'renderer' });
   assert.deepEqual(parseRoute('#graphic/abc%2Fdef'), { view: 'graphic', versionId: 'abc/def' });
   assert.deepEqual(parseRoute('#graphic/%E0%A4%A'), { view: 'catalog' });
@@ -421,8 +425,8 @@ test('the detail page shows full description, creator, actions and properties', 
   assert.ok(screen.getByText('1.5 s'));
   assert.ok(screen.getByText('Home team'));
   assert.ok(screen.getByText('Built-in library'));
-  fireEvent.click(screen.getByRole('button', { name: 'Add to My Graphics' }));
-  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Added to My Graphics' })));
+  fireEvent.click(screen.getByRole('button', { name: 'Add to rundown' }));
+  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Added to rundown' })));
   assert.deepEqual(added, ['v1']);
 });
 
@@ -435,19 +439,19 @@ test('the detail page reports unknown graphics and requires sign-in to add', asy
   cleanup();
   render(React.createElement(GraphicDetail, { versionId: 'missing', summary: { versionId: 'missing', display_name: 'Old', versionLabel: '1' }, account: null,
     Preview: () => null, AddButton: AddGraphicButton, onAdd: async () => {} }));
-  assert.equal(screen.getByRole('button', { name: 'Add to My Graphics' }).disabled, true);
+  assert.equal(screen.getByRole('button', { name: 'Add to rundown' }).disabled, true);
   assert.ok(screen.getByRole('link', { name: 'Sign in to add' }));
 });
 
-test('the details menu item is only offered for available catalog graphics', () => {
+test('the details menu item is offered for catalog and uploaded graphics but not disabled packages', () => {
   render(React.createElement(MyGraphicsView, { account: { id: 'account' }, loading: false, error: '', pending: new Set(), Preview: () => null,
     entries: [{ ...entry, origin: 'upload' }, { ...entry, entryId: '2', label: 'Gone', packageDisabled: true }],
     onRetry: () => {}, onSave: async () => {}, onAction: () => {}, onDelete: async () => {}, onReorder: async () => {}, onManifest: async () => ({}) }));
-  for (const name of ['More options for Left', 'More options for Gone']) {
-    fireEvent.click(screen.getByRole('button', { name }));
-    assertAbsent(screen.queryByRole('menuitem', { name: 'Show details' }));
-    fireEvent.keyDown(document.activeElement, { key: 'Escape' });
-  }
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Left' }));
+  assert.equal(screen.getByRole('menuitem', { name: 'Show details' }).getAttribute('href'), '#graphic/version');
+  fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Gone' }));
+  assertAbsent(screen.queryByRole('menuitem', { name: 'Show details' }));
 });
 
 test('property dialog actions stay pinned to the bottom while the form scrolls', async () => {
@@ -759,9 +763,10 @@ test('rundowns can be created and renamed from the sidebar', async () => {
   assert.deepEqual(api.requests.at(-1), ['PATCH', '/api/rundowns/2', { name: 'Sunday special' }]);
 });
 
-test('my graphics names the current rundown', () => {
+test('the rundown view is headed by the current rundown name', () => {
   showView({ rundownName: 'Sunday show' });
-  assert.ok(screen.getByText('Rundown: Sunday show'));
+  assert.ok(screen.getByRole('heading', { level: 1, name: 'Sunday show' }));
+  assert.ok(screen.getByText('RUNDOWN'));
 });
 
 test('rundowns other than the current one can be deleted after confirmation', async () => {
@@ -781,4 +786,68 @@ test('rundowns other than the current one can be deleted after confirmation', as
   await waitFor(() => assertAbsent(screen.queryByRole('button', { name: /^Sunday show/ })));
   assert.deepEqual(api.requests.at(-1), ['DELETE', '/api/rundowns/2', undefined]);
   assert.deepEqual(deleted, ['Sunday show']);
+});
+
+test('uploading a package shows what was imported and refreshes the private catalog', async () => {
+  const requests = [];
+  mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push([url, options.method, options.headers['Content-Type'], options.body.name]);
+    return Response.json({ saved: [{ name: 'Lower third', versionLabel: '1.2.0' }], skipped: [{ name: 'Clock', versionLabel: '1.0.0' }] }, { status: 201 });
+  });
+  let refreshed = 0;
+  const { container } = render(React.createElement(PrivateCatalogView, { account: { id: 'account' }, authLoading: false, count: 0, maxZipBytes: 10485760,
+    loading: false, error: '', onUploaded: async () => { refreshed += 1; } }));
+  assert.ok(screen.getByText(/up to 10 MB/));
+  assert.ok(screen.getByText('No uploads yet.'));
+  const file = new dom.window.File(['zip'], 'graphics.ograf.zip', { type: 'application/zip' });
+  fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } });
+  await waitFor(() => assert.ok(screen.getByText('Uploaded Lower third v1.2.0.')));
+  assert.ok(screen.getByText('Already uploaded: Clock v1.0.0.'));
+  assert.deepEqual(requests, [['/api/private/packages', 'POST', 'application/zip', 'graphics.ograf.zip']]);
+  assert.equal(refreshed, 1);
+});
+
+test('rejected uploads list every problem the server found', async () => {
+  mock.method(globalThis, 'fetch', async () => Response.json({ error: 'The package is not a valid OGraf package.',
+    details: ['a.ograf.json: (manifest) must have required property \'main\'', 'tool.exe: File type not allowed'] }, { status: 422 }));
+  let refreshed = 0;
+  const { container } = render(React.createElement(PrivateCatalogView, { account: { id: 'account' }, authLoading: false, count: 2,
+    loading: false, error: '', onUploaded: async () => { refreshed += 1; } }, React.createElement('p', null, 'cards')));
+  fireEvent.drop(container.querySelector('.upload-zone'), { dataTransfer: { files: [new dom.window.File(['x'], 'bad.zip')] } });
+  const alert = await waitFor(() => screen.getByRole('alert'));
+  assert.match(alert.textContent, /bad\.zip: The package is not a valid OGraf package\./);
+  assert.deepEqual(within(alert).getAllByRole('listitem').map((item) => item.textContent), ['a.ograf.json: (manifest) must have required property \'main\'', 'tool.exe: File type not allowed']);
+  assert.equal(refreshed, 0);
+  assert.ok(screen.getByText('cards'));
+  assert.ok(screen.getByText('2 graphics'));
+});
+
+test('the private catalog asks signed-out visitors to sign in', () => {
+  render(React.createElement(PrivateCatalogView, { account: null, authLoading: false, count: 0, loading: false, error: '', onUploaded: async () => {} }));
+  assert.ok(screen.getByText('Sign in to upload your own graphics.'));
+  assertAbsent(screen.queryByRole('button', { name: 'Choose file' }));
+});
+
+test('clicking a rundown opens the rundown view, switching first when needed', async () => {
+  mockRundownApi();
+  const opened = [];
+  function Panel() {
+    const state = useRundowns(rundownAccount);
+    return React.createElement(RundownPanel, { state, viewing: true, onOpen: (rundown) => opened.push(rundown.name) });
+  }
+  render(React.createElement(Panel));
+  const current = await waitFor(() => screen.getByRole('button', { name: /^Default rundown/ }));
+  assert.ok(current.classList.contains('is-viewing'));
+  fireEvent.click(current);
+  assert.deepEqual(opened, ['Default rundown']);
+  fireEvent.click(screen.getByRole('button', { name: /^Sunday show/ }));
+  await waitFor(() => assert.deepEqual(opened, ['Default rundown', 'Sunday show']));
+});
+
+test('private graphics are marked as such on the detail page', async () => {
+  mock.method(globalThis, 'fetch', async () => Response.json({ error: 'offline' }, { status: 503 }));
+  render(React.createElement(GraphicDetail, { versionId: 'v9', summary: { versionId: 'v9', display_name: 'Mine', versionLabel: '2.0', isPrivate: true },
+    account: { id: 'account' }, Preview: () => null, AddButton: AddGraphicButton, onAdd: async () => {} }));
+  assert.ok(screen.getByText('PRIVATE GRAPHIC · v2.0'));
+  assert.equal(screen.getByRole('link', { name: 'Back to private catalog' }).getAttribute('href'), '#private');
 });

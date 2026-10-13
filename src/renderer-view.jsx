@@ -129,7 +129,7 @@ export default function RendererView({ account, authLoading }) {
       <p className="eyebrow">RENDERER</p>
       <h1 id="renderer-heading">Your renderer</h1>
       <p className="renderer-lead">The renderer is the page that displays your graphics on air. Add its URL to OBS, vMix or any
-        browser-based production tool; graphics you control from My Graphics appear on every renderer opened with your URL.</p>
+        browser-based production tool; graphics you control in your current rundown appear on every renderer opened with your URL.</p>
       {authLoading ? <p className="status" role="status">Loading account...</p>
         : !account ? <div className="empty-state"><strong>Sign in to get your renderer URL.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div>
           : <>

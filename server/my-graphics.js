@@ -3,7 +3,6 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, reorderMyGraphics, updateMyGraphic } from './db.js';
 import { storageRoot } from './storage.js';
-import { findThumbnail } from './thumbnails.js';
 import { resolvePropertySchema } from './asset-files.js';
 
 const validator = new Ajv({ allErrors: true, strict: false });
@@ -103,20 +102,6 @@ router.get('/:entryId/manifest', async (request, response) => {
     if (!entry) return response.status(404).json({ error: 'Graphic entry not found' });
     response.set('Cache-Control', 'private, no-store').json({ manifest: entry.manifest });
   } catch { response.status(503).json({ error: 'Unable to load graphic manifest' }); }
-});
-router.get('/:entryId/thumbnail', async (request, response) => {
-  try {
-    const entry = await findMyGraphic(request.session.accountId, request.params.entryId);
-    const thumbnail = entry && !entry.packageDisabled ? await findThumbnail(entry, storageRoot) : null;
-    if (!thumbnail) return response.sendStatus(404);
-    response.sendFile(thumbnail, { headers: {
-      'Cache-Control': 'private, max-age=3600',
-      'X-Content-Type-Options': 'nosniff',
-      'Content-Security-Policy': "sandbox; default-src 'none'"
-    } }, (error) => {
-      if (error && !response.headersSent) response.sendStatus(error.statusCode ?? 500);
-    });
-  } catch { response.sendStatus(503); }
 });
 
 export default router;

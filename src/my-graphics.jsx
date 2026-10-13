@@ -173,7 +173,7 @@ export function ActionMenu({ label, busy, items }) {
 
 function EntryMenu({ entry, busy, onDelete, onManifest }) {
   return <ActionMenu label={`More options for ${entry.label || entry.display_name}`} busy={busy} items={[
-    entry.origin === 'catalog' && !entry.packageDisabled && { key: 'details', label: 'Show details', icon: Info, href: `#graphic/${encodeURIComponent(entry.versionId)}` },
+    !entry.packageDisabled && { key: 'details', label: 'Show details', icon: Info, href: `#graphic/${encodeURIComponent(entry.versionId)}` },
     { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => onManifest(entry) },
     { key: 'delete', label: 'Delete', icon: Trash2, onSelect: () => onDelete(entry), danger: true }
   ]} />;
@@ -222,7 +222,7 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
         {loading && <p role="status">Loading manifest...</p>}
         {!loading && !error && <pre className="manifest-json">{JSON.stringify(manifest, null, 2)}</pre>}
       </> : <>
-        <p>Remove this entry from My Graphics?</p>
+        <p>Remove this graphic from the rundown?</p>
         <div className="dialog-actions">
           <button className="text-button" type="button" disabled={deleting} onClick={onClose}>Cancel</button>
           <button className="danger-button" type="button" disabled={deleting} onClick={remove}><Trash2 size={16} />{deleting ? 'Deleting...' : 'Delete'}</button>
@@ -330,14 +330,14 @@ export default function MyGraphicsView({ account, rundownName, entries, loading,
   }
   return (
     <section className="my-graphics-section" aria-labelledby="my-graphics-heading">
-      {account && rundownName && <p className="eyebrow rundown-eyebrow">Rundown: {rundownName}</p>}
-      <div className="working-set-heading"><h1 id="my-graphics-heading">My Graphics</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled{rendererStatus && <>
+      <p className="eyebrow rundown-eyebrow">RUNDOWN</p>
+      <div className="working-set-heading"><h1 id="my-graphics-heading">{account && rundownName ? rundownName : 'Rundown'}</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled{rendererStatus && <>
         {' · '}<span className={rendererStatus.connections ? 'renderer-connected' : 'renderer-disconnected'}>{rendererStatus.connections
           ? `${rendererStatus.connections} renderer${rendererStatus.connections === 1 ? '' : 's'} connected` : 'No renderer connected'}</span></>}</span>}</div>
-      {!account ? <div className="empty-state"><strong>Sign in to view My Graphics.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <div className="my-graphics-layout">
+      {!account ? <div className="empty-state"><strong>Sign in to prepare your rundowns.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <div className="my-graphics-layout">
         {rendererPreview}
         <div className="my-graphics-entries">
-        {loading && <p role="status" className="status">Loading My Graphics...</p>}
+        {loading && <p role="status" className="status">Loading rundown...</p>}
         {ordering && <p role="status" className="status">Saving order...</p>}
         {orderError && <div className="load-error" role="alert"><p>{orderError}</p><button className="text-button" type="button" onClick={() => { setOrderError(''); onRetry(); }}><RefreshCw size={16} />Refresh list</button></div>}
         {error && <div className="load-error" role="alert"><p>{error}</p><button className="text-button" type="button" onClick={onRetry}><RefreshCw size={16} />Retry</button></div>}

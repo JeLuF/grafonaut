@@ -86,7 +86,9 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
   }, [versionId]);
 
   const graphic = item ?? summary;
-  const back = <a className="back-link" href="#catalog"><ArrowLeft size={16} />Back to catalog</a>;
+  const isPrivate = Boolean(graphic?.isPrivate);
+  const back = isPrivate ? <a className="back-link" href="#private"><ArrowLeft size={16} />Back to private catalog</a>
+    : <a className="back-link" href="#catalog"><ArrowLeft size={16} />Back to catalog</a>;
   if (!graphic) {
     return <section className="graphic-detail">{back}
       {error ? <div className="empty-state"><strong>Graphic unavailable.</strong><span>{error}</span></div> : <p className="status" role="status">Loading graphic...</p>}
@@ -102,10 +104,10 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
           ? <ThumbnailCarousel key={item.versionId} images={images} name={graphic.display_name} fallback={<Preview item={graphic} />} />
           : <div className="carousel carousel-empty"><Preview item={graphic} /></div>}
         <div className="detail-summary">
-          <p className="eyebrow">OGRAF GRAPHIC · v{graphic.versionLabel}</p>
+          <p className="eyebrow">{isPrivate ? 'PRIVATE GRAPHIC' : 'OGRAF GRAPHIC'} · v{graphic.versionLabel}</p>
           <h1 id="graphic-heading">{graphic.display_name}</h1>
           <div className="detail-cta">
-            <AddButton item={graphic} disabled={!account} onAdd={onAdd} label="Add to My Graphics" />
+            <AddButton item={graphic} disabled={!account} onAdd={onAdd} label="Add to rundown" />
             <ActionMenu label={`More options for ${graphic.display_name}`} items={[
               { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => setShowManifest(true) }
             ]} />

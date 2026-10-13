@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, List, MonitorPlay, Plus, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, Lock, MonitorPlay, Plus, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
+import PrivateCatalogView from './private-catalog.jsx';
 import { fetchRendererStatus, requestJson, triggerGraphicAction } from './api.js';
 import './styles.css';
 
 const PAGE_SIZE = 6;
 
 export function parseRoute(hash) {
-  if (hash === '#my-graphics') return { view: 'my-graphics' };
+  if (hash === '#rundown' || hash === '#my-graphics') return { view: 'rundown' };
+  if (hash === '#private') return { view: 'private' };
   if (hash === '#renderer') return { view: 'renderer' };
   const match = /^#graphic\/(.+)$/.exec(hash);
   if (match) {
@@ -42,6 +44,18 @@ export function Pagination({ page, pageCount, total, onChange }) {
       <button className="icon-button" type="button" onClick={() => onChange(page + 1)} disabled={page === pageCount - 1} aria-label="Next page" title="Next page"><ChevronRight size={18} /></button>
     </div>
   </nav>;
+}
+
+// Catalog cards: preview and title link to the detail page, the button adds the graphic to the current rundown.
+function GraphicCards({ items, account, onAdd }) {
+  return <div className="catalog-grid">
+    {items.map((item) => <article className="graphic-card" key={item.versionId}>
+      <a className="card-art-link" href={graphicHref(item)} tabIndex={-1} aria-hidden="true"><GraphicPreview item={item} /></a>
+      <div className="card-body"><div><h3><a href={graphicHref(item)}>{item.display_name}</a></h3>
+        <p className="card-description">{item.description || (item.isPrivate ? 'A private OGraf package.' : 'A published OGraf package.')}</p></div>
+      <AddGraphicButton item={item} disabled={!account} onAdd={onAdd} /></div>
+    </article>)}
+  </div>;
 }
 
 function GraphicPreview({ item }) {
@@ -76,9 +90,9 @@ export function AddGraphicButton({ item, disabled, onAdd, label }) {
   }
   const added = state === 'added';
   return <button className={`add-graphic-button${label ? ' primary-button' : ''}${added ? ' is-added' : ''}`} type="button" onClick={add}
-    disabled={disabled || state === 'adding'} aria-busy={state === 'adding'} aria-label={label ? undefined : `Add ${item.display_name} to My Graphics`}
-    title={disabled ? 'Sign in to add graphics' : added ? 'Added to My Graphics' : 'Add to My Graphics'}>
-    {label ? <>{added ? <Check size={18} /> : <Plus size={18} />}{added ? 'Added to My Graphics' : label}</> : <Plus size={20} />}
+    disabled={disabled || state === 'adding'} aria-busy={state === 'adding'} aria-label={label ? undefined : `Add ${item.display_name} to rundown`}
+    title={disabled ? 'Sign in to add graphics' : added ? 'Added to rundown' : 'Add to rundown'}>
+    {label ? <>{added ? <Check size={18} /> : <Plus size={18} />}{added ? 'Added to rundown' : label}</> : <Plus size={20} />}
   </button>;
 }
 
@@ -103,6 +117,11 @@ function App() {
   const [route, setRoute] = useState(() => parseRoute(window.location.hash));
   const view = route.view;
   const [page, setPage] = useState(0);
+  const [privateItems, setPrivateItems] = useState([]);
+  const [privateLoading, setPrivateLoading] = useState(false);
+  const [privateError, setPrivateError] = useState('');
+  const [maxZipBytes, setMaxZipBytes] = useState(null);
+  const [privatePage, setPrivatePage] = useState(0);
   const catalogHeading = useRef(null);
   const catalogScroll = useRef(null);
   const previousView = useRef(view);
@@ -117,6 +136,18 @@ function App() {
 
   const { url: apiUrl } = useApiUrl(account);
   const rundownState = useRundowns(account);
+  const loadPrivateCatalog = useCallback(async () => {
+    if (!account) { setPrivateItems([]); return; }
+    setPrivateLoading(true);
+    try {
+      const response = await requestJson('/api/private/packages');
+      setPrivateItems(response.items ?? []);
+      setMaxZipBytes(response.maxZipBytes ?? null);
+      setPrivateError('');
+    } catch (error) { setPrivateError(error.message); }
+    finally { setPrivateLoading(false); }
+  }, [account]);
+  useEffect(() => { void loadPrivateCatalog(); }, [loadPrivateCatalog]);
   const rundownName = rundownState.current?.name;
   const [rendererStatus, setRendererStatus] = useState(null);
   const statusRequest = useRef(0);
@@ -129,7 +160,7 @@ function App() {
     } catch (error) { if (requestId === statusRequest.current) setRendererStatus({ connections: 0, instances: new Map(), error: error.message }); }
   }, [apiUrl]);
   useEffect(() => {
-    if (view !== 'my-graphics' || !apiUrl) return;
+    if (view !== 'rundown' || !apiUrl) return;
     void refreshRendererStatus();
     const timer = setInterval(refreshRendererStatus, 3000);
     return () => clearInterval(timer);
@@ -210,7 +241,7 @@ function App() {
   async function addToMyGraphics(item) {
     try {
       await requestJson('/api/my-graphics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionId: item.versionId }) });
-      notify(`${item.display_name} added to ${rundownName ?? 'My Graphics'}`);
+      notify(`${item.display_name} added to ${rundownName ?? 'the rundown'}`);
       void refreshMyGraphics();
       void rundownState.reload();
     } catch (error) { notify(error.message, 'error'); throw error; }
@@ -223,7 +254,7 @@ function App() {
       graphicsRequest.current += 1;
       setMyLoading(false);
       setEntries((current) => current.filter((item) => item.entryId !== entry.entryId));
-      notify(`${entry.label || entry.display_name} deleted from My Graphics`);
+      notify(`${entry.label || entry.display_name} removed from the rundown`);
       void rundownState.reload();
     } catch (error) { notify(error.message, 'error'); throw error; }
     finally { setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; }); }
@@ -272,10 +303,11 @@ function App() {
       <a className="brand-mark" href="#catalog"><span>O</span>GRAF</a>
       <nav className="view-tabs" aria-label="Graphics views">
         <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
-        <a href="#my-graphics" aria-current={view === 'my-graphics' ? 'page' : undefined}><List size={17} />My Graphics{account && <span className="entry-count">{entries.length}</span>}</a>
+        <a href="#private" aria-current={view === 'private' ? 'page' : undefined}><Lock size={17} />Private catalog</a>
         <a href="#renderer" aria-current={view === 'renderer' ? 'page' : undefined}><MonitorPlay size={17} />Renderer</a>
       </nav>
-      {account && <RundownPanel state={rundownState} onDeleted={(rundown) => notify(`${rundown.name} deleted`)} onSwitched={(rundown) => {
+      {account && <RundownPanel state={rundownState} viewing={view === 'rundown'} onOpen={() => { window.location.hash = '#rundown'; }}
+        onDeleted={(rundown) => notify(`${rundown.name} deleted`)} onSwitched={(rundown) => {
         notify(`Switched to ${rundown.name}`);
         void refreshMyGraphics();
         void refreshRendererStatus();
@@ -286,9 +318,21 @@ function App() {
     </aside>
     <main className="app-shell">
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
-      : view === 'graphic' ? <GraphicDetail versionId={route.versionId} summary={catalog.find((item) => item.versionId === route.versionId)}
+      : view === 'private' ? <PrivateCatalogView account={account} authLoading={authLoading} count={privateItems.length} maxZipBytes={maxZipBytes}
+        loading={privateLoading} error={privateError} onUploaded={loadPrivateCatalog}>
+        {(() => {
+          const pages = Math.max(1, Math.ceil(privateItems.length / PAGE_SIZE));
+          const current = Math.min(privatePage, pages - 1);
+          return <>
+            <GraphicCards items={privateItems.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)} account={account} onAdd={addToMyGraphics} />
+            <Pagination page={current} pageCount={pages} total={privateItems.length} onChange={setPrivatePage} />
+          </>;
+        })()}
+      </PrivateCatalogView>
+      : view === 'graphic' ? <GraphicDetail versionId={route.versionId}
+        summary={[...catalog, ...privateItems].find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>
       {!authLoading && !account && <section className="hero">
         <p className="eyebrow">PUBLIC CATALOG / MVP</p>
@@ -302,12 +346,7 @@ function App() {
         </div>
         {status && <p className="status">{status}</p>}
         {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>Seed packages will appear here after the first startup import.</span></div>}
-        <div className="catalog-grid">
-          {pageItems.map((item) => <article className="graphic-card" key={item.versionId}>
-            <a className="card-art-link" href={graphicHref(item)} tabIndex={-1} aria-hidden="true"><GraphicPreview item={item} /></a>
-            <div className="card-body"><div><h3><a href={graphicHref(item)}>{item.display_name}</a></h3><p className="card-description">{item.description || 'A published OGraf package.'}</p></div><AddGraphicButton item={item} disabled={!account} onAdd={addToMyGraphics} /></div>
-          </article>)}
-        </div>
+        <GraphicCards items={pageItems} account={account} onAdd={addToMyGraphics} />
         <Pagination page={currentPage} pageCount={pageCount} total={filteredCatalog.length} onChange={changePage} />
       </section>
       </>}

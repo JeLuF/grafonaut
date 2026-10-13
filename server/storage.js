@@ -7,8 +7,9 @@ import unzipper from 'unzipper';
 
 const storageRoot = path.resolve(process.env.STORAGE_ROOT ?? './storage');
 
-export async function storeArchive(sourcePath, packageId, versionId) {
-  const destination = path.join(storageRoot, 'packages', packageId, versionId);
+// Copies a seed archive into storage/archives/<archiveId> and unpacks it there, once for all graphics it contains.
+export async function storeArchive(sourcePath, archiveId) {
+  const destination = path.join(storageRoot, 'archives', archiveId);
   await fs.mkdir(destination, { recursive: true });
   const archivePath = path.join(destination, 'package.ograf.zip');
   await fs.copyFile(sourcePath, archivePath);

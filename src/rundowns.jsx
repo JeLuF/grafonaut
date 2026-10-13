@@ -4,7 +4,7 @@ import { requestJson } from './api.js';
 
 const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-// Rundowns of the signed-in account and the current one (what My Graphics, the renderer and the API work with).
+// Rundowns of the signed-in account and the current one (what the rundown view, the renderer and the API work with).
 export function useRundowns(account) {
   const [rundowns, setRundowns] = useState([]);
   const [currentRundownId, setCurrentRundownId] = useState(null);
@@ -65,9 +65,9 @@ function NameForm({ initial = '', label, submitLabel, onSubmit, onCancel }) {
   </form>;
 }
 
-// Sidebar list of rundowns: switch by clicking, create with "+", rename with the pencil, delete with the trash can
-// (not offered for the current rundown).
-export function RundownPanel({ state, onSwitched, onDeleted = () => {} }) {
+// Sidebar list of rundowns. Clicking one opens the rundown view; for another rundown that first switches to it (the
+// renderer follows). "+" creates, the pencil renames, the trash can deletes (not offered for the current rundown).
+export function RundownPanel({ state, viewing = false, onOpen = () => {}, onSwitched = () => {}, onDeleted = () => {} }) {
   const headingId = useId();
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(null);
@@ -77,13 +77,15 @@ export function RundownPanel({ state, onSwitched, onDeleted = () => {} }) {
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState('');
   async function switchTo(rundown, force = false) {
-    if (switching || rundown.id === state.currentRundownId) return;
+    if (switching) return;
+    if (rundown.id === state.currentRundownId) { setConfirm(null); onOpen(rundown); return; }
     setSwitching(true);
     setError('');
     try {
       await state.switchTo(rundown.id, force);
       setConfirm(null);
       onSwitched(rundown);
+      onOpen(rundown);
     } catch (failure) {
       if (failure.payload?.code === 'ON_AIR') setConfirm({ rundown, message: failure.message });
       else setError(failure.message);
@@ -113,9 +115,9 @@ export function RundownPanel({ state, onSwitched, onDeleted = () => {} }) {
           ? <NameForm initial={rundown.name} label="Rundown name" submitLabel="Save name" onCancel={() => setRenaming(null)}
             onSubmit={async (name) => { await state.rename(rundown.id, name); setRenaming(null); }} />
           : <div className="rundown-item">
-            <button className="rundown-switch" type="button" onClick={() => switchTo(rundown)} disabled={switching}
-              aria-current={rundown.id === state.currentRundownId ? 'true' : undefined}
-              title={rundown.id === state.currentRundownId ? 'Current rundown' : `Switch to ${rundown.name}`}>
+            <button className={`rundown-switch${viewing && rundown.id === state.currentRundownId ? ' is-viewing' : ''}`} type="button"
+              onClick={() => switchTo(rundown)} disabled={switching} aria-current={rundown.id === state.currentRundownId ? 'true' : undefined}
+              title={rundown.id === state.currentRundownId ? 'Open the current rundown' : `Switch to ${rundown.name} and open it`}>
               <span className="rundown-name">{rundown.name}</span><span className="entry-count">{rundown.entryCount}</span>
             </button>
             <button className="icon-button rundown-rename" type="button" onClick={() => { setRenaming(rundown.id); setCreating(false); }}

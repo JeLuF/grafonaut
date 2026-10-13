@@ -15,10 +15,11 @@ mock.module('mysql2/promise', { defaultExport: {
 } });
 const storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ograf-thumbnails-'));
 mock.module('./storage.js', { namedExports: { storageRoot } });
-const { catalogDetails, findPublishedCatalogItem, listPublishedCatalog, findPublishedVersion } = await import('./db.js');
+const { catalogDetails, findPublishedCatalogItem, listMyGraphics, listPublishedCatalog, findPublishedVersion } = await import('./db.js');
 const packageId = '11111111-1111-4111-8111-111111111111';
 const versionId = '22222222-2222-4222-8222-222222222222';
-const root = path.join(storageRoot, 'packages', packageId, versionId, 'extracted');
+const archiveId = '33333333-3333-4333-8333-333333333333';
+const root = path.join(storageRoot, 'archives', archiveId, 'extracted');
 let version;
 
 beforeEach(async () => {
@@ -26,7 +27,7 @@ beforeEach(async () => {
   queries = [];
   await fs.rm(root, { recursive: true, force: true });
   await fs.mkdir(path.join(root, 'theme/thumbnails'), { recursive: true });
-  version = { packageId, versionId, mainFile: 'theme/main.mjs', manifestFile: 'theme/manifest.json',
+  version = { packageId, versionId, archiveId, mainFile: 'theme/main.mjs', manifestFile: 'theme/manifest.json',
     manifest: { id: 'theme', main: 'main.mjs', thumbnails: [
       { file: 'thumbnails/1920x1080.png', resolution: { width: 1920, height: 1080 } },
       { file: 'thumbnails/animated.webp', resolution: { width: 640, height: 360 } }
@@ -59,7 +60,7 @@ test('rejects traversal, absolute paths and unsupported files', async () => {
     version.manifest.thumbnails = [{ file }];
     assert.equal(await findThumbnail(version, storageRoot), null);
   }
-  version.packageId = '../outside';
+  version.archiveId = '../outside';
   assert.equal(await findThumbnail(version, storageRoot), null);
 });
 test('returns no thumbnail when extracted storage is missing', async () => {
@@ -127,4 +128,10 @@ test('manifest metadata rejects unsafe or malformed author links', () => {
   assert.deepEqual(empty.renderRequirements, []);
   assert.deepEqual(catalogDetails({ renderRequirements: [{ resolution: { width: { min: 600, ideal: 1920, bogus: 'x' } }, frameRate: 50 }] }).renderRequirements,
     [{ width: { ideal: 1920, min: 600 }, height: null, frameRate: { exact: 50 } }]);
+});
+
+test('rundown entries address thumbnails by graphic version, not by entry ID', async () => {
+  rows = [{ ...version, entryId: '2', label: null, enabled: 1, packageDisabled: 0, schemaData: {}, display_name: 'Weather' }];
+  const [entry] = await listMyGraphics(7);
+  assert.equal(entry.thumbnailUrl, `/api/catalog/${versionId}/thumbnail`);
 });

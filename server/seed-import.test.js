@@ -29,8 +29,8 @@ mock.module("./db.js", {
 mock.module("./storage.js", {
   namedExports: {
     checksum: async () => digest,
-    storeArchive: async (sourcePath, packageId, versionId) => {
-      const extractionRoot = path.join(root, "packages", packageId, versionId, "extracted");
+    storeArchive: async (sourcePath, archiveId) => {
+      const extractionRoot = path.join(root, "archives", archiveId, "extracted");
       await fs.mkdir(extractionRoot, { recursive: true });
       for (const [fileName, contents] of Object.entries(files)) {
         const target = path.join(extractionRoot, fileName);
@@ -59,18 +59,20 @@ beforeEach(() => {
 });
 after(() => fs.rm(root, { recursive: true, force: true }));
 
-test("imports every animation with distinct IDs, checksums and storage", async () => {
+test("imports every animation with distinct IDs and checksums from one unpacked archive", async () => {
   assert.equal(await importSeedZip(archivePath, undefined, "builtin"), 2);
   assert.deepEqual(saved.map(({ versionRecord }) => versionRecord.mainFile), ["intro.mjs", "outro/outro.mjs"]);
   assert.deepEqual(saved.map(({ versionRecord }) => versionRecord.manifestFile), ["intro.json", "outro/manifest.json"]);
   assert.equal(new Set(saved.map(({ packageRecord }) => packageRecord.id)).size, 2);
   assert.equal(new Set(saved.map(({ versionRecord }) => versionRecord.id)).size, 2);
   assert.equal(new Set(saved.map(({ versionRecord }) => versionRecord.checksum)).size, 2);
+  assert.equal(storedRoots.length, 1);
+  assert.equal(new Set(saved.map(({ versionRecord }) => versionRecord.archiveId)).size, 1);
   for (const { packageRecord, versionRecord } of saved) {
     assert.notEqual(packageRecord.id, versionRecord.id);
     assert.equal(versionRecord.source, "builtin");
     assert.equal(versionRecord.fileCount, 5);
-    await fs.access(path.join(root, "packages", packageRecord.id, versionRecord.id, "extracted", versionRecord.mainFile));
+    await fs.access(path.join(root, "archives", versionRecord.archiveId, "extracted", versionRecord.mainFile));
   }
 });
 
@@ -91,16 +93,16 @@ test("imports side-by-side root manifests and preserves shared assets", async ()
   };
   assert.equal(await importSeedZip(archivePath), 2);
   assert.deepEqual(saved.map(({ versionRecord }) => versionRecord.mainFile), ["intro.mjs", "outro.mjs"]);
-  for (const extractionRoot of storedRoots) {
-    await fs.access(path.join(extractionRoot, "shared/logo.svg"));
-  }
+  assert.equal(storedRoots.length, 1);
+  await fs.access(path.join(storedRoots[0], "shared/logo.svg"));
 });
 
 test("a retry imports only animations missing after a partial failure", async () => {
   failOnSave = 1;
   await assert.rejects(importSeedZip(archivePath), /Database unavailable/);
+  // The first animation was saved and still uses the archive, so it stays.
+  assert.equal(storedRoots.length, 1);
   await fs.access(storedRoots[0]);
-  await assert.rejects(fs.access(storedRoots[1]), { code: "ENOENT" });
   failOnSave = -1;
   assert.equal(await importSeedZip(archivePath), 1);
   assert.deepEqual(saved.map(({ packageRecord }) => packageRecord.manifestId), ["intro", "outro"]);

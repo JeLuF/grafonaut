@@ -24,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -104,7 +104,7 @@ test('updates only one owned entry without changing its package version', async 
 });
 
 test('entry APIs require authentication', async () => {
-  for (const [method, route, body] of [['GET', '', undefined], ['POST', '', {}], ['PUT', '/order', { entryIds: [] }], ['PATCH', '/1', { enabled: true }], ['GET', '/1/thumbnail', undefined], ['GET', '/1/manifest', undefined], ['DELETE', '/1', undefined]]) {
+  for (const [method, route, body] of [['GET', '', undefined], ['POST', '', {}], ['PUT', '/order', { entryIds: [] }], ['PATCH', '/1', { enabled: true }], ['GET', '/1/manifest', undefined], ['DELETE', '/1', undefined]]) {
     assert.equal((await requestApi(method, route, body, null)).status, 401);
   }
   assert.equal(queries.length, 0);
@@ -200,4 +200,41 @@ test('reordering validates entry IDs and rejects duplicates', async () => {
     assert.equal((await requestApi('PUT', '/order', { entryIds })).status, 400);
   }
   assert.equal(queries.length, 0);
+});
+test('private versions are visible to their owner only; the renderer serves any enabled version', async () => {
+  await findVisibleVersion('v1', 'account');
+  assert.match(queries[0].sql, /\(pv.review_state = 'published' OR p.owner_account_id = \?\) AND p.disabled = FALSE/);
+  assert.deepEqual(queries[0].parameters, ['v1', 'account']);
+  await findVisibleVersion('v1');
+  assert.match(queries[1].sql, /pv.review_state = 'published' AND p.disabled = FALSE/);
+  assert.deepEqual(queries[1].parameters, ['v1']);
+  await findCatalogItem('v1', 'account');
+  assert.deepEqual(queries[2].parameters, ['v1', 'account']);
+  await findRenderableVersion('v1');
+  assert.doesNotMatch(queries[3].sql, /review_state/);
+  assert.match(queries[3].sql, /p.disabled = FALSE/);
+});
+
+test('uploads are saved as private draft versions and become the package’s latest version', async () => {
+  const version = { manifestId: 'l3rd', manifestName: 'Lower third', versionLabel: '1.0.0', archiveId: 'arch-1', description: null,
+    manifest: { id: 'l3rd' }, manifestFile: 'l3rd.ograf.json', mainFile: 'graphic.mjs', checksum: 'abc', zipSize: 1, uncompressedSize: 2, fileCount: 3 };
+  await saveUploadedVersions('account', [{ ...version, id: 'ver-1', packageId: 'pkg-1', isNewPackage: true },
+    { ...version, id: 'ver-2', packageId: 'pkg-0', isNewPackage: false, manifestId: 'clock', manifestName: 'Clock' }]);
+  assert.match(queries[0].sql, /^INSERT INTO packages \(id, owner_account_id, manifest_id, display_name\)/);
+  assert.deepEqual(queries[0].parameters, ['pkg-1', 'account', 'l3rd', 'Lower third']);
+  assert.match(queries[1].sql, /\(id, package_id, archive_id,/);
+  assert.match(queries[1].sql, /'user_upload', \?, 'draft'\)/);
+  assert.deepEqual(queries[1].parameters.slice(0, 3), ['ver-1', 'pkg-1', 'arch-1']);
+  assert.match(queries[2].sql, /^UPDATE packages SET latest_version_id = \?/);
+  assert.equal(queries.filter(({ sql }) => sql.startsWith('INSERT INTO packages')).length, 1);
+  assert.deepEqual(queries[3].parameters.slice(0, 3), ['ver-2', 'pkg-0', 'arch-1']);
+  assert.deepEqual(transactionEvents, ['begin', 'commit', 'release']);
+});
+
+test('the private catalog lists the latest version of each owned package', async () => {
+  rows = [{ versionId: 'ver-2', display_name: 'Lower third', versionCount: 2, manifest: {} }];
+  const [item] = await listPrivateCatalog('account');
+  assert.deepEqual([item.versionId, item.versionCount, item.isPrivate, item.thumbnailUrl], ['ver-2', 2, true, null]);
+  assert.match(queries[0].sql, /JOIN package_versions pv ON pv.id = p.latest_version_id/);
+  assert.match(queries[0].sql, /WHERE p.owner_account_id = \? AND p.disabled = FALSE/);
 });

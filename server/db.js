@@ -198,7 +198,7 @@ export async function findAccountByToken(token, kind = 'renderer') {
 }
 
 export async function listPublishedCatalog() {
-  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.version_label AS versionLabel,
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel,
       pv.manifest_name AS display_name, pv.manifest_description AS description,
       pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile,
       pv.main_file_relpath AS mainFile,
@@ -265,19 +265,28 @@ export function catalogDetails(manifest) {
   };
 }
 
-export async function findPublishedCatalogItem(versionId) {
-  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.version_label AS versionLabel,
+// Published graphics are visible to everyone; private uploads only to the account that owns them.
+function visibleTo(accountId) {
+  return accountId == null ? { sql: "pv.review_state = 'published'", params: [] }
+    : { sql: "(pv.review_state = 'published' OR p.owner_account_id = ?)", params: [accountId] };
+}
+
+export const findPublishedCatalogItem = (versionId) => findCatalogItem(versionId, null);
+
+export async function findCatalogItem(versionId, accountId = null) {
+  const visible = visibleTo(accountId);
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel,
       pv.manifest_name AS display_name, pv.manifest_description AS description,
       pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile,
       pv.main_file_relpath AS mainFile, pv.source, pv.created_at AS publishedAt,
-      p.id AS packageId, p.manifest_id AS manifestId
+      pv.review_state AS reviewState, p.id AS packageId, p.manifest_id AS manifestId
     FROM package_versions pv JOIN packages p ON p.id = pv.package_id
-    WHERE pv.id = ? AND pv.review_state = 'published' AND p.disabled = FALSE`, [versionId]);
+    WHERE pv.id = ? AND ${visible.sql} AND p.disabled = FALSE`, [versionId, ...visible.params]);
   const row = rows[0];
   if (!row) return null;
-  const { manifest, manifestFile, mainFile, ...item } = row;
+  const { manifest, manifestFile, mainFile, reviewState, ...item } = row;
   const thumbnails = await findThumbnails(row, storageRoot);
-  return { ...item, ...catalogDetails(manifest),
+  return { ...item, isPrivate: reviewState !== 'published', ...catalogDetails(manifest),
     thumbnailUrl: thumbnails.length ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null,
     thumbnails: thumbnails.map(({ index }) => {
       const declared = manifest.thumbnails[index];
@@ -288,13 +297,79 @@ export async function findPublishedCatalogItem(versionId) {
     }) };
 }
 
-export async function findPublishedVersion(versionId) {
-  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.package_id AS packageId,
+export const findPublishedVersion = (versionId) => findVisibleVersion(versionId, null);
+
+export async function findVisibleVersion(versionId, accountId = null) {
+  const visible = visibleTo(accountId);
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.package_id AS packageId,
       pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile,
       pv.main_file_relpath AS mainFile
     FROM package_versions pv JOIN packages p ON p.id = pv.package_id
-    WHERE pv.id = ? AND pv.review_state = 'published' AND p.disabled = FALSE`, [versionId]);
+    WHERE pv.id = ? AND ${visible.sql} AND p.disabled = FALSE`, [versionId, ...visible.params]);
   return rows[0] ?? null;
+}
+
+// Files of any version of an enabled package, for graphic frames in the renderer. Version IDs are random UUIDs that
+// only the owner sees for private uploads, so they act as the capability for private package files.
+export async function findRenderableVersion(versionId) {
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.package_id AS packageId, pv.main_file_relpath AS mainFile
+    FROM package_versions pv JOIN packages p ON p.id = pv.package_id
+    WHERE pv.id = ? AND p.disabled = FALSE`, [versionId]);
+  return rows[0] ?? null;
+}
+
+// ---- Private catalog: packages uploaded by an account, newest version each ----
+
+export async function listPrivateCatalog(accountId) {
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel,
+      pv.manifest_name AS display_name, pv.manifest_description AS description,
+      pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile, pv.main_file_relpath AS mainFile,
+      pv.created_at AS uploadedAt, p.id AS packageId,
+      (SELECT COUNT(*) FROM package_versions other WHERE other.package_id = p.id) AS versionCount
+    FROM packages p JOIN package_versions pv ON pv.id = p.latest_version_id
+    WHERE p.owner_account_id = ? AND p.disabled = FALSE
+    ORDER BY pv.created_at DESC, pv.id`, [accountId]);
+  return Promise.all(rows.map(async (row) => {
+    const { manifest, manifestFile, mainFile, ...item } = row;
+    const thumbnail = await findThumbnail(row, storageRoot);
+    return { ...item, versionCount: Number(row.versionCount), isPrivate: true,
+      thumbnailUrl: thumbnail ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null };
+  }));
+}
+
+export async function findOwnedUpload(accountId, checksum) {
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.manifest_name AS name, pv.version_label AS versionLabel
+    FROM package_versions pv JOIN packages p ON p.id = pv.package_id
+    WHERE p.owner_account_id = ? AND pv.zip_checksum_sha256 = ? LIMIT 1`, [accountId, checksum]);
+  return rows[0] ?? null;
+}
+
+export async function findOwnedPackageId(accountId, manifestId) {
+  const [rows] = await pool.query('SELECT id FROM packages WHERE owner_account_id = ? AND manifest_id = ?', [accountId, manifestId]);
+  return rows[0]?.id ?? null;
+}
+
+// Saves all graphics of one upload as new private (draft) versions in a single transaction, so an upload is stored
+// completely or not at all. A graphic whose package (same manifest id) exists becomes a new version of it.
+export async function saveUploadedVersions(accountId, versions) {
+  await inTransaction(async (connection) => {
+    for (const version of versions) {
+      if (version.isNewPackage) {
+        await connection.query('INSERT INTO packages (id, owner_account_id, manifest_id, display_name) VALUES (?, ?, ?, ?)',
+          [version.packageId, accountId, version.manifestId, version.manifestName]);
+      }
+      await connection.query(`INSERT INTO package_versions
+        (id, package_id, archive_id, version_label, manifest_name, manifest_description, manifest_json, manifest_file_relpath, main_file_relpath,
+         zip_checksum_sha256, zip_size_bytes, uncompressed_size_bytes, file_count, source, uploaded_by_account_id, review_state)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'user_upload', ?, 'draft')`, [
+        version.id, version.packageId, version.archiveId, version.versionLabel, version.manifestName, version.description,
+        JSON.stringify(version.manifest), version.manifestFile, version.mainFile, version.checksum, version.zipSize,
+        version.uncompressedSize, version.fileCount, accountId
+      ]);
+      await connection.query('UPDATE packages SET latest_version_id = ?, display_name = ? WHERE id = ? AND owner_account_id = ?',
+        [version.id, version.manifestName, version.packageId, accountId]);
+    }
+  });
 }
 
 const addableVersion = `FROM package_versions pv
@@ -314,7 +389,7 @@ export async function addMyGraphic(accountId, versionId) {
 }
 
 const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
-    g.schema_data AS schemaData, pv.id AS versionId, pv.version_label AS versionLabel,
+    g.schema_data AS schemaData, pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel,
     pv.manifest_name AS display_name, pv.manifest_description AS description,
     pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile,
     pv.main_file_relpath AS mainFile, pv.source, p.id AS packageId,
@@ -331,7 +406,9 @@ export async function listMyGraphics(accountId) {
     const { manifest, manifestFile, mainFile, ...item } = row;
     const [thumbnail, schema] = await Promise.all([!row.packageDisabled && findThumbnail(row, storageRoot), resolvePropertySchema(row, storageRoot)]);
     return { ...item, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled), schema,
-      thumbnailUrl: thumbnail ? `/api/my-graphics/${encodeURIComponent(row.entryId)}/thumbnail` : null };
+      // Addressed by the immutable version, never by entry ID: entry IDs can repeat (e.g. after a database reset)
+      // and a cached image would then show another graphic.
+      thumbnailUrl: thumbnail ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null };
   }));
 }
 
@@ -384,7 +461,7 @@ export async function updateMyGraphic(accountId, entryId, changes) {
 
 export async function listRenderEntries(accountId) {
   const [rows] = await pool.query(`SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
-      pv.id AS versionId, pv.version_label AS versionLabel, pv.manifest_name AS display_name,
+      pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel, pv.manifest_name AS display_name,
       pv.manifest_description AS description, pv.main_file_relpath AS mainFile, p.disabled AS packageDisabled
     FROM my_graphics_entries g
     JOIN package_versions pv ON pv.id = g.package_version_id
@@ -396,7 +473,7 @@ export async function listRenderEntries(accountId) {
 
 export async function listRenderInstances(accountId) {
   const [rows] = await pool.query(`SELECT CAST(r.entry_id AS CHAR) AS entryId, r.instance_id AS instanceId, r.data,
-      r.current_step AS currentStep, r.playing, pv.id AS versionId, pv.main_file_relpath AS mainFile
+      r.current_step AS currentStep, r.playing, pv.id AS versionId, pv.archive_id AS archiveId, pv.main_file_relpath AS mainFile
     FROM render_instances r
     JOIN my_graphics_entries g ON g.id = r.entry_id AND g.account_id = r.account_id
     JOIN package_versions pv ON pv.id = g.package_version_id
@@ -437,10 +514,10 @@ export async function saveSeedPackage(packageRecord, versionRecord) {
     await connection.query(`INSERT INTO packages (id, manifest_id, display_name)
       VALUES (?, ?, ?)`, [packageRecord.id, packageRecord.manifestId, packageRecord.displayName]);
     await connection.query(`INSERT INTO package_versions
-      (id, package_id, version_label, manifest_name, manifest_description, manifest_json, manifest_file_relpath, main_file_relpath,
+      (id, package_id, archive_id, version_label, manifest_name, manifest_description, manifest_json, manifest_file_relpath, main_file_relpath,
        zip_checksum_sha256, zip_size_bytes, uncompressed_size_bytes, file_count, source, review_state)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`, [
-      versionRecord.id, packageRecord.id, versionRecord.versionLabel, versionRecord.manifestName,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published')`, [
+      versionRecord.id, packageRecord.id, versionRecord.archiveId, versionRecord.versionLabel, versionRecord.manifestName,
       versionRecord.description, JSON.stringify(versionRecord.manifest), versionRecord.manifestFile ?? null, versionRecord.mainFile,
       versionRecord.checksum, versionRecord.zipSize, versionRecord.uncompressedSize, versionRecord.fileCount,
       versionRecord.source

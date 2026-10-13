@@ -1,13 +1,14 @@
 import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
-import { deleteRenderInstances, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findPublishedCatalogItem, findPublishedVersion,
+import { deleteRenderInstances, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findCatalogItem, findRenderableVersion, findVisibleVersion,
   initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
 import myGraphicsRouter from './my-graphics.js';
 import rundownsRouter from './rundowns.js';
+import { createPrivateCatalog } from './private-catalog.js';
 import { configureSession } from './session.js';
 import { assetRoute, createAssetHandler, frameDocument, framePath, parseRendererHost, rendererDocument, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
 import { createRenderHub } from './render-hub.js';
@@ -39,7 +40,7 @@ app.get('/api/catalog', async (_request, response) => {
 function sendThumbnail(response, thumbnail) {
   if (!thumbnail) return response.sendStatus(404);
   response.sendFile(thumbnail, { headers: {
-    'Cache-Control': 'public, max-age=3600',
+    'Cache-Control': 'private, max-age=3600',
     'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "sandbox; default-src 'none'"
   } }, (error) => {
@@ -48,21 +49,21 @@ function sendThumbnail(response, thumbnail) {
 }
 app.get('/api/catalog/:versionId', async (request, response) => {
   try {
-    const item = await findPublishedCatalogItem(request.params.versionId);
+    const item = await findCatalogItem(request.params.versionId, request.session?.accountId ?? null);
     if (!item) return response.status(404).json({ error: 'Graphic not found' });
     response.json({ item });
   } catch (error) { response.status(503).json({ error: 'Catalog unavailable', detail: error.message }); }
 });
 app.get('/api/catalog/:versionId/manifest', async (request, response) => {
   try {
-    const version = await findPublishedVersion(request.params.versionId);
+    const version = await findVisibleVersion(request.params.versionId, request.session?.accountId ?? null);
     if (!version) return response.status(404).json({ error: 'Graphic not found' });
     response.json({ manifest: version.manifest });
   } catch { response.status(503).json({ error: 'Unable to load graphic manifest' }); }
 });
 app.get('/api/catalog/:versionId/thumbnail', async (request, response) => {
   try {
-    const version = await findPublishedVersion(request.params.versionId);
+    const version = await findVisibleVersion(request.params.versionId, request.session?.accountId ?? null);
     sendThumbnail(response, version ? await findThumbnail(version, storageRoot) : null);
   } catch { response.sendStatus(503); }
 });
@@ -70,13 +71,14 @@ app.get('/api/catalog/:versionId/thumbnails/:index', async (request, response) =
   try {
     if (!/^\d{1,4}$/.test(request.params.index)) return response.sendStatus(404);
     const index = Number(request.params.index);
-    const version = await findPublishedVersion(request.params.versionId);
+    const version = await findVisibleVersion(request.params.versionId, request.session?.accountId ?? null);
     const thumbnails = version ? await findThumbnails(version, storageRoot) : [];
     sendThumbnail(response, thumbnails.find((thumbnail) => thumbnail.index === index)?.file);
   } catch { response.sendStatus(503); }
 });
 app.use('/api/my-graphics', myGraphicsRouter);
 app.use('/api/rundowns', rundownsRouter);
+app.use('/api/private', createPrivateCatalog());
 app.use('/api-docs', createApiDocs({ apiUrlFor: async (request) => request.session?.accountId
   ? apiUrl(request, await findAccountToken(request.session.accountId, 'api')) : undefined }));
 // Account token URLs: GET shows the current one, POST replaces the token (the old URL stops working).
@@ -106,7 +108,7 @@ app.post('/api/tokens/:kind', async (request, response) => {
 // Renderer: the page connects to /render/<token>/ws (see render-hub.js) and hosts each graphic in a frame page.
 const frame = frameDocument(rendererIsolated);
 app.get(framePath, (_request, response) => response.set(frame.headers).type('html').send(frame.html));
-app.get(assetRoute, createAssetHandler({ findPublishedVersion, storageRoot, isolated: rendererIsolated }));
+app.get(assetRoute, createAssetHandler({ findVersion: findRenderableVersion, storageRoot, isolated: rendererIsolated }));
 app.get(rendererRoute, async (request, response) => {
   try {
     if (!await findAccountByToken(request.params.token, 'renderer')) {

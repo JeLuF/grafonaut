@@ -8,7 +8,8 @@ import { applyFileLists, listAssetFiles, resolvePropertySchema } from './asset-f
 const storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ograf-assets-'));
 const packageId = '11111111-1111-4111-8111-111111111111';
 const versionId = '22222222-2222-4222-8222-222222222222';
-const root = path.join(storageRoot, 'packages', packageId, versionId, 'extracted');
+const archiveId = '33333333-3333-4333-8333-333333333333';
+const root = path.join(storageRoot, 'archives', archiveId, 'extracted');
 const themeProperty = { type: 'string', title: 'Visual Theme', default: './resources/themes/Default.css',
   v_spx: { ftype: 'filelist', extension: 'css', assetfolder: './resources/themes/' } };
 let version;
@@ -20,7 +21,7 @@ beforeEach(async () => {
     await fs.writeFile(path.join(root, 'pkg/resources/themes', file), '');
   }
   await fs.writeFile(path.join(root, 'outside.css'), '');
-  version = { packageId, versionId, mainFile: 'pkg/main.mjs', manifestFile: 'pkg/manifest.ograf.json',
+  version = { packageId, versionId, archiveId, mainFile: 'pkg/main.mjs', manifestFile: 'pkg/manifest.ograf.json',
     manifest: { id: 'info', main: 'main.mjs', schema: { type: 'object', properties: { f99: themeProperty, text: { type: 'string' } } } } };
 });
 after(() => fs.rm(storageRoot, { recursive: true, force: true }));
@@ -79,5 +80,5 @@ test('missing storage keeps the default as the only choice', async () => {
   await fs.rm(root, { recursive: true, force: true });
   const schema = await resolvePropertySchema(version, storageRoot);
   assert.deepEqual(schema.properties.f99.oneOf, [{ const: './resources/themes/Default.css', title: 'Default.css' }]);
-  assert.deepEqual(await resolvePropertySchema({ ...version, packageId: '../x' }, storageRoot).then((result) => result.properties.f99.oneOf.length), 1);
+  assert.deepEqual(await resolvePropertySchema({ ...version, archiveId: '../x' }, storageRoot).then((result) => result.properties.f99.oneOf.length), 1);
 });
