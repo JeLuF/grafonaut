@@ -89,7 +89,7 @@ export function ografOpenApi({ serverUrl } = {}) {
       '/renderers/{rendererId}/target/graphicInstance/updateAction': instanceAction('Update', 'Calls updateAction() with new data.',
         ref('UpdateActionParams'), 'updateAction'),
       '/renderers/{rendererId}/target/graphicInstance/customActions/{customActionId}': { post: {
-        ...instanceAction('Custom action', 'Calls customAction() with an action defined in the graphic manifest.', ref('CustomActionParams'), 'customAction').post,
+        ...instanceAction('Custom action', 'Calls customAction() with an action the graphic declares in its manifest (`customActions`, see GET /graphics/{graphicId}). If the action declares a `schema`, the payload must match it (`400` with `errors` otherwise); actions without a schema accept any payload, e.g. `{}`. `404` when the graphic does not declare the action.', ref('CustomActionParams'), 'customAction').post,
         parameters: [rendererId, { in: 'path', name: 'customActionId', required: true, description: 'ID of the custom action as defined by the graphic manifest', schema: { type: 'string', example: 'highlight' } }]
       } }
     },

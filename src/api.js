@@ -29,7 +29,8 @@ export async function ografRequest(apiBaseUrl, method, path, body) {
     body: body === undefined ? undefined : JSON.stringify(body) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || (typeof payload.statusCode === 'number' && (payload.statusCode < 200 || payload.statusCode >= 300))) {
-    throw new Error(payload.statusMessage ?? payload.detail ?? payload.title ?? 'The renderer could not complete the action');
+    const message = payload.statusMessage ?? payload.detail ?? payload.title ?? 'The renderer could not complete the action';
+    throw new Error(Array.isArray(payload.errors) && payload.errors.length ? `${message} ${payload.errors.join('; ')}` : message);
   }
   return payload;
 }
@@ -60,6 +61,25 @@ export async function triggerGraphicAction(control, action, data) {
   const result = await ografRequest(control.apiBaseUrl, 'POST', `${renderer}/target/graphicInstance/stopAction`, { renderTarget, graphicInstanceId, params: {} });
   await ografRequest(control.apiBaseUrl, 'PUT', `${renderer}/target/graphicInstance/clear`, { filters: [{ renderTarget, graphicInstanceId }] });
   return result;
+}
+
+// Runs a custom action declared by the graphic. Per the OGraf spec a graphic accepts every action once load() has
+// resolved (playing first is not required), so like Play this loads the graphic with the saved properties when it is
+// not loaded or has ended, then runs the action.
+export async function triggerCustomAction(control, actionId, payload = {}, data = {}) {
+  if (!canControlGraphic(control)) throw new Error('Renderer controls are not available');
+  if (typeof actionId !== 'string' || !actionId) throw new Error('Unknown custom action');
+  const renderer = `/renderers/${encodeURIComponent(control.rendererId)}`;
+  const { renderTarget } = control;
+  const target = await ografRequest(control.apiBaseUrl, 'GET', `${renderer}/target?renderTarget=${encodeURIComponent(JSON.stringify(renderTarget))}`);
+  const instance = target.graphicInstances?.[0];
+  let graphicInstanceId = instance?.graphicInstanceId;
+  if (!graphicInstanceId || instance.ended) {
+    graphicInstanceId = (await ografRequest(control.apiBaseUrl, 'POST', `${renderer}/target/graphicInstance/load`,
+      { renderTarget, graphicId: control.graphicId, params: { data: data ?? {} } })).graphicInstanceId;
+  }
+  return ografRequest(control.apiBaseUrl, 'POST', `${renderer}/target/graphicInstance/customActions/${encodeURIComponent(actionId)}`,
+    { renderTarget, graphicInstanceId, params: { payload } });
 }
 
 // Connection count and per-entry instance state of the account's renderer.

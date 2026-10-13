@@ -40,7 +40,9 @@ after(() => new Promise((resolve) => server.close(resolve)));
 
 beforeEach(() => {
   entries = [
-    { entryId: '1', label: 'Left', enabled: true, packageDisabled: false, versionId: 'v1', versionLabel: '1.0', display_name: 'Lower third', description: 'Name', mainFile: 'main.mjs' },
+    { entryId: '1', label: 'Left', enabled: true, packageDisabled: false, versionId: 'v1', versionLabel: '1.0', display_name: 'Lower third', description: 'Name', mainFile: 'main.mjs',
+      customActions: [{ id: 'highlight', name: 'Highlight', schema: null },
+        { id: 'setColor', name: 'Set color', schema: { type: 'object', properties: { color: { type: 'string', enum: ['red', 'blue'] } }, required: ['color'] } }] },
     { entryId: '2', label: null, enabled: false, packageDisabled: false, versionId: 'v1', versionLabel: '1.0', display_name: 'Lower third', description: 'Name', mainFile: 'main.mjs' },
     { entryId: '3', label: null, enabled: true, packageDisabled: false, versionId: 'v2', versionLabel: '2.0', display_name: 'Clock', description: '', mainFile: 'clock/main.mjs' },
     { entryId: '4', label: null, enabled: true, packageDisabled: false, versionId: 'v3', versionLabel: '1.0', display_name: 'Sting', description: '', mainFile: 'sting.mjs', stepCount: 0 }
@@ -220,4 +222,24 @@ test('graphics that never report a step stay on air until stopped', async () => 
   assert.deepEqual([instances.get('1').playing, instances.get('1').ended], [true, false]);
   await call('POST', '/renderers/main/target/graphicInstance/stopAction', { renderTarget: { entryId: '1' }, graphicInstanceId, params: {} });
   assert.deepEqual([instances.get('1').playing, instances.get('1').ended], [false, true]);
+});
+
+test('custom actions must be declared by the graphic and match the action\'s payload schema', async () => {
+  const { body: { graphicInstanceId } } = await load();
+  const custom = (id, payload) => call('POST', `/renderers/main/target/graphicInstance/customActions/${id}`, { renderTarget: { entryId: '1' }, graphicInstanceId, params: { payload } });
+  const before = commands.length;
+  const unknown = await custom('explode', {});
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.body.detail, 'The graphic has no custom action "explode".');
+  const invalid = await custom('setColor', { color: 'green' });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(invalid.body.errors, ['/color must be equal to one of the allowed values']);
+  assert.equal((await custom('setColor', {})).body.errors[0], "payload must have required property 'color'");
+  assert.equal(commands.length, before);
+  const valid = await custom('setColor', { color: 'blue' });
+  assert.equal(valid.status, 200);
+  assert.deepEqual(commands.at(-1).message.params, { id: 'setColor', payload: { color: 'blue' } });
+  assert.equal((await custom('highlight', null)).status, 200);
+  // Without a loaded instance the declared action still answers 404 for the instance.
+  assert.equal((await call('POST', '/renderers/main/target/graphicInstance/customActions/highlight', { renderTarget: { entryId: '1' }, graphicInstanceId: 'gi-old', params: { payload: {} } })).body.detail, 'No GraphicInstance found.');
 });

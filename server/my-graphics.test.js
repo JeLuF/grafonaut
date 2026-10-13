@@ -24,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -248,4 +248,17 @@ test('render entries carry the manifest stepCount (default 1) without the manife
   await saveRenderInstance('account', '1', { instanceId: 'gi-1', data: {}, playing: false, ended: true });
   assert.match(queries.at(-1).sql, /playing = VALUES\(playing\), ended = VALUES\(ended\)/);
   assert.deepEqual(queries.at(-1).parameters, ['gi-1', '{}', null, false, true, '1', 'account']);
+});
+
+test('custom actions are read from the manifest with names, descriptions and payload schemas', () => {
+  assert.deepEqual(manifestCustomActions({ customActions: [
+    { id: 'highlight', name: 'Highlight', schema: null },
+    { id: 'setColor', description: 'Changes the color', schema: { type: 'object' } },
+    { name: 'no id' }, null, { id: '  ' }, { id: 'list', schema: ['bad'] }
+  ] }), [
+    { id: 'highlight', name: 'Highlight', description: null, schema: null },
+    { id: 'setColor', name: 'setColor', description: 'Changes the color', schema: { type: 'object' } },
+    { id: 'list', name: 'list', description: null, schema: null }
+  ]);
+  assert.deepEqual(manifestCustomActions({}), []);
 });

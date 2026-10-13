@@ -6,7 +6,7 @@ import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
-import { fetchRendererStatus, requestJson, triggerGraphicAction } from './api.js';
+import { fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction } from './api.js';
 import './styles.css';
 
 const PAGE_SIZE = 6;
@@ -284,6 +284,19 @@ function App() {
     } finally { setPending((current) => { const next = new Set(current); next.delete(entryId); return next; }); }
   }
 
+  async function runCustomAction(entry, action, payload) {
+    const name = entry.label || entry.display_name;
+    setPending((current) => new Set(current).add(entry.entryId));
+    try {
+      await triggerCustomAction(entry.control, action.id, payload, entry.schemaData);
+      notify(`${name}: ${action.name}`);
+    } catch (error) { notify(`${name}: ${error.message}`, 'error'); throw error; }
+    finally {
+      setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; });
+      void refreshRendererStatus();
+    }
+  }
+
   async function runAction(entry, action) {
     setPending((current) => new Set(current).add(entry.entryId));
     const name = entry.label || entry.display_name;
@@ -318,7 +331,7 @@ function App() {
     </aside>
     <main className="app-shell">
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
       : view === 'private' ? <PrivateCatalogView account={account} authLoading={authLoading} count={privateItems.length} maxZipBytes={maxZipBytes}
         loading={privateLoading} error={privateError} onUploaded={loadPrivateCatalog}>

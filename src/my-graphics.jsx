@@ -2,7 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { getTemplate, getUiOptions } from '@rjsf/utils';
-import { ArrowDown, ArrowUp, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -132,7 +132,7 @@ export function PropertiesDialog({ entry, onSave, onClose }) {
   );
 }
 
-export function ActionMenu({ label, busy, items }) {
+export function ActionMenu({ label, busy, items, icon: TriggerIcon = MoreHorizontal, title = 'More options', menuLabel = 'Graphic options' }) {
   const [open, setOpen] = useState(false);
   const container = useRef(null);
   const trigger = useRef(null);
@@ -162,11 +162,12 @@ export function ActionMenu({ label, busy, items }) {
     }
   }}>
     <button ref={trigger} className="icon-button" type="button" disabled={busy} onClick={() => setOpen(!open)}
-      aria-label={label} title="More options" aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}><MoreHorizontal size={19} /></button>
-    {open && <div ref={menu} id={menuId} className="entry-menu-popup" role="menu" aria-label="Graphic options">
-      {items.filter(Boolean).map(({ key, label: itemLabel, icon: Icon, href, onSelect, danger }) => href
+      aria-label={label} title={title} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}><TriggerIcon size={19} /></button>
+    {open && <div ref={menu} id={menuId} className="entry-menu-popup" role="menu" aria-label={menuLabel}>
+      {items.filter(Boolean).map(({ key, label: itemLabel, icon: Icon, href, onSelect, danger, hint }) => href
         ? <a key={key} role="menuitem" href={href} onClick={() => setOpen(false)}><Icon size={16} />{itemLabel}</a>
-        : <button key={key} className={danger ? 'danger-menu-item' : undefined} type="button" role="menuitem" onClick={() => choose(onSelect)}><Icon size={16} />{itemLabel}</button>)}
+        : <button key={key} className={danger ? 'danger-menu-item' : undefined} type="button" role="menuitem" title={hint || undefined}
+          onClick={() => choose(onSelect)}><Icon size={16} />{itemLabel}</button>)}
     </div>}
   </div>;
 }
@@ -232,7 +233,54 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
   </dialog>;
 }
 
-function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, connections, onSave, onProperties, onAction, onDelete, onManifest }) {
+// Actions with a payload schema ask for the payload first; actions without one run directly.
+const needsPayload = (action) => Boolean(action.schema && action.schema.type === 'object' && Object.keys(action.schema.properties ?? {}).length);
+
+export function CustomActionDialog({ entry, action, onRun, onClose }) {
+  const dialog = useRef(null);
+  const headingId = useId();
+  const schema = useMemo(() => displaySchema(action.schema), [action.schema]);
+  const [data, setData] = useState({});
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const element = dialog.current;
+    element.showModal();
+    return () => element.close();
+  }, []);
+  async function run({ formData }) {
+    setRunning(true);
+    setError('');
+    try { await onRun(entry, action, formData ?? {}); onClose(); }
+    catch (failure) { setError(failure.message); }
+    finally { setRunning(false); }
+  }
+  return (
+    <dialog ref={dialog} className="properties-dialog confirm-dialog custom-action-dialog" aria-labelledby={headingId} onCancel={(event) => {
+      if (running) event.preventDefault(); else onClose();
+    }}>
+      <header className="dialog-heading">
+        <div><h2 id={headingId}>{action.name}</h2><p>{entry.label || entry.display_name}</p></div>
+        <button className="icon-button" type="button" onClick={onClose} disabled={running} aria-label="Close custom action" title="Close"><X size={18} /></button>
+      </header>
+      <div className="dialog-content properties-form">
+        {action.description && <p className="property-instruction">{action.description}</p>}
+        {error && <p role="alert" className="error-message">{error}</p>}
+        <PropertyFormBoundary>
+          <Form schema={schema} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
+            onSubmit={run} disabled={running} noHtml5Validate>
+            <div className="dialog-actions">
+              <button className="text-button" type="button" onClick={onClose} disabled={running}>Cancel</button>
+              <button className="primary-button" type="submit" disabled={running}><Zap size={16} />{running ? 'Running...' : 'Run action'}</button>
+            </div>
+          </Form>
+        </PropertyFormBoundary>
+      </div>
+    </dialog>
+  );
+}
+
+function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, connections, onSave, onProperties, onAction, onCustomAction, onDelete, onManifest }) {
   const [label, setLabel] = useState(entry.label ?? entry.display_name);
   const [editingLabel, setEditingLabel] = useState(false);
   const [savingLabel, setSavingLabel] = useState(false);
@@ -300,6 +348,9 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
           <button className="icon-button play-button" type="button" onClick={() => onAction(entry, 'playAction')} disabled={busy || !actionable} title={actionable ? 'Play' : unavailableReason} aria-label="Play"><Play size={18} /></button>
           <button className="icon-button" type="button" onClick={() => onAction(entry, 'stopAction')} disabled={busy || entry.packageDisabled || !canControlGraphic(entry.control)} title={canControlGraphic(entry.control) ? 'Stop' : 'Renderer controls are not available'} aria-label="Stop"><Square size={16} /></button>
           <button className="icon-button" type="button" onClick={() => onAction(entry, 'updateAction')} disabled={busy || !actionable} title={actionable ? 'Update with saved properties' : unavailableReason} aria-label="Update"><RefreshCw size={18} /></button>
+          {entry.customActions?.length > 0 && <ActionMenu label={`Custom actions for ${entry.label || entry.display_name}`} busy={busy || !actionable}
+            icon={Zap} title={actionable ? 'Custom actions' : unavailableReason} menuLabel="Custom actions"
+            items={entry.customActions.map((action) => ({ key: action.id, label: action.name, icon: Zap, hint: action.description, onSelect: () => onCustomAction(entry, action) }))} />}
           <EntryMenu entry={entry} busy={busy} onDelete={onDelete} onManifest={onManifest} />
         </div>
         <span className={`entry-availability${entry.live?.playing ? ' is-on-air' : ''}`}>{entry.packageDisabled ? 'Package unavailable'
@@ -310,8 +361,9 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
   );
 }
 
-export default function MyGraphicsView({ account, rundownName, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
+export default function MyGraphicsView({ account, rundownName, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onManifest, onReorder }) {
   const [editing, setEditing] = useState(null);
+  const [customAction, setCustomAction] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
   const [ordering, setOrdering] = useState(false);
   const [orderError, setOrderError] = useState('');
@@ -348,12 +400,14 @@ export default function MyGraphicsView({ account, rundownName, entries, loading,
           <SortableContext items={entries.map((entry) => entry.entryId)} strategy={verticalListSortingStrategy}>
             <ul className="graphics-list">{entries.map((entry, index) => <GraphicEntry key={entry.entryId} entry={entry} busy={ordering || pending.has(entry.entryId)}
               orderDisabled={orderDisabled} first={index === 0} last={index === entries.length - 1} onMove={(direction) => moveEntry(index, index + direction)} Preview={Preview} connections={rendererStatus?.connections} onSave={onSave} onProperties={setEditing} onAction={onAction}
+              onCustomAction={(item, action) => needsPayload(action) ? setCustomAction({ entry: item, action }) : onCustomAction(item, action, {}).catch(() => {})}
               onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>
           </SortableContext>
         </DndContext>}
         </div>
       </div>}
       {editing && <PropertiesDialog key={editing.entryId} entry={editing} onSave={onSave} onClose={() => setEditing(null)} />}
+      {customAction && <CustomActionDialog key={`${customAction.entry.entryId}-${customAction.action.id}`} {...customAction} onRun={onCustomAction} onClose={() => setCustomAction(null)} />}
       {entryDialog && <EntryDialog key={`${entryDialog.entry.entryId}-${entryDialog.mode}`} {...entryDialog} onDelete={onDelete} onManifest={onManifest} onClose={() => setEntryDialog(null)} />}
     </section>
   );

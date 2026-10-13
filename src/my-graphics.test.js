@@ -853,3 +853,35 @@ test('private graphics are marked as such on the detail page', async () => {
   assert.ok(screen.getByText('PRIVATE GRAPHIC · v2.0'));
   assert.equal(screen.getByRole('link', { name: 'Back to private catalog' }).getAttribute('href'), '#private');
 });
+
+test('custom actions run from the entry menu, asking for a payload when the action has a schema', async () => {
+  const control = { apiBaseUrl: 'https://app.example.com/t/ograf/v1/', rendererId: 'main', renderTarget: { entryId: '1' }, graphicId: 'version' };
+  const customActions = [{ id: 'highlight', name: 'Highlight', description: 'Flash the name', schema: null },
+    { id: 'setColor', name: 'Set color', description: null, schema: { type: 'object', properties: { color: { type: 'string', title: 'Color', default: 'red' } } } }];
+  const runs = [];
+  let fail = false;
+  showView({ entries: [{ ...entry, control, customActions }, { ...entry, entryId: '2', label: 'Right', control }, { ...entry, entryId: '3', label: 'Off', customActions }],
+    onCustomAction: async (item, action, payload) => {
+      if (fail) throw new Error('The payload does not match the custom action\'s schema.');
+      runs.push([item.entryId, action.id, payload]);
+    } });
+  assertAbsent(screen.queryByRole('button', { name: 'Custom actions for Right' }));
+  assert.equal(screen.getByRole('button', { name: 'Custom actions for Off' }).disabled, true);
+  fireEvent.click(screen.getByRole('button', { name: 'Custom actions for Left' }));
+  const highlight = screen.getByRole('menuitem', { name: 'Highlight' });
+  assert.equal(highlight.getAttribute('title'), 'Flash the name');
+  fireEvent.click(highlight);
+  await waitFor(() => assert.deepEqual(runs, [['1', 'highlight', {}]]));
+  fireEvent.click(screen.getByRole('button', { name: 'Custom actions for Left' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Set color' }));
+  const dialog = within(screen.getByRole('dialog'));
+  assert.ok(dialog.getByRole('heading', { name: 'Set color' }));
+  fail = true;
+  fireEvent.change(dialog.getByRole('textbox', { name: 'Color' }), { target: { value: 'blue' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Run action' }));
+  await waitFor(() => assert.match(dialog.getByRole('alert').textContent, /does not match/));
+  fail = false;
+  fireEvent.click(dialog.getByRole('button', { name: 'Run action' }));
+  await waitFor(() => assertAbsent(screen.queryByRole('dialog')));
+  assert.deepEqual(runs.at(-1), ['1', 'setColor', { color: 'blue' }]);
+});

@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 import express from 'express';
 import { moduleUrl, RENDERER_ID, RendererError } from './render-hub.js';
 
@@ -10,6 +12,19 @@ import { moduleUrl, RENDERER_ID, RendererError } from './render-hub.js';
 export const apiMountPath = '/:token/ograf/v1';
 const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+const payloadValidator = new Ajv({ allErrors: true, strict: false });
+addFormats(payloadValidator);
+
+// Validates a custom action payload against the action's schema from the manifest; returns readable problems.
+export function payloadProblems(schema, payload) {
+  if (!isObject(schema)) return [];
+  let validate;
+  try { validate = payloadValidator.compile(schema); }
+  catch { return ['The custom action declares an invalid payload schema.']; }
+  finally { payloadValidator.removeSchema(schema); }
+  if (validate(payload)) return [];
+  return validate.errors.slice(0, 10).map((error) => `${error.instancePath || 'payload'} ${error.message}`);
+}
 
 export function apiUrl(request, token) {
   return `${request.protocol}://${request.host}/${encodeURIComponent(token)}/ograf/v1/`;
@@ -181,11 +196,17 @@ export function createOgrafApi({ hub, store, findAccountByToken }) {
     }
   }, { renderer: true }));
 
-  async function instanceAction(request, response, accountId, action, params, nextState) {
+  // `check(entry)` may reject the request before anything is sent to the renderers: return [status, title, detail, extra].
+  async function instanceAction(request, response, accountId, action, params, nextState, check = () => null) {
     const body = request.body ?? {};
     const entryId = parseTarget(body.renderTarget);
     const { entry, instance } = entryId ? await targetState(accountId, entryId) : {};
     if (!entry) return problem(request, response, 404, 'Not Found', 'No RenderTarget found.');
+    const rejection = check(entry);
+    if (rejection) {
+      const [status, title, detail, extra] = rejection;
+      return response.status(status).json({ title, status, detail, instance: request.path, ...extra });
+    }
     if (!instance || instance.instanceId !== body.graphicInstanceId) return problem(request, response, 404, 'Not Found', 'No GraphicInstance found.');
     const result = await hub.command(accountId, { action, instanceId: instance.instanceId, entryId, params });
     await store.saveRenderInstance(accountId, entryId, { ...instance, ...nextState(instance, result, entry) });
@@ -220,8 +241,15 @@ export function createOgrafApi({ hub, store, findAccountByToken }) {
   router.post('/renderers/:rendererId/target/graphicInstance/customActions/:customActionId', handle(async (request, response, accountId) => {
     const params = paramsOf(request);
     if (!params || !('payload' in params)) return problem(request, response, 400, 'Bad Request', 'params.payload is required.');
+    const actionId = request.params.customActionId;
     await instanceAction(request, response, accountId, 'customAction',
-      { id: request.params.customActionId, ...pick(params, ['payload', 'skipAnimation']) }, () => ({}));
+      { id: actionId, ...pick(params, ['payload', 'skipAnimation']) }, () => ({}), (entry) => {
+        // Only actions the graphic declares in its manifest, with a payload matching the action's schema.
+        const declared = (entry.customActions ?? []).find((candidate) => candidate.id === actionId);
+        if (!declared) return [404, 'Not Found', `The graphic has no custom action "${actionId}".`];
+        const problems = payloadProblems(declared.schema, params.payload);
+        return problems.length ? [400, 'Bad Request', 'The payload does not match the custom action\'s schema.', { errors: problems }] : null;
+      });
   }, { renderer: true }));
 
   router.use((error, request, response, next) => {

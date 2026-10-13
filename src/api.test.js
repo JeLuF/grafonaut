@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, mock, test } from 'node:test';
-import { canControlGraphic, fetchRendererStatus, requestJson, triggerGraphicAction } from './api.js';
+import { canControlGraphic, fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction } from './api.js';
 
 const base = 'https://app.example.invalid/token/ograf/v1/';
 const control = { apiBaseUrl: base, rendererId: 'main', renderTarget: { entryId: '7' }, graphicId: 'version-1' };
@@ -118,4 +118,28 @@ test('renderer status lists connections and instances per entry', async () => {
 test('account API failures retain their error message', async () => {
   mock.method(globalThis, 'fetch', async () => Response.json({ error: 'Sign-in required' }, { status: 401 }));
   await assert.rejects(requestJson('/api/my-graphics'), /Sign-in required/);
+});
+
+test('custom actions are sent with their payload to the loaded instance', async () => {
+  const { calls } = mockApi({ loaded: true });
+  await triggerCustomAction(control, 'set color', { color: 'red' });
+  assert.equal(calls[1].path, '/renderers/main/target/graphicInstance/customActions/set%20color');
+  assert.deepEqual(calls[1].body, { renderTarget: { entryId: '7' }, graphicInstanceId: 'gi-1', params: { payload: { color: 'red' } } });
+  mock.restoreAll();
+  mock.restoreAll();
+  mock.method(globalThis, 'fetch', async (url) => url.includes('/target?') ? Response.json({ graphicInstances: [{ graphicInstanceId: 'gi-1' }] })
+    : Response.json({ title: 'Bad Request', detail: 'The payload does not match the custom action\'s schema.', errors: ['/color must be string'] }, { status: 400 }));
+  await assert.rejects(triggerCustomAction(control, 'setColor', { color: 1 }), /does not match the custom action's schema\. \/color must be string/);
+});
+
+test('a custom action loads the graphic with the saved properties first when it is not loaded or has ended', async () => {
+  for (const options of [{}, { loaded: true, ended: true }]) {
+    const { calls } = mockApi(options);
+    await triggerCustomAction(control, 'showLeft', {}, { name: 'Host' });
+    assert.deepEqual(calls.map(({ path }) => path.split('?')[0]), ['/renderers/main/target', '/renderers/main/target/graphicInstance/load',
+      '/renderers/main/target/graphicInstance/customActions/showLeft']);
+    assert.deepEqual(calls[1].body, { renderTarget: { entryId: '7' }, graphicId: 'version-1', params: { data: { name: 'Host' } } });
+    assert.equal(calls[2].body.graphicInstanceId, 'gi-new');
+    mock.restoreAll();
+  }
 });

@@ -399,6 +399,20 @@ const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabl
   JOIN package_versions pv ON pv.id = g.package_version_id
   JOIN packages p ON p.id = pv.package_id`;
 
+// The custom actions a graphic declares in its manifest: id, display name, description and the optional JSON schema
+// of the action's payload.
+export function manifestCustomActions(manifest) {
+  if (!Array.isArray(manifest?.customActions)) return [];
+  return manifest.customActions
+    .filter((action) => action && typeof action === 'object' && typeof action.id === 'string' && action.id.trim())
+    .map((action) => ({
+      id: action.id,
+      name: typeof action.name === 'string' && action.name.trim() ? action.name : action.id,
+      description: typeof action.description === 'string' ? action.description : null,
+      schema: action.schema && typeof action.schema === 'object' && !Array.isArray(action.schema) ? action.schema : null
+    }));
+}
+
 export async function listMyGraphics(accountId) {
   const [rows] = await pool.query(`${myGraphicsSelect} ${currentRundown}
     WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
@@ -406,6 +420,7 @@ export async function listMyGraphics(accountId) {
     const { manifest, manifestFile, mainFile, ...item } = row;
     const [thumbnail, schema] = await Promise.all([!row.packageDisabled && findThumbnail(row, storageRoot), resolvePropertySchema(row, storageRoot)]);
     return { ...item, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled), schema,
+      customActions: manifestCustomActions(manifest),
       // Addressed by the immutable version, never by entry ID: entry IDs can repeat (e.g. after a database reset)
       // and a cached image would then show another graphic.
       thumbnailUrl: thumbnail ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null };
@@ -471,7 +486,7 @@ export async function listRenderEntries(accountId) {
     WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
   // stepCount follows the OGraf step model: 0 = played once (animates out by itself), 1 = default, -1 = dynamic.
   return rows.map(({ manifest, ...row }) => ({ ...row, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled),
-    stepCount: Number.isInteger(manifest?.stepCount) ? manifest.stepCount : 1 }));
+    stepCount: Number.isInteger(manifest?.stepCount) ? manifest.stepCount : 1, customActions: manifestCustomActions(manifest) }));
 }
 
 export async function listRenderInstances(accountId) {
