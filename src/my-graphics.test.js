@@ -641,3 +641,25 @@ test('the renderer preview reports a missing URL instead of an empty frame', asy
   render(React.createElement(RendererPreview, { account: null }));
   assertAbsent(screen.queryByRole('heading', { name: 'Renderer preview' }));
 });
+
+test('GDD labels name the property fields and their enum options', async () => {
+  const { displaySchema } = await import(myGraphicsUrl);
+  const saved = [];
+  const weather = { ...entry, schemaData: { _darkText: 0 }, schema: { type: 'object', properties: {
+    _darkText: { enum: [0, 1], type: 'integer', label: 'Cityname Color', order: 0, default: 0, gddType: 'select',
+      gddOptions: { labels: { 0: 'Light Text', 1: 'Dark Text' } } },
+    city: { type: 'string', title: 'City', label: 'Ignored label' },
+    plain: { type: 'string' }
+  } } };
+  render(React.createElement(PropertiesDialog, { entry: weather, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const select = screen.getByRole('combobox', { name: 'Cityname Color' });
+  assert.deepEqual(within(select).getAllByRole('option').map((option) => option.textContent).filter(Boolean), ['Light Text', 'Dark Text']);
+  assert.ok(screen.getByRole('textbox', { name: 'City' }));
+  assertAbsent(screen.queryByText('_darkText'));
+  fireEvent.change(select, { target: { value: within(select).getByRole('option', { name: 'Dark Text' }).value } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved, [['1', { schemaData: { _darkText: 1 } }]]));
+  assert.deepEqual(displaySchema({ type: 'string', enum: ['a'], gddOptions: { labels: { b: 'B' } } }).oneOf, [{ const: 'a', title: 'a' }]);
+  assert.deepEqual(displaySchema({ type: 'string', enum: ['a'] }).enum, ['a']);
+  assert.equal('title' in weather.schema.properties._darkText, false);
+});

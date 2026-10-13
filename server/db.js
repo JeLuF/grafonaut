@@ -152,7 +152,7 @@ export function catalogDetails(manifest) {
       width: constraint(requirement.resolution?.width), height: constraint(requirement.resolution?.height), frameRate: constraint(requirement.frameRate)
     })),
     properties: Object.entries(properties).filter(([, property]) => isObject(property) && property.hidden !== true).map(([key, property]) => ({
-      key, title: text(property.title) ?? key, description: text(property.description),
+      key, title: text(property.title) ?? text(property.label) ?? key, description: text(property.description),
       type: property.v_spx?.ftype === 'filelist' && typeof property.v_spx.extension === 'string' ? `file (${property.v_spx.extension})`
         : typeof property.type === 'string' ? property.type : null
     }))

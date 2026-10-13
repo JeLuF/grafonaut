@@ -119,6 +119,8 @@ test('manifest metadata rejects unsafe or malformed author links', () => {
   assert.equal(catalogDetails({ author: { name: 'X', url: 'javascript:alert(1)' } }).author.url, null);
   assert.equal(catalogDetails({ author: { email: 'not an email' } }).author, null);
   assert.equal(catalogDetails({ author: 'Plain Name' }).author.name, 'Plain Name');
+  assert.deepEqual(catalogDetails({ schema: { properties: { _darkText: { type: 'integer', label: 'Cityname Color' } } } }).properties,
+    [{ key: '_darkText', title: 'Cityname Color', description: null, type: 'integer' }]);
   const empty = catalogDetails(null);
   assert.equal(empty.author, null);
   assert.deepEqual(empty.customActions, []);

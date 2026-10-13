@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { getTemplate, getUiOptions } from '@rjsf/utils';
@@ -70,10 +70,30 @@ function PropertyField(props) {
 
 const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription };
 
+const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+
+// Maps GDD/SPX display hints that RJSF does not understand onto JSON Schema: `label` becomes the field title,
+// and `gddOptions.labels` names the values of an enum.
+export function displaySchema(schema) {
+  if (Array.isArray(schema)) return schema.map(displaySchema);
+  if (!isObject(schema)) return schema;
+  const result = { ...schema };
+  if (isObject(schema.properties)) result.properties = Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, displaySchema(value)]));
+  if (schema.items) result.items = displaySchema(schema.items);
+  if (typeof schema.title !== 'string' && typeof schema.label === 'string' && schema.label.trim()) result.title = schema.label;
+  const labels = schema.gddOptions?.labels;
+  if (Array.isArray(schema.enum) && isObject(labels) && !schema.oneOf) {
+    result.oneOf = schema.enum.map((value) => ({ const: value, title: typeof labels[String(value)] === 'string' ? labels[String(value)] : String(value) }));
+    delete result.enum;
+  }
+  return result;
+}
+
 export function PropertiesDialog({ entry, onSave, onClose }) {
   const dialog = useRef(null);
   const headingId = useId();
   const [data, setData] = useState(entry.schemaData ?? {});
+  const schema = useMemo(() => displaySchema(entry.schema), [entry.schema]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -99,7 +119,7 @@ export function PropertiesDialog({ entry, onSave, onClose }) {
       <div className="dialog-content properties-form">
         {error && <p role="alert" className="error-message">{error}</p>}
         <PropertyFormBoundary>
-          <Form schema={entry.schema} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
+          <Form schema={schema} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
             onSubmit={saveProperties} disabled={saving} noHtml5Validate>
             <div className="dialog-actions">
               <button className="text-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
