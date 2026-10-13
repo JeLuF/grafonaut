@@ -36,13 +36,15 @@ const privateCatalogUrl = (await compileModule('./private-catalog.jsx')).url;
 const { default: PrivateCatalogView } = await import(privateCatalogUrl);
 const groupActionsUrl = (await compileModule('./group-actions.jsx', { './my-graphics.jsx': myGraphicsUrl })).url;
 const { GroupActionsPanel } = await import(groupActionsUrl);
+const brandUrl = (await compileModule('./brand.jsx')).url;
+const { FeatureRow, HeroArt, Logo, TwitchLogin } = await import(brandUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
 const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   filename: mainUrl.pathname, configFile: false, babelrc: false, plugins: [jsx, () => ({ visitor: {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -637,6 +639,8 @@ test('my graphics shows a sandboxed renderer preview scaled from 1920x1080 to 64
   assert.equal(screen.getAllByRole('listitem').length, 2);
   const styles = await fs.readFile(new URL('./styles.css', import.meta.url), 'utf8');
   assert.match(styles, /\.renderer-preview\s*\{[^}]*width:\s*min\(640px, 100%\);/);
+  // The app is dark; without a light scheme on the iframe the browser paints an opaque white canvas behind the renderer.
+  assert.match(styles, /\.renderer-preview-frame iframe\s*\{[^}]*color-scheme:\s*light;/);
   assert.match(styles, /\.renderer-preview-frame\s*\{[^}]*aspect-ratio:\s*16 \/ 9;/);
 });
 
@@ -956,4 +960,14 @@ test('server validation problems stay visible and group actions can be deleted',
 test('new group actions need graphics in the rundown', () => {
   showGroups({ entries: [] });
   assert.equal(screen.getByRole('button', { name: 'New group action' }).disabled, true);
+});
+
+test('the landing page elements render: logo, Twitch login, hero art and the feature row', () => {
+  render(React.createElement('div', null, React.createElement(Logo), React.createElement(TwitchLogin), React.createElement(HeroArt), React.createElement(FeatureRow)));
+  assert.equal(screen.getByRole('link', { name: 'Login with Twitch' }).getAttribute('href'), '/api/auth/twitch');
+  assert.deepEqual(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent),
+    ['Works with OBS & vMix', 'Controller ready', 'Customizable & extensible', 'Built on an open standard', 'Log in with Twitch']);
+  const hero = screen.getByRole('img', { name: /astronaut on a moon/ });
+  assert.equal(hero.getAttribute('src'), '/brand/hero-astronaut-1536.webp');
+  assert.match(hero.getAttribute('srcset'), /hero-astronaut-768\.webp 768w/);
 });

@@ -1,13 +1,20 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, Lock, MonitorPlay, Plus, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, Lock, MonitorPlay, Plus, Search, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
 import { GroupActionsPanel } from './group-actions.jsx';
+import { FeatureRow, HeroArt, TwitchLogin, Wordmark } from './brand.jsx';
 import { fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction, triggerGroupAction } from './api.js';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/outfit/600.css';
+import '@fontsource/outfit/700.css';
+import '@fontsource/outfit/800.css';
 import './styles.css';
 
 const PAGE_SIZE = 6;
@@ -352,10 +359,20 @@ function App() {
     }
   }
 
+  // Signed-out visitors get the website layout (top header, landing page); signed-in users the app with its sidebar.
+  const signedOut = !authLoading && !account;
   return (
-    <div className="app-layout">
-    <aside className="sidebar">
-      <a className="brand-mark" href="#catalog" aria-label="Grafanaut"><span aria-hidden="true">G</span><span className="brand-name" aria-hidden="true">RAFANAUT</span></a>
+    <div className={signedOut ? 'site-layout' : 'app-layout'}>
+    {signedOut ? <header className="site-header">
+      <a className="brand-mark" href="#catalog" aria-label="Grafanaut home"><Wordmark /></a>
+      <nav className="site-nav" aria-label="Site">
+        <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}>Templates</a>
+        <a href="/api-docs/">API docs</a>
+        <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf</a>
+      </nav>
+      <TwitchLogin compact />
+    </header> : <aside className="sidebar">
+      <a className="brand-mark" href="#catalog" aria-label="Grafanaut home"><Wordmark /></a>
       <nav className="view-tabs" aria-label="Graphics views">
         <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#private" aria-current={view === 'private' ? 'page' : undefined}><Lock size={17} />Private catalog</a>
@@ -368,10 +385,10 @@ function App() {
         void refreshRendererStatus();
       }} />}
       <div className="sidebar-account">
-        {authLoading ? null : account ? <span className="account-chip">{account.twitch_display_name ?? account.displayName}</span> : <a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a>}
+        {account && <span className="account-chip">{account.twitch_display_name ?? account.displayName}</span>}
       </div>
-    </aside>
-    <main className="app-shell">
+    </aside>}
+    <main className={`app-shell${signedOut ? ' site-main' : ''}`}>
       {notice && <p className="notice" role="status">{notice}</p>}
       {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName}
         groupActions={<GroupActionsPanel groups={groups} entries={controlledEntries} error={groupsError} running={runningGroups} disabled={!apiUrl}
@@ -392,21 +409,41 @@ function App() {
       : view === 'graphic' ? <GraphicDetail versionId={route.versionId}
         summary={[...catalog, ...privateItems].find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>
-      {!authLoading && !account && <section className="hero">
-        <p className="eyebrow">GRAFANAUT · OGRAF GRAPHICS</p>
-        <h1>Broadcast graphics,<br /><em>ready to play.</em></h1>
-        <p className="hero-copy">Browse the shared library of OGraf graphics, prepare them in rundowns and play them out to OBS, vMix or any browser source.</p>
-      </section>}
+      {signedOut && <>
+        <section className="hero">
+          <div className="hero-text">
+            <p className="eyebrow">OPEN GRAPHICS FOR LIVE CREATORS</p>
+            <h1>Grafanaut</h1>
+            <p className="hero-tagline">Beautiful stream graphics.<br />Ready to use.</p>
+            <p className="hero-copy">Discover, customize and play animations based on the EBU OGraf standard. They work with OBS, vMix and any
+              browser source, and you control them from the browser, Bitfocus Companion or a Stream Deck. Log in with your Twitch account and start creating.</p>
+            <TwitchLogin />
+          </div>
+          <HeroArt />
+        </section>
+        <FeatureRow />
+      </>}
       <section className="catalog-section" aria-labelledby="catalog-heading">
         <div className="section-heading" ref={catalogHeading}>
-          <div><p className="eyebrow">THE LIBRARY</p><h2 id="catalog-heading">Published graphics</h2></div>
-          <label className="search-box"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="Search graphics" /></label>
+          {signedOut
+            ? <div><p className="eyebrow">FEATURED ANIMATIONS</p><h2 id="catalog-heading">Ready to use. Easy to customize.</h2>
+              <p className="section-copy">From lower thirds to scoreboards: find the right animation for your stream.</p></div>
+            : <div><p className="eyebrow">THE LIBRARY</p><h2 id="catalog-heading">Published graphics</h2></div>}
+          <label className="search-box"><Search size={16} aria-hidden="true" /><input aria-label="Search graphics" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="Search graphics" /></label>
         </div>
         {status && <p className="status">{status}</p>}
         {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>Seed packages will appear here after the first startup import.</span></div>}
         <GraphicCards items={pageItems} account={account} onAdd={addToMyGraphics} />
         <Pagination page={currentPage} pageCount={pageCount} total={filteredCatalog.length} onChange={changePage} />
       </section>
+      {signedOut && <section className="cta-band" aria-labelledby="cta-heading">
+        <div>
+          <h2 id="cta-heading">Ready to launch your next stream?</h2>
+          <p>Log in with Twitch and explore the Grafanaut template library.</p>
+        </div>
+        <TwitchLogin />
+        <p className="cta-note">Great graphics.<br />Better streams.</p>
+      </section>}
       </>}
       <footer><span>GRAFANAUT</span><span>Catalog, rundowns and rendering for <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf</a> graphics · {new Date().getFullYear()}</span></footer>
       {toast && <Toast key={toast.id} toast={toast} onDismiss={setToast} />}
