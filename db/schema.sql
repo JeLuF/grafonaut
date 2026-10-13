@@ -91,3 +91,17 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   UNIQUE KEY uq_api_tokens_hash (token_hash),
   CONSTRAINT fk_api_tokens_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS render_instances (
+  entry_id BIGINT UNSIGNED NOT NULL,
+  account_id BIGINT UNSIGNED NOT NULL,
+  instance_id VARCHAR(64) NOT NULL,
+  data JSON NOT NULL,
+  current_step INT NULL,
+  playing BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (entry_id),
+  KEY idx_render_instances_account (account_id),
+  CONSTRAINT fk_render_instances_entry FOREIGN KEY (entry_id) REFERENCES my_graphics_entries (id) ON DELETE CASCADE,
+  CONSTRAINT fk_render_instances_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -1645,3 +1645,20 @@ footer {
         grid-row: 1;
     }
 }
+
+.entry-availability.is-on-air {
+    color: #fff;
+    background: #c0392b;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-weight: 700;
+    letter-spacing: .04em;
+}
+
+.renderer-connected {
+    color: #198548;
+}
+
+.renderer-disconnected {
+    color: #a52d23;
+}

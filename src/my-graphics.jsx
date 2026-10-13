@@ -232,7 +232,7 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
   </dialog>;
 }
 
-function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, onSave, onProperties, onAction, onDelete, onManifest }) {
+function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, connections, onSave, onProperties, onAction, onDelete, onManifest }) {
   const [label, setLabel] = useState(entry.label ?? entry.display_name);
   const [editingLabel, setEditingLabel] = useState(false);
   const [savingLabel, setSavingLabel] = useState(false);
@@ -302,13 +302,15 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
           <button className="icon-button" type="button" onClick={() => onAction(entry, 'updateAction')} disabled={busy || !actionable} title={actionable ? 'Update with saved properties' : unavailableReason} aria-label="Update"><RefreshCw size={18} /></button>
           <EntryMenu entry={entry} busy={busy} onDelete={onDelete} onManifest={onManifest} />
         </div>
-        <span className="entry-availability">{entry.packageDisabled ? 'Package unavailable' : canControlGraphic(entry.control) ? 'Renderer ready' : 'Renderer unavailable'}</span>
+        <span className={`entry-availability${entry.live?.playing ? ' is-on-air' : ''}`}>{entry.packageDisabled ? 'Package unavailable'
+          : !canControlGraphic(entry.control) ? 'Renderer unavailable'
+            : entry.live?.playing ? 'On air' : entry.live ? 'Loaded' : connections === 0 ? 'No renderer connected' : 'Ready'}</span>
       </div>
     </li>
   );
 }
 
-export default function MyGraphicsView({ account, entries, loading, error, pending, Preview, rendererPreview, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
+export default function MyGraphicsView({ account, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
   const [editing, setEditing] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
   const [ordering, setOrdering] = useState(false);
@@ -328,7 +330,9 @@ export default function MyGraphicsView({ account, entries, loading, error, pendi
   }
   return (
     <section className="my-graphics-section" aria-labelledby="my-graphics-heading">
-      <div className="working-set-heading"><h1 id="my-graphics-heading">My Graphics</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled</span>}</div>
+      <div className="working-set-heading"><h1 id="my-graphics-heading">My Graphics</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled{rendererStatus && <>
+        {' · '}<span className={rendererStatus.connections ? 'renderer-connected' : 'renderer-disconnected'}>{rendererStatus.connections
+          ? `${rendererStatus.connections} renderer${rendererStatus.connections === 1 ? '' : 's'} connected` : 'No renderer connected'}</span></>}</span>}</div>
       {!account ? <div className="empty-state"><strong>Sign in to view My Graphics.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <div className="my-graphics-layout">
         {rendererPreview}
         <div className="my-graphics-entries">
@@ -342,7 +346,7 @@ export default function MyGraphicsView({ account, entries, loading, error, pendi
         }}>
           <SortableContext items={entries.map((entry) => entry.entryId)} strategy={verticalListSortingStrategy}>
             <ul className="graphics-list">{entries.map((entry, index) => <GraphicEntry key={entry.entryId} entry={entry} busy={ordering || pending.has(entry.entryId)}
-              orderDisabled={orderDisabled} first={index === 0} last={index === entries.length - 1} onMove={(direction) => moveEntry(index, index + direction)} Preview={Preview} onSave={onSave} onProperties={setEditing} onAction={onAction}
+              orderDisabled={orderDisabled} first={index === 0} last={index === entries.length - 1} onMove={(direction) => moveEntry(index, index + direction)} Preview={Preview} connections={rendererStatus?.connections} onSave={onSave} onProperties={setEditing} onAction={onAction}
               onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>
           </SortableContext>
         </DndContext>}

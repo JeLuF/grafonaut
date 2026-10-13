@@ -22,7 +22,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { addMyGraphic, backfillPropertyDefaults, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -44,16 +44,42 @@ function requestApi(method, route = '', body, accountId = 'account') {
 
 beforeEach(() => { queries = []; rows = []; nextId = 1; affectedRows = 1; transactionEvents = []; });
 
-test('adding the same immutable version creates independent entries', async () => {
+const defaultsSchema = { type: 'object', properties: {
+  name: { type: 'string', default: 'Host' }, theme: { type: 'string', default: './themes/Default.css' },
+  colors: { type: 'object', properties: { text: { type: 'string', default: '#fff' } } }, empty: { type: 'string' }
+} };
+test('adding the same immutable version creates independent entries with default properties', async () => {
+  rows = [{ manifest: { schema: defaultsSchema } }];
   assert.equal(await addMyGraphic('account', 'version'), '1');
   assert.equal(await addMyGraphic('account', 'version'), '2');
-  assert.deepEqual(queries[0].parameters, ['account', 'version', 'account']);
-  assert.match(queries[0].sql, /p.disabled = FALSE/);
-  assert.match(queries[0].sql, /pv.review_state = 'published' OR p.owner_account_id = \?/);
+  assert.deepEqual(queries[0].parameters, ['version', 'account']);
+  const insert = queries[1];
+  assert.match(insert.sql, /^INSERT INTO my_graphics_entries/);
+  assert.deepEqual(insert.parameters, ['account', JSON.stringify({ name: 'Host', theme: './themes/Default.css', colors: { text: '#fff' } }), 'version', 'account']);
+  for (const { sql } of queries) {
+    assert.match(sql, /p.disabled = FALSE/);
+    assert.match(sql, /pv.review_state = 'published' OR p.owner_account_id = \?/);
+  }
+});
+test('graphics without a schema start with empty properties', async () => {
+  rows = [{ manifest: { id: 'no-schema' } }];
+  await addMyGraphic('account', 'version');
+  assert.equal(queries[1].parameters[1], '{}');
 });
 test('adding an unavailable or inaccessible version fails', async () => {
+  await assert.rejects(addMyGraphic('account', 'private-version'), /Available graphic version not found/);
+  assert.equal(queries.length, 1);
+  rows = [{ manifest: {} }];
   affectedRows = 0;
   await assert.rejects(addMyGraphic('account', 'private-version'), /Available graphic version not found/);
+});
+test('entries whose properties were never saved get the schema defaults once', async () => {
+  rows = [{ id: 4, manifest: { schema: defaultsSchema } }, { id: 5, manifest: { schema: { type: 'object', properties: { x: { type: 'string' } } } } }];
+  assert.equal(await backfillPropertyDefaults(), 1);
+  assert.match(queries[0].sql, /JSON_LENGTH\(g.schema_data\) = 0/);
+  assert.equal(queries.length, 2);
+  assert.match(queries[1].sql, /WHERE id = \? AND JSON_LENGTH\(schema_data\) = 0/);
+  assert.deepEqual(queries[1].parameters, [JSON.stringify({ name: 'Host', theme: './themes/Default.css', colors: { text: '#fff' } }), 4]);
 });
 test('lists account-owned entries pinned to their selected version', async () => {
   rows = [{ entryId: '1', versionId: 'old-version', enabled: 0, packageDisabled: 0,
@@ -116,6 +142,7 @@ test('file list properties only accept paths offered by the package', async () =
 });
 test('repeatable HTTP additions return the new entry ID', async () => {
   const versionId = '11111111-1111-4111-8111-111111111111';
+  rows = [{ manifest: {} }];
   const first = await requestApi('POST', '', { versionId });
   const second = await requestApi('POST', '', { versionId });
   assert.equal(first.status, 201);

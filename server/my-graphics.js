@@ -14,6 +14,8 @@ router.use((request, response, next) => {
   if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });
   next();
 });
+// Lets connected renderers follow My Graphics: new order, removed or disabled entries.
+const entriesChanged = (request) => request.app.locals.onEntriesChanged?.(request.session.accountId);
 router.param('entryId', (request, response, next, entryId) => {
   if (!/^[1-9]\d{0,19}$/.test(entryId) || BigInt(entryId) > 18446744073709551615n) {
     return response.status(400).json({ error: 'Invalid entry ID' });
@@ -32,6 +34,7 @@ router.post('/', async (request, response) => {
   }
   try {
     const entryId = await addMyGraphic(request.session.accountId, versionId);
+    entriesChanged(request);
     response.status(201).json({ entryId });
   } catch (error) {
     response.status(error.message === 'Available graphic version not found' ? 404 : 503)
@@ -46,6 +49,7 @@ router.put('/order', async (request, response) => {
   }
   try {
     await reorderMyGraphics(request.session.accountId, entryIds);
+    entriesChanged(request);
     response.json({ ok: true });
   } catch (error) {
     response.status(error.code === 'STALE_GRAPHICS_ORDER' ? 409 : 503)
@@ -80,6 +84,7 @@ router.patch('/:entryId', async (request, response) => {
       if (!validate(changes.schemaData)) return response.status(422).json({ error: 'Properties do not match this graphic\'s schema', details: validate.errors });
     }
     await updateMyGraphic(request.session.accountId, request.params.entryId, changes);
+    if (Object.hasOwn(changes, 'enabled')) entriesChanged(request);
     response.json({ ok: true });
   } catch { response.status(503).json({ error: 'Unable to save graphic entry' }); }
 });
@@ -88,6 +93,7 @@ router.delete('/:entryId', async (request, response) => {
     if (!await deleteMyGraphic(request.session.accountId, request.params.entryId)) {
       return response.status(404).json({ error: 'Graphic entry not found' });
     }
+    entriesChanged(request);
     response.json({ ok: true });
   } catch { response.status(503).json({ error: 'Unable to delete graphic entry' }); }
 });

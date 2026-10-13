@@ -1,21 +1,31 @@
 import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
-import { findAccountById, findAccountByToken, findAccountToken, findPublishedCatalogItem, rotateAccountToken, findPublishedVersion, initializeDatabase, listPublishedCatalog, upsertTwitchAccount } from './db.js';
+import { backfillPropertyDefaults, deleteRenderInstances, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findPublishedCatalogItem, findPublishedVersion,
+  initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
 import myGraphicsRouter from './my-graphics.js';
 import { configureSession } from './session.js';
-import { parseRendererHost, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
+import { assetRoute, createAssetHandler, frameDocument, framePath, parseRendererHost, rendererDocument, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
+import { createRenderHub } from './render-hub.js';
 import { tokenKey } from './tokens.js';
-import ografApiRouter, { apiMountPath, apiUrl } from './ograf-api.js';
+import { apiMountPath, apiUrl, createOgrafApi } from './ograf-api.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const publicDirectory = path.resolve('dist');
 const rendererHost = parseRendererHost(process.env.RENDERER_HOST);
+// Graphics may only share an origin with their package files when the renderer runs on its own host.
+const rendererIsolated = rendererHost !== null;
 tokenKey();
+const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic };
+const renderHub = createRenderHub(renderStore);
+app.locals.onEntriesChanged = (accountId) => renderHub.syncEntries(accountId)
+  .catch((error) => console.error('Renderer sync failed:', error.message));
+// Mounted before the app's JSON parser so the API answers malformed bodies with its own problem details.
+app.use(apiMountPath, createOgrafApi({ hub: renderHub, store: renderStore, findAccountByToken }));
 app.use(express.json());
 configureSession(app);
 
@@ -64,7 +74,6 @@ app.get('/api/catalog/:versionId/thumbnails/:index', async (request, response) =
   } catch { response.sendStatus(503); }
 });
 app.use('/api/my-graphics', myGraphicsRouter);
-app.use(apiMountPath, ografApiRouter);
 // Account token URLs: GET shows the current one, POST replaces the token (the old URL stops working).
 const tokenUrls = { renderer: (request, token) => rendererUrl(request, rendererHost, token), api: apiUrl };
 app.get('/api/tokens/:kind', async (request, response) => {
@@ -72,7 +81,8 @@ app.get('/api/tokens/:kind', async (request, response) => {
   if (!Object.hasOwn(tokenUrls, request.params.kind)) return response.status(404).json({ error: 'Unknown token' });
   try {
     const token = await findAccountToken(request.session.accountId, request.params.kind);
-    response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token) });
+    response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token),
+      ...(request.params.kind === 'renderer' ? { isolated: rendererIsolated } : {}) });
   } catch (error) {
     if (error.code === 'TOKEN_UNREADABLE') return response.status(409).json({ error: error.message });
     response.status(503).json({ error: 'URL unavailable' });
@@ -83,16 +93,23 @@ app.post('/api/tokens/:kind', async (request, response) => {
   if (!Object.hasOwn(tokenUrls, request.params.kind)) return response.status(404).json({ error: 'Unknown token' });
   try {
     const token = await rotateAccountToken(request.session.accountId, request.params.kind);
-    response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token) });
+    if (request.params.kind === 'renderer') renderHub.disconnect(request.session.accountId);
+    response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token),
+      ...(request.params.kind === 'renderer' ? { isolated: rendererIsolated } : {}) });
   } catch { response.status(503).json({ error: 'Unable to create a new token' }); }
 });
-// Placeholder until the sandboxed render host (RN-1) exists; it already rejects unknown or replaced tokens.
+// Renderer: the page connects to /render/<token>/ws (see render-hub.js) and hosts each graphic in a frame page.
+const frame = frameDocument(rendererIsolated);
+app.get(framePath, (_request, response) => response.set(frame.headers).type('html').send(frame.html));
+app.get(assetRoute, createAssetHandler({ findPublishedVersion, storageRoot, isolated: rendererIsolated }));
 app.get(rendererRoute, async (request, response) => {
-  response.set(rendererHeaders).type('html');
   try {
-    if (!await findAccountByToken(request.params.token, 'renderer')) return response.status(404).send(rendererPage('Unknown renderer URL.'));
-    response.send(rendererPage('OGraf renderer: not available yet.'));
-  } catch { response.status(503).send(rendererPage('Renderer unavailable.')); }
+    if (!await findAccountByToken(request.params.token, 'renderer')) {
+      return response.status(404).set(rendererHeaders).type('html').send(rendererPage('Unknown renderer URL.'));
+    }
+    const page = rendererDocument(request, request.params.token, rendererIsolated);
+    response.set(page.headers).type('html').send(page.html);
+  } catch { response.status(503).set(rendererHeaders).type('html').send(rendererPage('Renderer unavailable.')); }
 });
 app.get('/api/auth/me', async (request, response) => {
   const account = request.session?.accountId ? await findAccountById(request.session.accountId) : null;
@@ -123,6 +140,10 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 await initializeDatabase();
+try {
+  const filled = await backfillPropertyDefaults();
+  if (filled) console.log(`Initialized default properties for ${filled} My Graphics entr${filled === 1 ? 'y' : 'ies'}`);
+} catch (error) { console.error('Property default backfill failed:', error.message); }
 const seedDirectories = [
   [process.env.SEED_BUILTIN_DIR ?? './seeds/builtin', 'seed_builtin'],
   [process.env.SEED_VOLUME_DIR ?? './seeds/volume', 'seed_volume']
@@ -131,4 +152,5 @@ for (const [directory, source] of seedDirectories) {
   try { console.log(`Seed scan ${directory}: imported ${await importSeedDirectory(directory, source)} package(s)`); }
   catch (error) { console.error(`Seed scan failed for ${directory}:`, error.message); }
 }
-app.listen(port, () => console.log(`OGraf MVP listening on http://localhost:${port}`));
+const server = app.listen(port, () => console.log(`OGraf MVP listening on http://localhost:${port}`));
+renderHub.attachServer(server, findAccountByToken);

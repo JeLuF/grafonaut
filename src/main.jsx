@@ -1,10 +1,10 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, List, MonitorPlay, Plus, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
-import RendererView, { RendererPreview } from './renderer-view.jsx';
-import { requestJson, triggerGraphicAction } from './api.js';
+import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
+import { fetchRendererStatus, requestJson, triggerGraphicAction } from './api.js';
 import './styles.css';
 
 const PAGE_SIZE = 6;
@@ -113,6 +113,28 @@ function App() {
   const graphicsRequest = useRef(0);
   const [toast, setToast] = useState(null);
   const toastId = useRef(0);
+
+  const { url: apiUrl } = useApiUrl(account);
+  const [rendererStatus, setRendererStatus] = useState(null);
+  const statusRequest = useRef(0);
+  const refreshRendererStatus = useCallback(async () => {
+    if (!apiUrl) { setRendererStatus(null); return; }
+    const requestId = ++statusRequest.current;
+    try {
+      const next = await fetchRendererStatus(apiUrl);
+      if (requestId === statusRequest.current) setRendererStatus(next);
+    } catch (error) { if (requestId === statusRequest.current) setRendererStatus({ connections: 0, instances: new Map(), error: error.message }); }
+  }, [apiUrl]);
+  useEffect(() => {
+    if (view !== 'my-graphics' || !apiUrl) return;
+    void refreshRendererStatus();
+    const timer = setInterval(refreshRendererStatus, 3000);
+    return () => clearInterval(timer);
+  }, [view, apiUrl, refreshRendererStatus]);
+  // Each entry is one RenderTarget of the account's renderer, controlled through the public OGraf API.
+  const controlledEntries = useMemo(() => entries.map((entry) => ({ ...entry,
+    control: apiUrl ? { apiBaseUrl: apiUrl, rendererId: 'main', renderTarget: { entryId: entry.entryId }, graphicId: entry.versionId } : undefined,
+    live: rendererStatus?.instances.get(entry.entryId) })), [entries, apiUrl, rendererStatus]);
 
   function notify(message, kind = 'success') {
     setToast({ id: ++toastId.current, message, kind });
@@ -228,11 +250,15 @@ function App() {
 
   async function runAction(entry, action) {
     setPending((current) => new Set(current).add(entry.entryId));
+    const name = entry.label || entry.display_name;
     try {
-      await triggerGraphicAction(entry.control, action, entry.schemaData);
-      setNotice(action === 'playAction' ? 'Play completed' : action === 'stopAction' ? 'Stop completed' : 'Update completed');
-    } catch (error) { setNotice(error.message); }
-    finally { setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; }); }
+      const result = await triggerGraphicAction(entry.control, action, entry.schemaData);
+      notify(result.notLoaded ? `${name} is not on air` : action === 'playAction' ? `${name} playing` : action === 'stopAction' ? `${name} stopped` : `${name} updated`);
+    } catch (error) { notify(`${name}: ${error.message}`, 'error'); }
+    finally {
+      setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; });
+      void refreshRendererStatus();
+    }
   }
 
   return (
@@ -250,7 +276,7 @@ function App() {
     </aside>
     <main className="app-shell">
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={entries} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
       : view === 'graphic' ? <GraphicDetail versionId={route.versionId} summary={catalog.find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>

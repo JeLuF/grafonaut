@@ -4,6 +4,7 @@ import mysql from 'mysql2/promise';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
 import { resolvePropertySchema } from './asset-files.js';
+import { propertyDefaults } from './property-defaults.js';
 import { decryptToken, encryptToken, generateToken, hashToken, tokenPattern } from './tokens.js';
 
 const pool = mysql.createPool({
@@ -191,14 +192,35 @@ export async function findPublishedVersion(versionId) {
   return rows[0] ?? null;
 }
 
-export async function addMyGraphic(accountId, versionId) {
-  const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, package_version_id, schema_data)
-    SELECT ?, pv.id, JSON_OBJECT() FROM package_versions pv
+const addableVersion = `FROM package_versions pv
     JOIN packages p ON p.id = pv.package_id
     WHERE pv.id = ? AND p.disabled = FALSE
-      AND (pv.review_state = 'published' OR p.owner_account_id = ?)`, [accountId, versionId, accountId]);
+      AND (pv.review_state = 'published' OR p.owner_account_id = ?)`;
+
+// New entries start with the schema defaults as their properties.
+export async function addMyGraphic(accountId, versionId) {
+  const [versions] = await pool.query(`SELECT pv.manifest_json AS manifest ${addableVersion}`, [versionId, accountId]);
+  if (!versions.length) throw new Error('Available graphic version not found');
+  const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, package_version_id, schema_data)
+    SELECT ?, pv.id, ? ${addableVersion}`, [accountId, JSON.stringify(propertyDefaults(versions[0].manifest?.schema)), versionId, accountId]);
   if (result.affectedRows !== 1) throw new Error('Available graphic version not found');
   return String(result.insertId);
+}
+
+// One-time fix for entries added before defaults were stored on creation: fills entries whose properties were
+// never saved (still an empty object) with the schema defaults. Returns the number of updated entries.
+export async function backfillPropertyDefaults() {
+  const [rows] = await pool.query(`SELECT g.id, pv.manifest_json AS manifest FROM my_graphics_entries g
+    JOIN package_versions pv ON pv.id = g.package_version_id WHERE JSON_LENGTH(g.schema_data) = 0`);
+  let updated = 0;
+  for (const row of rows) {
+    const defaults = propertyDefaults(row.manifest?.schema);
+    if (!Object.keys(defaults).length) continue;
+    const [result] = await pool.query('UPDATE my_graphics_entries SET schema_data = ? WHERE id = ? AND JSON_LENGTH(schema_data) = 0',
+      [JSON.stringify(defaults), row.id]);
+    updated += result.affectedRows;
+  }
+  return updated;
 }
 
 const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
@@ -265,6 +287,48 @@ export async function updateMyGraphic(accountId, entryId, changes) {
   if (Object.hasOwn(changes, 'schemaData')) { fields.push('schema_data = ?'); values.push(JSON.stringify(changes.schemaData)); }
   if (!fields.length) return;
   await pool.query(`UPDATE my_graphics_entries SET ${fields.join(', ')} WHERE account_id = ? AND id = ?`, [...values, accountId, entryId]);
+}
+
+// ---- Renderer state: one graphic instance per My Graphics entry, in My Graphics order ----
+
+export async function listRenderEntries(accountId) {
+  const [rows] = await pool.query(`SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
+      pv.id AS versionId, pv.version_label AS versionLabel, pv.manifest_name AS display_name,
+      pv.manifest_description AS description, pv.main_file_relpath AS mainFile, p.disabled AS packageDisabled
+    FROM my_graphics_entries g
+    JOIN package_versions pv ON pv.id = g.package_version_id
+    JOIN packages p ON p.id = pv.package_id
+    WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
+  return rows.map((row) => ({ ...row, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled) }));
+}
+
+export async function listRenderInstances(accountId) {
+  const [rows] = await pool.query(`SELECT CAST(r.entry_id AS CHAR) AS entryId, r.instance_id AS instanceId, r.data,
+      r.current_step AS currentStep, r.playing, pv.id AS versionId, pv.main_file_relpath AS mainFile
+    FROM render_instances r
+    JOIN my_graphics_entries g ON g.id = r.entry_id AND g.account_id = r.account_id
+    JOIN package_versions pv ON pv.id = g.package_version_id
+    WHERE r.account_id = ?`, [accountId]);
+  return rows.map((row) => ({ ...row, playing: Boolean(row.playing), data: row.data ?? {} }));
+}
+
+export async function saveRenderInstance(accountId, entryId, { instanceId, data, currentStep = null, playing = false }) {
+  await pool.query(`INSERT INTO render_instances (entry_id, account_id, instance_id, data, current_step, playing)
+    SELECT g.id, g.account_id, ?, ?, ?, ? FROM my_graphics_entries g WHERE g.id = ? AND g.account_id = ?
+    ON DUPLICATE KEY UPDATE instance_id = VALUES(instance_id), data = VALUES(data), current_step = VALUES(current_step), playing = VALUES(playing)`,
+  [instanceId, JSON.stringify(data ?? {}), currentStep, playing, entryId, accountId]);
+}
+
+export async function deleteRenderInstances(accountId, entryIds) {
+  if (!entryIds.length) return;
+  await pool.query('DELETE FROM render_instances WHERE account_id = ? AND entry_id IN (?)', [accountId, entryIds]);
+}
+
+export async function findAccountGraphic(accountId, versionId) {
+  const [rows] = await pool.query(`SELECT pv.manifest_json AS manifest, pv.created_at AS createdAt
+    FROM my_graphics_entries g JOIN package_versions pv ON pv.id = g.package_version_id
+    WHERE g.account_id = ? AND pv.id = ? LIMIT 1`, [accountId, versionId]);
+  return rows[0] ?? null;
 }
 
 export async function findVersionByChecksum(checksum) {

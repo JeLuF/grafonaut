@@ -7,25 +7,28 @@ const RENDER_HEIGHT = 1080;
 
 function useTokenUrl(account, kind) {
   const [url, setUrl] = useState('');
+  const [isolated, setIsolated] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     setUrl('');
     setError('');
     if (!account) return;
     const controller = new AbortController();
-    requestJson(`/api/tokens/${kind}`, { signal: controller.signal }).then((response) => setUrl(response.url))
+    requestJson(`/api/tokens/${kind}`, { signal: controller.signal }).then((response) => { setUrl(response.url); setIsolated(response.isolated === true); })
       .catch((failure) => { if (!controller.signal.aborted) setError(failure.message); });
     return () => controller.abort();
   }, [account, kind]);
-  return { url, setUrl, error, setError };
+  return { url, setUrl, isolated, error, setError };
 }
 
 export const useRendererUrl = (account) => useTokenUrl(account, 'renderer');
+export const useApiUrl = (account) => useTokenUrl(account, 'api');
 
 // Renders the renderer page at full 1920x1080 and scales it down to the frame width (640x360 by default).
-// The sandbox keeps renderer code in an opaque origin, away from the app's cookies and storage.
+// The sandbox keeps renderer code in an opaque origin, away from the app's cookies and storage. Only a renderer on
+// its own host (RENDERER_HOST) may keep its origin, which graphics with nested same-origin pages need.
 export function RendererPreview({ account }) {
-  const { url, error } = useRendererUrl(account);
+  const { url, isolated, error } = useRendererUrl(account);
   const [reloads, setReloads] = useState(0);
   const [scale, setScale] = useState(640 / RENDER_WIDTH);
   const frame = useRef(null);
@@ -48,7 +51,7 @@ export function RendererPreview({ account }) {
     <div className="renderer-preview-frame" ref={frame}>
       {error ? <p className="error-message" role="alert">{error}</p>
         : url ? <iframe key={reloads} src={url} title="Renderer preview" width={RENDER_WIDTH} height={RENDER_HEIGHT}
-          sandbox="allow-scripts" referrerPolicy="no-referrer" loading="lazy" style={{ transform: `scale(${scale})` }} />
+          sandbox={isolated ? 'allow-scripts allow-same-origin' : 'allow-scripts'} referrerPolicy="no-referrer" loading="lazy" style={{ transform: `scale(${scale})` }} />
           : <p className="status" role="status">Loading preview...</p>}
     </div>
   </section>;

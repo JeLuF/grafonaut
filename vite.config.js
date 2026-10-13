@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://localhost:3000',
-      '/render': 'http://localhost:3000',
+      '/render': { target: 'http://localhost:3000', ws: true },
       '^/[^/]+/ograf/': 'http://localhost:3000'
     }
   }

@@ -663,3 +663,18 @@ test('GDD labels name the property fields and their enum options', async () => {
   assert.deepEqual(displaySchema({ type: 'string', enum: ['a'] }).enum, ['a']);
   assert.equal('title' in weather.schema.properties._darkText, false);
 });
+
+test('entries show their live renderer state and the heading counts renderer connections', () => {
+  const control = { apiBaseUrl: 'https://app.example.com/t/ograf/v1/', rendererId: 'main', renderTarget: { entryId: '1' }, graphicId: 'version' };
+  const live = [{ ...entry, control, live: { playing: true } }, { ...entry, entryId: '2', label: 'Right', control: { ...control, renderTarget: { entryId: '2' } }, live: { playing: false } },
+    { ...entry, entryId: '3', label: 'Third', control: { ...control, renderTarget: { entryId: '3' } } }];
+  showView({ entries: live, rendererStatus: { connections: 2, instances: new Map() } });
+  assert.ok(screen.getByText('2 renderers connected'));
+  assert.ok(screen.getByText('On air').classList.contains('is-on-air'));
+  assert.ok(screen.getByText('Loaded'));
+  assert.ok(screen.getByText('Ready'));
+  assert.equal(screen.getAllByRole('button', { name: 'Play' })[0].disabled, false);
+  cleanup();
+  showView({ entries: [{ ...entry, control }], rendererStatus: { connections: 0, instances: new Map() } });
+  assert.equal(screen.getAllByText('No renderer connected').length, 2);
+});

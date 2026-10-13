@@ -32,20 +32,47 @@ location / {
 	proxy_set_header Host $host;
 	proxy_set_header X-Forwarded-Proto $scheme;
 	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+	# Renderer pages keep a WebSocket open to /render/<token>/ws
+	proxy_http_version 1.1;
+	proxy_set_header Upgrade $http_upgrade;
+	proxy_set_header Connection $connection_upgrade;
+	proxy_read_timeout 1h;
+}
+```
+
+`$connection_upgrade` needs this map once in the `http` block:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+	default upgrade;
+	''      close;
 }
 ```
 
 This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie. Keep `SESSION_SECRET` stable across restarts and identical across app replicas; changing it invalidates existing sessions.
 
-### Renderer host
+### Renderer
 
-The Renderer page (sidebar link) shows signed-in users the URL of their renderer (to use as an OBS/vMix browser source), opens it in a new tab and lets them create a new token. Set `RENDERER_HOST` to the renderer's host name (`render.example.com`, optionally with a port) or full origin (`https://render.example.com`). When it is empty, the renderer URL uses the same host and protocol as the main page. Until the sandboxed render host exists, `/render/<token>/` shows a placeholder page.
+Every account has one renderer: the page at `/render/<renderer-token>/`, used as an OBS/vMix browser source. Any number of renderer pages may be open for an account (OBS, a test tab, the preview in My Graphics); they all show the same graphics. Each page holds a WebSocket to `/render/<renderer-token>/ws`, authenticated by the token in its path, and receives the on-air state and the actions from it. The state is stored in the database, so renderers that connect later or reconnect after a restart show the same graphics.
 
-The renderer URL contains the account's renderer token: 32 random bytes created with the account, permanent so the URL can stay in a browser source.
+Each graphic runs in its own sandboxed iframe. The frames are stacked in My Graphics order: the first entry is in front. Package files are served from `/render/assets/<version>/...` to the frames; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin.
 
-The same page links the account's OGraf Server API entry point, `https://<main host>/<api-token>/ograf/v1/`. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors; so far only the server information endpoint (`GET /`) is implemented, all other endpoints answer `501 Not Implemented`.
+**Use a separate renderer host.** Set `RENDERER_HOST` to a host name that is different from the main page (`render.example.com`, optionally with a port, or a full origin such as `https://render.example.com`) and route it to the same container. Only then do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When `RENDERER_HOST` is empty, the renderer uses the main page's host and every graphic runs in an opaque origin to keep package code away from the app's session; such graphics then cannot fill their content.
 
-Users can create a new renderer or API token on the Renderer page if a URL leaked; every URL with the old token stops working. Tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones.
+The Renderer page (sidebar link) shows the renderer URL and the API URL and lets users create new tokens.
+
+### OGraf Server API
+
+The account's OGraf Server API lives at `https://<main host>/<api-token>/ograf/v1/`. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors.
+
+- The renderer ID is `main`; its RenderTargets are the My Graphics entries, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
+- Implemented: `GET /`, `GET /graphics`, `GET /graphics/{id}`, `GET /renderers`, `GET /renderers/main`, `GET /renderers/main/target`, `POST …/graphicInstance/load`, `…/playAction`, `…/stopAction`, `…/updateAction`, `…/customActions/{id}` and `PUT …/graphicInstance/clear`. `graphicId` is the package version ID. Other endpoints answer `501 Not Implemented`.
+- Actions answer `503` when no renderer page is connected, `550` when the graphic's method threw, and otherwise the first renderer's result.
+- The Play, Stop and Update buttons in My Graphics use this API: Play loads the graphic with the saved properties (if not loaded) and plays it, pressing it again advances to the next step; Stop animates out and clears the instance; Update sends the saved properties to the loaded graphic.
+
+### Tokens
+
+The renderer and API URLs each contain a token: 32 random bytes created with the account, permanent so the URLs can stay in browser sources and controllers. Users can create a new renderer or API token on the Renderer page if a URL leaked; every URL with the old token stops working and open renderer pages are disconnected. Tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones.
 
 ## Local development
 
