@@ -1,17 +1,19 @@
 import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
-import { backfillPropertyDefaults, deleteRenderInstances, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findPublishedCatalogItem, findPublishedVersion,
+import { deleteRenderInstances, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findPublishedCatalogItem, findPublishedVersion,
   initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
 import myGraphicsRouter from './my-graphics.js';
+import rundownsRouter from './rundowns.js';
 import { configureSession } from './session.js';
 import { assetRoute, createAssetHandler, frameDocument, framePath, parseRendererHost, rendererDocument, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
 import { createRenderHub } from './render-hub.js';
 import { tokenKey } from './tokens.js';
 import { apiMountPath, apiUrl, createOgrafApi } from './ograf-api.js';
+import { createApiDocs } from './api-docs.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -74,6 +76,9 @@ app.get('/api/catalog/:versionId/thumbnails/:index', async (request, response) =
   } catch { response.sendStatus(503); }
 });
 app.use('/api/my-graphics', myGraphicsRouter);
+app.use('/api/rundowns', rundownsRouter);
+app.use('/api-docs', createApiDocs({ apiUrlFor: async (request) => request.session?.accountId
+  ? apiUrl(request, await findAccountToken(request.session.accountId, 'api')) : undefined }));
 // Account token URLs: GET shows the current one, POST replaces the token (the old URL stops working).
 const tokenUrls = { renderer: (request, token) => rendererUrl(request, rendererHost, token), api: apiUrl };
 app.get('/api/tokens/:kind', async (request, response) => {
@@ -140,10 +145,6 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 await initializeDatabase();
-try {
-  const filled = await backfillPropertyDefaults();
-  if (filled) console.log(`Initialized default properties for ${filled} My Graphics entr${filled === 1 ? 'y' : 'ies'}`);
-} catch (error) { console.error('Property default backfill failed:', error.message); }
 const seedDirectories = [
   [process.env.SEED_BUILTIN_DIR ?? './seeds/builtin', 'seed_builtin'],
   [process.env.SEED_VOLUME_DIR ?? './seeds/volume', 'seed_volume']

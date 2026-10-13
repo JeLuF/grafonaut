@@ -155,7 +155,9 @@ export default function RendererView({ account, authLoading }) {
             <TokenCard account={account} kind="api">
               <p className="renderer-card-copy">Control your graphics from Bitfocus Companion, a Stream Deck or your own scripts
                 through the <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf Server API</a>. Use
-                this URL as the API base; it uses a different token than the renderer.</p>
+                this URL as the API base; it uses a different token than the renderer.
+                The <a href="/api-docs/" target="_blank" rel="noopener noreferrer">interactive API documentation</a> lists every
+                endpoint and lets you try them with your account.</p>
             </TokenCard>
           </>}
     </section>

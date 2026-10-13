@@ -4,6 +4,7 @@ import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid,
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
+import { RundownPanel, useRundowns } from './rundowns.jsx';
 import { fetchRendererStatus, requestJson, triggerGraphicAction } from './api.js';
 import './styles.css';
 
@@ -115,6 +116,8 @@ function App() {
   const toastId = useRef(0);
 
   const { url: apiUrl } = useApiUrl(account);
+  const rundownState = useRundowns(account);
+  const rundownName = rundownState.current?.name;
   const [rendererStatus, setRendererStatus] = useState(null);
   const statusRequest = useRef(0);
   const refreshRendererStatus = useCallback(async () => {
@@ -207,8 +210,9 @@ function App() {
   async function addToMyGraphics(item) {
     try {
       await requestJson('/api/my-graphics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionId: item.versionId }) });
-      notify(`${item.display_name} added to My Graphics`);
+      notify(`${item.display_name} added to ${rundownName ?? 'My Graphics'}`);
       void refreshMyGraphics();
+      void rundownState.reload();
     } catch (error) { notify(error.message, 'error'); throw error; }
   }
 
@@ -220,6 +224,7 @@ function App() {
       setMyLoading(false);
       setEntries((current) => current.filter((item) => item.entryId !== entry.entryId));
       notify(`${entry.label || entry.display_name} deleted from My Graphics`);
+      void rundownState.reload();
     } catch (error) { notify(error.message, 'error'); throw error; }
     finally { setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; }); }
   }
@@ -270,13 +275,18 @@ function App() {
         <a href="#my-graphics" aria-current={view === 'my-graphics' ? 'page' : undefined}><List size={17} />My Graphics{account && <span className="entry-count">{entries.length}</span>}</a>
         <a href="#renderer" aria-current={view === 'renderer' ? 'page' : undefined}><MonitorPlay size={17} />Renderer</a>
       </nav>
+      {account && <RundownPanel state={rundownState} onDeleted={(rundown) => notify(`${rundown.name} deleted`)} onSwitched={(rundown) => {
+        notify(`Switched to ${rundown.name}`);
+        void refreshMyGraphics();
+        void refreshRendererStatus();
+      }} />}
       <div className="sidebar-account">
         {authLoading ? null : account ? <span className="account-chip">{account.twitch_display_name ?? account.displayName}</span> : <a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a>}
       </div>
     </aside>
     <main className="app-shell">
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      {view === 'my-graphics' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
       : view === 'graphic' ? <GraphicDetail versionId={route.versionId} summary={catalog.find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>

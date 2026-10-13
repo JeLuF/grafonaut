@@ -4,12 +4,28 @@ CREATE TABLE IF NOT EXISTS accounts (
   twitch_login VARCHAR(64) NOT NULL,
   twitch_display_name VARCHAR(64) NOT NULL,
   is_approver BOOLEAN NOT NULL DEFAULT FALSE,
+  current_rundown_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_accounts_twitch_user_id (twitch_user_id),
   UNIQUE KEY uq_accounts_twitch_login (twitch_login)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- A rundown groups My Graphics entries for one event. The account's current rundown is what the renderer shows.
+CREATE TABLE IF NOT EXISTS rundowns (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  account_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_rundowns_account_name (account_id, name),
+  CONSTRAINT fk_rundowns_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE accounts
+  ADD CONSTRAINT fk_accounts_current_rundown FOREIGN KEY (current_rundown_id) REFERENCES rundowns (id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS packages (
   id CHAR(36) NOT NULL,
@@ -49,8 +65,6 @@ CREATE TABLE IF NOT EXISTS package_versions (
   CONSTRAINT fk_mvp_versions_package FOREIGN KEY (package_id) REFERENCES packages (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-ALTER TABLE package_versions ADD COLUMN manifest_file_relpath VARCHAR(512) NULL;
-
 ALTER TABLE packages
   ADD CONSTRAINT fk_mvp_packages_latest FOREIGN KEY (latest_version_id) REFERENCES package_versions (id) ON DELETE SET NULL,
   ADD CONSTRAINT fk_mvp_packages_published FOREIGN KEY (current_published_version_id) REFERENCES package_versions (id) ON DELETE SET NULL;
@@ -58,6 +72,7 @@ ALTER TABLE packages
 CREATE TABLE IF NOT EXISTS my_graphics_entries (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   account_id BIGINT UNSIGNED NOT NULL,
+  rundown_id BIGINT UNSIGNED NOT NULL,
   package_version_id CHAR(36) NOT NULL,
   label VARCHAR(100) NULL,
   schema_data JSON NOT NULL,
@@ -66,11 +81,11 @@ CREATE TABLE IF NOT EXISTS my_graphics_entries (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  KEY idx_entries_rundown (rundown_id, sort_position),
   CONSTRAINT fk_mvp_entries_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_entries_rundown FOREIGN KEY (rundown_id) REFERENCES rundowns (id) ON DELETE CASCADE,
   CONSTRAINT fk_mvp_entries_version FOREIGN KEY (package_version_id) REFERENCES package_versions (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-ALTER TABLE my_graphics_entries ADD COLUMN sort_position BIGINT UNSIGNED NULL;
 
 CREATE TABLE IF NOT EXISTS account_tokens (
   account_id BIGINT UNSIGNED NOT NULL,

@@ -17,9 +17,16 @@ const pool = mysql.createPool({
   connectionLimit: 10
 });
 
+// Splits schema.sql into statements. Full-line `--` comments are dropped first, so a semicolon inside a comment
+// cannot split a statement (statements themselves must not contain semicolons in string literals).
+export function schemaStatements(schema) {
+  return schema.split('\n').filter((line) => !/^\s*--/.test(line)).join('\n')
+    .split(';').map((statement) => statement.trim()).filter(Boolean);
+}
+
 export async function initializeDatabase() {
   const schema = await fs.readFile(path.resolve('db/schema.sql'), 'utf8');
-  const statements = schema.split(';').map((statement) => statement.trim()).filter(Boolean);
+  const statements = schemaStatements(schema);
   for (const statement of statements) {
     try {
       await pool.query(statement);
@@ -41,7 +48,105 @@ export async function upsertTwitchAccount(profile) {
   [profile.id, profile.login, profile.display_name ?? profile.login]);
   const [rows] = await pool.query('SELECT id, twitch_login, twitch_display_name, is_approver FROM accounts WHERE twitch_user_id = ?', [profile.id]);
   for (const kind of tokenKinds) await ensureAccountToken(rows[0].id, kind);
+  await ensureCurrentRundown(rows[0].id);
   return rows[0];
+}
+
+// ---- Rundowns: My Graphics entries are grouped per event; the current rundown is what My Graphics, the
+// renderer and the OGraf API work with. ----
+
+export const defaultRundownName = 'Default rundown';
+export class RundownError extends Error {
+  constructor(code, message, details = {}) {
+    super(message);
+    this.code = code;
+    Object.assign(this, details);
+  }
+}
+// Restricts my_graphics_entries g to the account's current rundown.
+const currentRundown = 'JOIN accounts cur ON cur.id = g.account_id AND cur.current_rundown_id = g.rundown_id';
+
+async function inTransaction(work) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await work(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally { connection.release(); }
+}
+
+// Returns the current rundown ID, creating the default rundown for accounts that have none yet.
+export async function ensureCurrentRundown(accountId) {
+  const [[account]] = await pool.query('SELECT current_rundown_id AS rundownId FROM accounts WHERE id = ?', [accountId]);
+  if (account?.rundownId) return String(account.rundownId);
+  return inTransaction(async (connection) => {
+    const [[locked]] = await connection.query('SELECT current_rundown_id AS rundownId FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
+    if (!locked) throw new RundownError('NOT_FOUND', 'Account not found');
+    if (locked.rundownId) return String(locked.rundownId);
+    const [[existing]] = await connection.query('SELECT id FROM rundowns WHERE account_id = ? ORDER BY id LIMIT 1', [accountId]);
+    const rundownId = existing?.id ?? (await connection.query('INSERT INTO rundowns (account_id, name) VALUES (?, ?)', [accountId, defaultRundownName]))[0].insertId;
+    await connection.query('UPDATE accounts SET current_rundown_id = ? WHERE id = ?', [rundownId, accountId]);
+    return String(rundownId);
+  });
+}
+
+export async function listRundowns(accountId) {
+  const currentRundownId = await ensureCurrentRundown(accountId);
+  const [rows] = await pool.query(`SELECT CAST(r.id AS CHAR) AS id, r.name, COUNT(g.id) AS entryCount
+    FROM rundowns r LEFT JOIN my_graphics_entries g ON g.rundown_id = r.id
+    WHERE r.account_id = ? GROUP BY r.id, r.name ORDER BY r.created_at, r.id`, [accountId]);
+  return { currentRundownId, rundowns: rows.map((row) => ({ ...row, entryCount: Number(row.entryCount) })) };
+}
+
+const duplicateName = (error) => error?.code === 'ER_DUP_ENTRY' ? new RundownError('DUPLICATE_NAME', 'A rundown with this name already exists') : error;
+
+export async function createRundown(accountId, name) {
+  try {
+    const [result] = await pool.query('INSERT INTO rundowns (account_id, name) VALUES (?, ?)', [accountId, name]);
+    return { id: String(result.insertId), name, entryCount: 0 };
+  } catch (error) { throw duplicateName(error); }
+}
+
+export async function renameRundown(accountId, rundownId, name) {
+  const [[rundown]] = await pool.query('SELECT id FROM rundowns WHERE id = ? AND account_id = ?', [rundownId, accountId]);
+  if (!rundown) throw new RundownError('NOT_FOUND', 'Rundown not found');
+  try { await pool.query('UPDATE rundowns SET name = ? WHERE id = ? AND account_id = ?', [name, rundownId, accountId]); }
+  catch (error) { throw duplicateName(error); }
+}
+
+// Deletes a rundown together with its entries. The current rundown cannot be deleted (switch first), so deleting
+// never affects what is on air and every account keeps at least one rundown.
+export async function deleteRundown(accountId, rundownId) {
+  return inTransaction(async (connection) => {
+    const [[account]] = await connection.query('SELECT current_rundown_id AS rundownId FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
+    if (account && String(account.rundownId) === String(rundownId)) {
+      throw new RundownError('CURRENT', 'The current rundown cannot be deleted. Switch to another rundown first.');
+    }
+    const [result] = await connection.query('DELETE FROM rundowns WHERE id = ? AND account_id = ?', [rundownId, accountId]);
+    if (!account || result.affectedRows !== 1) throw new RundownError('NOT_FOUND', 'Rundown not found');
+  });
+}
+
+// Makes another rundown current. Graphics of the previous rundown go off air, so this is refused while some are
+// loaded unless `force` is set.
+export async function switchRundown(accountId, rundownId, { force = false } = {}) {
+  return inTransaction(async (connection) => {
+    const [[account]] = await connection.query('SELECT current_rundown_id AS rundownId FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
+    const [[rundown]] = await connection.query('SELECT id FROM rundowns WHERE id = ? AND account_id = ?', [rundownId, accountId]);
+    if (!account || !rundown) throw new RundownError('NOT_FOUND', 'Rundown not found');
+    if (String(account.rundownId) === String(rundownId)) return { changed: false };
+    const [[{ onAir }]] = await connection.query('SELECT COUNT(*) AS onAir FROM render_instances WHERE account_id = ?', [accountId]);
+    if (Number(onAir) && !force) {
+      throw new RundownError('ON_AIR', `${onAir} graphic${Number(onAir) === 1 ? ' is' : 's are'} on air in the current rundown`, { onAir: Number(onAir) });
+    }
+    await connection.query('DELETE FROM render_instances WHERE account_id = ?', [accountId]);
+    await connection.query('UPDATE accounts SET current_rundown_id = ? WHERE id = ?', [rundownId, accountId]);
+    return { changed: true };
+  });
 }
 
 // Each token kind has its own table, so a token only ever unlocks the purpose it was issued for.
@@ -197,30 +302,15 @@ const addableVersion = `FROM package_versions pv
     WHERE pv.id = ? AND p.disabled = FALSE
       AND (pv.review_state = 'published' OR p.owner_account_id = ?)`;
 
-// New entries start with the schema defaults as their properties.
+// New entries go to the current rundown and start with the schema defaults as their properties.
 export async function addMyGraphic(accountId, versionId) {
   const [versions] = await pool.query(`SELECT pv.manifest_json AS manifest ${addableVersion}`, [versionId, accountId]);
   if (!versions.length) throw new Error('Available graphic version not found');
-  const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, package_version_id, schema_data)
-    SELECT ?, pv.id, ? ${addableVersion}`, [accountId, JSON.stringify(propertyDefaults(versions[0].manifest?.schema)), versionId, accountId]);
+  const rundownId = await ensureCurrentRundown(accountId);
+  const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, rundown_id, package_version_id, schema_data)
+    SELECT ?, ?, pv.id, ? ${addableVersion}`, [accountId, rundownId, JSON.stringify(propertyDefaults(versions[0].manifest?.schema)), versionId, accountId]);
   if (result.affectedRows !== 1) throw new Error('Available graphic version not found');
   return String(result.insertId);
-}
-
-// One-time fix for entries added before defaults were stored on creation: fills entries whose properties were
-// never saved (still an empty object) with the schema defaults. Returns the number of updated entries.
-export async function backfillPropertyDefaults() {
-  const [rows] = await pool.query(`SELECT g.id, pv.manifest_json AS manifest FROM my_graphics_entries g
-    JOIN package_versions pv ON pv.id = g.package_version_id WHERE JSON_LENGTH(g.schema_data) = 0`);
-  let updated = 0;
-  for (const row of rows) {
-    const defaults = propertyDefaults(row.manifest?.schema);
-    if (!Object.keys(defaults).length) continue;
-    const [result] = await pool.query('UPDATE my_graphics_entries SET schema_data = ? WHERE id = ? AND JSON_LENGTH(schema_data) = 0',
-      [JSON.stringify(defaults), row.id]);
-    updated += result.affectedRows;
-  }
-  return updated;
 }
 
 const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
@@ -235,7 +325,7 @@ const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabl
   JOIN packages p ON p.id = pv.package_id`;
 
 export async function listMyGraphics(accountId) {
-  const [rows] = await pool.query(`${myGraphicsSelect}
+  const [rows] = await pool.query(`${myGraphicsSelect} ${currentRundown}
     WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
   return Promise.all(rows.map(async (row) => {
     const { manifest, manifestFile, mainFile, ...item } = row;
@@ -260,10 +350,11 @@ export async function reorderMyGraphics(accountId, entryIds) {
   try {
     await connection.beginTransaction();
     await connection.query('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
-    const [entries] = await connection.query('SELECT CAST(id AS CHAR) AS entryId FROM my_graphics_entries WHERE account_id = ? FOR UPDATE', [accountId]);
+    const [entries] = await connection.query(`SELECT CAST(g.id AS CHAR) AS entryId FROM my_graphics_entries g ${currentRundown}
+      WHERE g.account_id = ? FOR UPDATE`, [accountId]);
     const ownedIds = new Set(entries.map((entry) => entry.entryId));
     if (entryIds.length !== ownedIds.size || new Set(entryIds).size !== entryIds.length || entryIds.some((entryId) => !ownedIds.has(entryId))) {
-      const error = new Error('My Graphics changed. Refresh the list and try again.');
+      const error = new Error('My Graphics or the current rundown changed. Refresh the list and try again.');
       error.code = 'STALE_GRAPHICS_ORDER';
       throw error;
     }
@@ -298,6 +389,7 @@ export async function listRenderEntries(accountId) {
     FROM my_graphics_entries g
     JOIN package_versions pv ON pv.id = g.package_version_id
     JOIN packages p ON p.id = pv.package_id
+    ${currentRundown}
     WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
   return rows.map((row) => ({ ...row, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled) }));
 }
@@ -308,6 +400,7 @@ export async function listRenderInstances(accountId) {
     FROM render_instances r
     JOIN my_graphics_entries g ON g.id = r.entry_id AND g.account_id = r.account_id
     JOIN package_versions pv ON pv.id = g.package_version_id
+    ${currentRundown}
     WHERE r.account_id = ?`, [accountId]);
   return rows.map((row) => ({ ...row, playing: Boolean(row.playing), data: row.data ?? {} }));
 }
@@ -327,6 +420,7 @@ export async function deleteRenderInstances(accountId, entryIds) {
 export async function findAccountGraphic(accountId, versionId) {
   const [rows] = await pool.query(`SELECT pv.manifest_json AS manifest, pv.created_at AS createdAt
     FROM my_graphics_entries g JOIN package_versions pv ON pv.id = g.package_version_id
+    ${currentRundown}
     WHERE g.account_id = ? AND pv.id = ? LIMIT 1`, [accountId, versionId]);
   return rows[0] ?? null;
 }

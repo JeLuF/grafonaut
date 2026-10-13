@@ -30,13 +30,15 @@ const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl
 const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
 const rendererViewUrl = (await compileModule('./renderer-view.jsx')).url;
 const { default: RendererView } = await import(rendererViewUrl);
+const rundownsUrl = (await compileModule('./rundowns.jsx')).url;
+const { RundownPanel, useRundowns } = await import(rundownsUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
 const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   filename: mainUrl.pathname, configFile: false, babelrc: false, plugins: [jsx, () => ({ visitor: {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -555,6 +557,7 @@ test('the renderer page shows the renderer and API URLs with open and copy actio
     assert.equal(link.getAttribute('target'), '_blank');
     assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
   }
+  assert.equal(screen.getByRole('link', { name: 'interactive API documentation' }).getAttribute('href'), '/api-docs/');
   fireEvent.click(screen.getByRole('button', { name: 'Copy renderer URL' }));
   await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Renderer URL copied' })));
   fireEvent.click(screen.getByRole('button', { name: 'Copy API URL' }));
@@ -677,4 +680,105 @@ test('entries show their live renderer state and the heading counts renderer con
   cleanup();
   showView({ entries: [{ ...entry, control }], rendererStatus: { connections: 0, instances: new Map() } });
   assert.equal(screen.getAllByText('No renderer connected').length, 2);
+});
+
+function mockRundownApi({ onAir = 0 } = {}) {
+  const state = { current: '1', rundowns: [{ id: '1', name: 'Default rundown', entryCount: 2 }, { id: '2', name: 'Sunday show', entryCount: 0 }], requests: [] };
+  mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    const body = options.body ? JSON.parse(options.body) : undefined;
+    state.requests.push([options.method ?? 'GET', url, body]);
+    if (url === '/api/rundowns' && !options.method) return Response.json({ currentRundownId: state.current, rundowns: state.rundowns });
+    if (url === '/api/rundowns' && options.method === 'POST') return Response.json({ rundown: { id: '3', name: body.name, entryCount: 0 } }, { status: 201 });
+    if (url === '/api/rundowns/current') {
+      if (onAir && !body.force) return Response.json({ error: `${onAir} graphics are on air in the current rundown`, code: 'ON_AIR', onAir }, { status: 409 });
+      state.current = body.rundownId;
+      return Response.json({ currentRundownId: body.rundownId });
+    }
+    if (url.startsWith('/api/rundowns/') && options.method === 'DELETE') return Response.json({ ok: true });
+    if (url.startsWith('/api/rundowns/') && options.method === 'PATCH') {
+      if (body.name === 'Default rundown') return Response.json({ error: 'A rundown with this name already exists' }, { status: 409 });
+      return Response.json({ ok: true });
+    }
+    throw new Error(`Unexpected ${url}`);
+  });
+  return state;
+}
+const rundownAccount = { id: 'account' };
+function RundownHarness({ onSwitched, onDeleted }) {
+  const state = useRundowns(rundownAccount);
+  return React.createElement(RundownPanel, { state, onSwitched, onDeleted });
+}
+
+test('the rundown panel lists rundowns, marks the current one and switches on click', async () => {
+  const api = mockRundownApi();
+  const switched = [];
+  render(React.createElement(RundownHarness, { onSwitched: (rundown) => switched.push(rundown.name) }));
+  const current = await waitFor(() => screen.getByRole('button', { name: /^Default rundown/ }));
+  assert.equal(current.getAttribute('aria-current'), 'true');
+  fireEvent.click(screen.getByRole('button', { name: /^Sunday show/ }));
+  await waitFor(() => assert.equal(screen.getByRole('button', { name: /^Sunday show/ }).getAttribute('aria-current'), 'true'));
+  assert.deepEqual(api.requests.at(-1), ['PUT', '/api/rundowns/current', { rundownId: '2', force: false }]);
+  assert.deepEqual(switched, ['Sunday show']);
+});
+
+test('switching while graphics are on air asks for confirmation first', async () => {
+  const api = mockRundownApi({ onAir: 2 });
+  const switched = [];
+  render(React.createElement(RundownHarness, { onSwitched: (rundown) => switched.push(rundown.name) }));
+  fireEvent.click(await waitFor(() => screen.getByRole('button', { name: /^Sunday show/ })));
+  const confirm = await waitFor(() => screen.getByRole('group', { name: 'Confirm rundown switch' }));
+  assert.match(confirm.textContent, /2 graphics are on air in the current rundown\. Switching to Sunday show takes them off air\./);
+  assert.deepEqual(switched, []);
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+  assertAbsent(screen.queryByRole('group', { name: 'Confirm rundown switch' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Sunday show/ }));
+  fireEvent.click(within(await waitFor(() => screen.getByRole('group', { name: 'Confirm rundown switch' }))).getByRole('button', { name: 'Switch' }));
+  await waitFor(() => assert.deepEqual(switched, ['Sunday show']));
+  assert.deepEqual(api.requests.at(-1), ['PUT', '/api/rundowns/current', { rundownId: '2', force: true }]);
+});
+
+test('rundowns can be created and renamed from the sidebar', async () => {
+  const api = mockRundownApi();
+  render(React.createElement(RundownHarness, { onSwitched: () => {} }));
+  await waitFor(() => screen.getByRole('button', { name: /^Default rundown/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'New rundown' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'New rundown name' }), { target: { value: 'Monday news' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create rundown' }));
+  await waitFor(() => screen.getByRole('button', { name: /^Monday news/ }));
+  assert.deepEqual(api.requests.at(-1), ['POST', '/api/rundowns', { name: 'Monday news' }]);
+  assert.equal(screen.getByRole('button', { name: /^Default rundown/ }).getAttribute('aria-current'), 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Rename Sunday show' }));
+  const input = screen.getByRole('textbox', { name: 'Rundown name' });
+  assert.equal(input.value, 'Sunday show');
+  fireEvent.change(input, { target: { value: 'Default rundown' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('already exists')));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Rundown name' }), { target: { value: 'Sunday special' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+  await waitFor(() => screen.getByRole('button', { name: /^Sunday special/ }));
+  assert.deepEqual(api.requests.at(-1), ['PATCH', '/api/rundowns/2', { name: 'Sunday special' }]);
+});
+
+test('my graphics names the current rundown', () => {
+  showView({ rundownName: 'Sunday show' });
+  assert.ok(screen.getByText('Rundown: Sunday show'));
+});
+
+test('rundowns other than the current one can be deleted after confirmation', async () => {
+  const api = mockRundownApi();
+  api.rundowns[1].entryCount = 3;
+  const deleted = [];
+  render(React.createElement(RundownHarness, { onSwitched: () => {}, onDeleted: (rundown) => deleted.push(rundown.name) }));
+  await waitFor(() => screen.getByRole('button', { name: /^Sunday show/ }));
+  assertAbsent(screen.queryByRole('button', { name: 'Delete Default rundown' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Sunday show' }));
+  const confirm = screen.getByRole('group', { name: 'Confirm rundown deletion' });
+  assert.match(confirm.textContent, /Delete Sunday show and its 3 graphics\? This cannot be undone\./);
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+  assert.equal(api.requests.filter(([method]) => method === 'DELETE').length, 0);
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Sunday show' }));
+  fireEvent.click(within(screen.getByRole('group', { name: 'Confirm rundown deletion' })).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => assertAbsent(screen.queryByRole('button', { name: /^Sunday show/ })));
+  assert.deepEqual(api.requests.at(-1), ['DELETE', '/api/rundowns/2', undefined]);
+  assert.deepEqual(deleted, ['Sunday show']);
 });

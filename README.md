@@ -51,6 +51,10 @@ map $http_upgrade $connection_upgrade {
 
 This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie. Keep `SESSION_SECRET` stable across restarts and identical across app replicas; changing it invalidates existing sessions.
 
+### Rundowns
+
+My Graphics entries belong to rundowns, so several events can be prepared from one account. New accounts start with a "Default rundown". The sidebar lists the rundowns; users create, rename, switch and delete them there. Deleting a rundown removes its graphics; the current rundown cannot be deleted (switch to another one first), so every account keeps at least one. The current rundown is stored per account (not per browser): added graphics go to it, and My Graphics, the renderer and the OGraf API only work with it. Switching takes the previous rundown's graphics off air; if any are loaded, the app asks for confirmation first.
+
 ### Renderer
 
 Every account has one renderer: the page at `/render/<renderer-token>/`, used as an OBS/vMix browser source. Any number of renderer pages may be open for an account (OBS, a test tab, the preview in My Graphics); they all show the same graphics. Each page holds a WebSocket to `/render/<renderer-token>/ws`, authenticated by the token in its path, and receives the on-air state and the actions from it. The state is stored in the database, so renderers that connect later or reconnect after a restart show the same graphics.
@@ -65,9 +69,10 @@ The Renderer page (sidebar link) shows the renderer URL and the API URL and lets
 
 The account's OGraf Server API lives at `https://<main host>/<api-token>/ograf/v1/`. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors.
 
-- The renderer ID is `main`; its RenderTargets are the My Graphics entries, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
+- The renderer ID is `main`; its RenderTargets are the My Graphics entries of the current rundown, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
 - Implemented: `GET /`, `GET /graphics`, `GET /graphics/{id}`, `GET /renderers`, `GET /renderers/main`, `GET /renderers/main/target`, `POST …/graphicInstance/load`, `…/playAction`, `…/stopAction`, `…/updateAction`, `…/customActions/{id}` and `PUT …/graphicInstance/clear`. `graphicId` is the package version ID. Other endpoints answer `501 Not Implemented`.
 - Actions answer `503` when no renderer page is connected, `550` when the graphic's method threw, and otherwise the first renderer's result.
+- Interactive documentation (Swagger UI) is served at `/api-docs/` and linked from the Renderer page. Its OpenAPI document (`/api-docs/openapi.json`) is built from `server/ograf-openapi.js`; a test checks it against the routes the API registers. For signed-in users the document's server is their own API URL, so "Try it out" works directly.
 - The Play, Stop and Update buttons in My Graphics use this API: Play loads the graphic with the saved properties (if not loaded) and plays it, pressing it again advances to the next step; Stop animates out and clears the instance; Update sends the saved properties to the loaded graphic.
 
 ### Tokens

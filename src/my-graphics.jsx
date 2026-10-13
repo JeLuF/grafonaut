@@ -310,7 +310,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
   );
 }
 
-export default function MyGraphicsView({ account, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
+export default function MyGraphicsView({ account, rundownName, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onDelete, onManifest, onReorder }) {
   const [editing, setEditing] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
   const [ordering, setOrdering] = useState(false);
@@ -330,6 +330,7 @@ export default function MyGraphicsView({ account, entries, loading, error, pendi
   }
   return (
     <section className="my-graphics-section" aria-labelledby="my-graphics-heading">
+      {account && rundownName && <p className="eyebrow rundown-eyebrow">Rundown: {rundownName}</p>}
       <div className="working-set-heading"><h1 id="my-graphics-heading">My Graphics</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled{rendererStatus && <>
         {' · '}<span className={rendererStatus.connections ? 'renderer-connected' : 'renderer-disconnected'}>{rendererStatus.connections
           ? `${rendererStatus.connections} renderer${rendererStatus.connections === 1 ? '' : 's'} connected` : 'No renderer connected'}</span></>}</span>}</div>

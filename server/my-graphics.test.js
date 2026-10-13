@@ -12,6 +12,8 @@ mock.module('mysql2/promise', { defaultExport: {
   createPool: () => {
     const query = async (sql, parameters) => {
       queries.push({ sql, parameters });
+      // The account's current rundown is answered separately from the scripted rows.
+      if (sql.startsWith('SELECT current_rundown_id')) return [[{ rundownId: 5 }]];
       return sql.startsWith('SELECT') ? [rows] : [{ insertId: nextId++, affectedRows }];
     };
     return { query, getConnection: async () => ({ query,
@@ -22,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { addMyGraphic, backfillPropertyDefaults, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -53,10 +55,11 @@ test('adding the same immutable version creates independent entries with default
   assert.equal(await addMyGraphic('account', 'version'), '1');
   assert.equal(await addMyGraphic('account', 'version'), '2');
   assert.deepEqual(queries[0].parameters, ['version', 'account']);
-  const insert = queries[1];
-  assert.match(insert.sql, /^INSERT INTO my_graphics_entries/);
-  assert.deepEqual(insert.parameters, ['account', JSON.stringify({ name: 'Host', theme: './themes/Default.css', colors: { text: '#fff' } }), 'version', 'account']);
-  for (const { sql } of queries) {
+  assert.match(queries[1].sql, /^SELECT current_rundown_id/);
+  const insert = queries[2];
+  assert.match(insert.sql, /^INSERT INTO my_graphics_entries \(account_id, rundown_id,/);
+  assert.deepEqual(insert.parameters, ['account', '5', JSON.stringify({ name: 'Host', theme: './themes/Default.css', colors: { text: '#fff' } }), 'version', 'account']);
+  for (const { sql } of queries.filter((query) => !query.sql.startsWith('SELECT current_rundown_id'))) {
     assert.match(sql, /p.disabled = FALSE/);
     assert.match(sql, /pv.review_state = 'published' OR p.owner_account_id = \?/);
   }
@@ -64,7 +67,7 @@ test('adding the same immutable version creates independent entries with default
 test('graphics without a schema start with empty properties', async () => {
   rows = [{ manifest: { id: 'no-schema' } }];
   await addMyGraphic('account', 'version');
-  assert.equal(queries[1].parameters[1], '{}');
+  assert.equal(queries[2].parameters[2], '{}');
 });
 test('adding an unavailable or inaccessible version fails', async () => {
   await assert.rejects(addMyGraphic('account', 'private-version'), /Available graphic version not found/);
@@ -72,14 +75,6 @@ test('adding an unavailable or inaccessible version fails', async () => {
   rows = [{ manifest: {} }];
   affectedRows = 0;
   await assert.rejects(addMyGraphic('account', 'private-version'), /Available graphic version not found/);
-});
-test('entries whose properties were never saved get the schema defaults once', async () => {
-  rows = [{ id: 4, manifest: { schema: defaultsSchema } }, { id: 5, manifest: { schema: { type: 'object', properties: { x: { type: 'string' } } } } }];
-  assert.equal(await backfillPropertyDefaults(), 1);
-  assert.match(queries[0].sql, /JSON_LENGTH\(g.schema_data\) = 0/);
-  assert.equal(queries.length, 2);
-  assert.match(queries[1].sql, /WHERE id = \? AND JSON_LENGTH\(schema_data\) = 0/);
-  assert.deepEqual(queries[1].parameters, [JSON.stringify({ name: 'Host', theme: './themes/Default.css', colors: { text: '#fff' } }), 4]);
 });
 test('lists account-owned entries pinned to their selected version', async () => {
   rows = [{ entryId: '1', versionId: 'old-version', enabled: 0, packageDisabled: 0,
@@ -93,6 +88,7 @@ test('lists account-owned entries pinned to their selected version', async () =>
   assert.equal('manifest' in items[0], false);
   assert.match(queries[0].sql, /pv.id = g.package_version_id/);
   assert.match(queries[0].sql, /ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC/);
+  assert.match(queries[0].sql, /cur.current_rundown_id = g.rundown_id/);
   assert.deepEqual(queries[0].parameters, ['account']);
 });
 test('entry lookup is scoped to the current account', async () => {
@@ -187,6 +183,7 @@ test('reordering saves all owned positions atomically', async () => {
   assert.deepEqual(queries.at(-1).parameters, ['3', 0, '1', 1, '2', 2, 'account']);
   assert.match(queries.at(-1).sql, /WHERE account_id = \?/);
   assert.deepEqual(transactionEvents, ['begin', 'commit', 'release']);
+  assert.ok(queries.some(({ sql }) => /FOR UPDATE/.test(sql) && /cur.current_rundown_id = g.rundown_id/.test(sql)));
 });
 
 test('reordering rejects stale and foreign entries without changing positions', async () => {

@@ -1,7 +1,9 @@
 export async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error ?? payload.detail ?? 'The request could not be completed');
+  if (!response.ok) {
+    throw Object.assign(new Error(payload.error ?? payload.detail ?? 'The request could not be completed'), { status: response.status, payload });
+  }
   return payload;
 }
 

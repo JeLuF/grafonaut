@@ -23,6 +23,7 @@
     "express": "^5.1.0",
     "lucide-react": "^0.468.0",
     "mysql2": "^3.14.3",
+    "swagger-ui-dist": "^5.17.14",
     "unzipper": "^0.12.3",
     "uuid": "^11.1.0",
     "ws": "^8.18.3"

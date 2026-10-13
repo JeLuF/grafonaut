@@ -8,6 +8,7 @@ let queries;
 mock.module('mysql2/promise', { defaultExport: {
   createPool: () => ({ query: async (sql, parameters) => {
     queries.push({ sql, parameters });
+    if (sql.startsWith('SELECT current_rundown_id')) return [[{ rundownId: 1 }]];
     return sql.startsWith('SELECT') ? [rows.shift() ?? []] : [{ affectedRows: 1 }];
   } })
 } });
