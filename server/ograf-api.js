@@ -51,6 +51,7 @@ function targetInfo(entry, instance) {
       graphicInstanceId: instance.instanceId,
       graphic: { id: entry.versionId, name: entry.display_name },
       playing: instance.playing,
+      ended: instance.ended === true,
       ...(typeof instance.currentStep === 'number' ? { currentStep: instance.currentStep } : {})
     }] : []
   };
@@ -187,8 +188,15 @@ export function createOgrafApi({ hub, store, findAccountByToken }) {
     if (!entry) return problem(request, response, 404, 'Not Found', 'No RenderTarget found.');
     if (!instance || instance.instanceId !== body.graphicInstanceId) return problem(request, response, 404, 'Not Found', 'No GraphicInstance found.');
     const result = await hub.command(accountId, { action, instanceId: instance.instanceId, entryId, params });
-    await store.saveRenderInstance(accountId, entryId, { ...instance, ...nextState(instance, result) });
+    await store.saveRenderInstance(accountId, entryId, { ...instance, ...nextState(instance, result, entry) });
     response.json({ graphicInstanceId: instance.instanceId, ...result });
+  }
+  // OGraf step model: a graphic with stepCount 0 is played once and animates out by itself, so after a successful play
+  // it is no longer on air. A graphic that reported a step before and now returns no currentStep has transitioned to
+  // its end. Graphics that never report steps (currentStep missing every time) keep being treated as on air.
+  function playState(instance, result, entry) {
+    const toEnd = entry.stepCount === 0 || (typeof instance.currentStep === 'number' && result.currentStep === undefined);
+    return toEnd ? { playing: false, ended: true, currentStep: null } : { playing: true, ended: false, currentStep: result.currentStep ?? null };
   }
   const paramsOf = (request) => isObject(request.body?.params) ? request.body.params : null;
   const pick = (params, keys) => Object.fromEntries(keys.filter((key) => params[key] !== undefined).map((key) => [key, params[key]]));
@@ -196,12 +204,12 @@ export function createOgrafApi({ hub, store, findAccountByToken }) {
   router.post('/renderers/:rendererId/target/graphicInstance/playAction', handle(async (request, response, accountId) => {
     const params = paramsOf(request) ?? {};
     await instanceAction(request, response, accountId, 'playAction', pick(params, ['delta', 'goto', 'skipAnimation']),
-      (_instance, result) => ({ playing: true, currentStep: result.currentStep ?? null }));
+      (instance, result, entry) => playState(instance, result, entry));
   }, { renderer: true }));
   router.post('/renderers/:rendererId/target/graphicInstance/stopAction', handle(async (request, response, accountId) => {
     const params = paramsOf(request) ?? {};
     await instanceAction(request, response, accountId, 'stopAction', pick(params, ['skipAnimation']),
-      () => ({ playing: false, currentStep: null }));
+      () => ({ playing: false, ended: true, currentStep: null }));
   }, { renderer: true }));
   router.post('/renderers/:rendererId/target/graphicInstance/updateAction', handle(async (request, response, accountId) => {
     const params = paramsOf(request);

@@ -7,14 +7,14 @@ const control = { apiBaseUrl: base, rendererId: 'main', renderTarget: { entryId:
 afterEach(() => mock.restoreAll());
 
 // Answers like the OGraf API; `loaded` decides whether the target already holds an instance.
-function mockApi({ loaded = false, failAt } = {}) {
+function mockApi({ loaded = false, ended = false, failAt } = {}) {
   const calls = [];
   const fetchMock = mock.method(globalThis, 'fetch', async (url, options) => {
     const path = url.slice(base.length - 1);
     const body = options.body ? JSON.parse(options.body) : undefined;
     calls.push({ method: options.method, path, body, options });
     if (failAt && path.includes(failAt)) return Response.json({ title: 'Service Unavailable', detail: 'No renderer is connected.' }, { status: 503 });
-    if (path.startsWith('/renderers/main/target?')) return Response.json({ renderTarget: { entryId: '7' }, graphicInstances: loaded ? [{ graphicInstanceId: 'gi-1' }] : [] });
+    if (path.startsWith('/renderers/main/target?')) return Response.json({ renderTarget: { entryId: '7' }, graphicInstances: loaded ? [{ graphicInstanceId: 'gi-1', playing: !ended, ended }] : [] });
     if (path.endsWith('/load')) return Response.json({ graphicInstanceId: 'gi-new', statusCode: 200 });
     if (path.endsWith('/playAction')) return Response.json({ graphicInstanceId: body.graphicInstanceId, statusCode: 200, currentStep: 0 });
     if (path.endsWith('/clear')) return Response.json({ graphicInstances: [{ renderTarget: { entryId: '7' }, graphicInstanceId: 'gi-1' }] });
@@ -52,6 +52,15 @@ test('play on a loaded graphic advances it without reloading', async () => {
   await triggerGraphicAction(control, 'playAction', { name: 'Host' });
   assert.deepEqual(calls.map(({ path }) => path.split('?')[0]), ['/renderers/main/target', '/renderers/main/target/graphicInstance/playAction']);
   assert.equal(calls[1].body.graphicInstanceId, 'gi-1');
+});
+
+test('play on an ended graphic loads it again with the current properties', async () => {
+  const { calls } = mockApi({ loaded: true, ended: true });
+  await triggerGraphicAction(control, 'playAction', { name: 'Changed' });
+  assert.deepEqual(calls.map(({ path }) => path.split('?')[0]), ['/renderers/main/target', '/renderers/main/target/graphicInstance/load',
+    '/renderers/main/target/graphicInstance/playAction']);
+  assert.deepEqual(calls[1].body.params, { data: { name: 'Changed' } });
+  assert.equal(calls[2].body.graphicInstanceId, 'gi-new');
 });
 
 test('update sends the complete saved state to the loaded instance', async () => {
@@ -98,11 +107,12 @@ test('invalid action names and base URLs are rejected before requests', async ()
 test('renderer status lists connections and instances per entry', async () => {
   mock.method(globalThis, 'fetch', async () => Response.json({ renderer: { status: { status: 'OK', connections: 2 }, renderTargets: [
     { renderTarget: { entryId: '7' }, graphicInstances: [{ graphicInstanceId: 'gi-1', playing: true }] },
+    { renderTarget: { entryId: '9' }, graphicInstances: [{ graphicInstanceId: 'gi-2', playing: false, ended: true }] },
     { renderTarget: { entryId: '8' }, graphicInstances: [] }
   ] } }));
   const status = await fetchRendererStatus(base);
   assert.equal(status.connections, 2);
-  assert.deepEqual([...status.instances], [['7', { playing: true }]]);
+  assert.deepEqual([...status.instances], [['7', { playing: true, ended: false }], ['9', { playing: false, ended: true }]]);
 });
 
 test('account API failures retain their error message', async () => {

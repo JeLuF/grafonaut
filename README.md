@@ -84,9 +84,10 @@ The account's OGraf Server API lives at `https://<main host>/<api-token>/ograf/v
 
 - The renderer ID is `main`; its RenderTargets are the entries of the current rundown, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
 - Implemented: `GET /`, `GET /graphics`, `GET /graphics/{id}`, `GET /renderers`, `GET /renderers/main`, `GET /renderers/main/target`, `POST …/graphicInstance/load`, `…/playAction`, `…/stopAction`, `…/updateAction`, `…/customActions/{id}` and `PUT …/graphicInstance/clear`. `graphicId` is the package version ID. Other endpoints answer `501 Not Implemented`.
+- Instances follow the OGraf step model: a graphic with `stepCount: 0` is played once and animates out by itself, so after a successful play it is *ended* (shown as "Played"), not on air. A graphic that reported a step before and returns no `currentStep` from a play has reached its end as well. Graphics that never report a step stay on air until stopped. Ended graphics are not replayed when a renderer reconnects.
 - Actions answer `503` when no renderer page is connected, `550` when the graphic's method threw, and otherwise the first renderer's result.
 - Interactive documentation (Swagger UI) is served at `/api-docs/` and linked from the Renderer page. Its OpenAPI document (`/api-docs/openapi.json`) is built from `server/ograf-openapi.js`; a test checks it against the routes the API registers. For signed-in users the document's server is their own API URL, so "Try it out" works directly.
-- The Play, Stop and Update buttons in the rundown view use this API: Play loads the graphic with the saved properties (if not loaded) and plays it, pressing it again advances to the next step; Stop animates out and clears the instance; Update sends the saved properties to the loaded graphic.
+- The Play, Stop and Update buttons in the rundown view use this API: Play loads the graphic with the saved properties (if not loaded, or if it has ended) and plays it, pressing it again while on air advances to the next step; Stop animates out and clears the instance; Update sends the saved properties to the loaded graphic.
 
 ### Tokens
 

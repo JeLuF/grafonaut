@@ -462,31 +462,35 @@ export async function updateMyGraphic(accountId, entryId, changes) {
 export async function listRenderEntries(accountId) {
   const [rows] = await pool.query(`SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
       pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel, pv.manifest_name AS display_name,
-      pv.manifest_description AS description, pv.main_file_relpath AS mainFile, p.disabled AS packageDisabled
+      pv.manifest_description AS description, pv.main_file_relpath AS mainFile, p.disabled AS packageDisabled,
+      pv.manifest_json AS manifest
     FROM my_graphics_entries g
     JOIN package_versions pv ON pv.id = g.package_version_id
     JOIN packages p ON p.id = pv.package_id
     ${currentRundown}
     WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
-  return rows.map((row) => ({ ...row, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled) }));
+  // stepCount follows the OGraf step model: 0 = played once (animates out by itself), 1 = default, -1 = dynamic.
+  return rows.map(({ manifest, ...row }) => ({ ...row, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled),
+    stepCount: Number.isInteger(manifest?.stepCount) ? manifest.stepCount : 1 }));
 }
 
 export async function listRenderInstances(accountId) {
   const [rows] = await pool.query(`SELECT CAST(r.entry_id AS CHAR) AS entryId, r.instance_id AS instanceId, r.data,
-      r.current_step AS currentStep, r.playing, pv.id AS versionId, pv.archive_id AS archiveId, pv.main_file_relpath AS mainFile
+      r.current_step AS currentStep, r.playing, r.ended, pv.id AS versionId, pv.archive_id AS archiveId, pv.main_file_relpath AS mainFile
     FROM render_instances r
     JOIN my_graphics_entries g ON g.id = r.entry_id AND g.account_id = r.account_id
     JOIN package_versions pv ON pv.id = g.package_version_id
     ${currentRundown}
     WHERE r.account_id = ?`, [accountId]);
-  return rows.map((row) => ({ ...row, playing: Boolean(row.playing), data: row.data ?? {} }));
+  return rows.map((row) => ({ ...row, playing: Boolean(row.playing), ended: Boolean(row.ended), data: row.data ?? {} }));
 }
 
-export async function saveRenderInstance(accountId, entryId, { instanceId, data, currentStep = null, playing = false }) {
-  await pool.query(`INSERT INTO render_instances (entry_id, account_id, instance_id, data, current_step, playing)
-    SELECT g.id, g.account_id, ?, ?, ?, ? FROM my_graphics_entries g WHERE g.id = ? AND g.account_id = ?
-    ON DUPLICATE KEY UPDATE instance_id = VALUES(instance_id), data = VALUES(data), current_step = VALUES(current_step), playing = VALUES(playing)`,
-  [instanceId, JSON.stringify(data ?? {}), currentStep, playing, entryId, accountId]);
+export async function saveRenderInstance(accountId, entryId, { instanceId, data, currentStep = null, playing = false, ended = false }) {
+  await pool.query(`INSERT INTO render_instances (entry_id, account_id, instance_id, data, current_step, playing, ended)
+    SELECT g.id, g.account_id, ?, ?, ?, ?, ? FROM my_graphics_entries g WHERE g.id = ? AND g.account_id = ?
+    ON DUPLICATE KEY UPDATE instance_id = VALUES(instance_id), data = VALUES(data), current_step = VALUES(current_step),
+      playing = VALUES(playing), ended = VALUES(ended)`,
+  [instanceId, JSON.stringify(data ?? {}), currentStep, playing, ended, entryId, accountId]);
 }
 
 export async function deleteRenderInstances(accountId, entryIds) {

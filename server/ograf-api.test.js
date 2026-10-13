@@ -17,7 +17,7 @@ const store = {
   saveRenderInstance: async (_account, entryId, state) => {
     const entry = entries.find((candidate) => candidate.entryId === entryId);
     instances.set(entryId, { entryId, instanceId: state.instanceId, data: state.data, currentStep: state.currentStep ?? null,
-      playing: Boolean(state.playing), versionId: entry.versionId, mainFile: entry.mainFile });
+      playing: Boolean(state.playing), ended: Boolean(state.ended), versionId: entry.versionId, mainFile: entry.mainFile });
   },
   deleteRenderInstances: async (_account, ids) => { for (const id of ids) instances.delete(id); },
   findAccountGraphic: async (_account, versionId) => versionId === 'v1' ? { manifest: { id: 'l3rd', name: 'Lower third' }, createdAt: '2026-10-01T10:00:00Z' } : null
@@ -42,7 +42,8 @@ beforeEach(() => {
   entries = [
     { entryId: '1', label: 'Left', enabled: true, packageDisabled: false, versionId: 'v1', versionLabel: '1.0', display_name: 'Lower third', description: 'Name', mainFile: 'main.mjs' },
     { entryId: '2', label: null, enabled: false, packageDisabled: false, versionId: 'v1', versionLabel: '1.0', display_name: 'Lower third', description: 'Name', mainFile: 'main.mjs' },
-    { entryId: '3', label: null, enabled: true, packageDisabled: false, versionId: 'v2', versionLabel: '2.0', display_name: 'Clock', description: '', mainFile: 'clock/main.mjs' }
+    { entryId: '3', label: null, enabled: true, packageDisabled: false, versionId: 'v2', versionLabel: '2.0', display_name: 'Clock', description: '', mainFile: 'clock/main.mjs' },
+    { entryId: '4', label: null, enabled: true, packageDisabled: false, versionId: 'v3', versionLabel: '1.0', display_name: 'Sting', description: '', mainFile: 'sting.mjs', stepCount: 0 }
   ];
   instances = new Map();
   commands = [];
@@ -71,7 +72,7 @@ test('the entry point returns server information and rejects unknown tokens', as
 
 test('graphics list the account’s My Graphics versions once each', async () => {
   const list = await call('GET', '/graphics');
-  assert.deepEqual(list.body, { graphics: [{ id: 'v1', name: 'Lower third', description: 'Name' }, { id: 'v2', name: 'Clock' }] });
+  assert.deepEqual(list.body, { graphics: [{ id: 'v1', name: 'Lower third', description: 'Name' }, { id: 'v2', name: 'Clock' }, { id: 'v3', name: 'Sting' }] });
   const graphic = await call('GET', '/graphics/v1');
   assert.deepEqual(graphic.body, { graphic: { id: 'l3rd', name: 'Lower third' }, metadata: { createdAt: '2026-10-01T10:00:00.000Z' } });
   assert.equal((await call('GET', '/graphics/v9')).status, 404);
@@ -83,7 +84,7 @@ test('the renderer lists My Graphics entries as render targets with their instan
   assert.equal(body.renderer.id, 'main');
   assert.deepEqual(body.renderer.status, { status: 'OK', message: '1 renderer connection', connections: 1 });
   assert.deepEqual(body.renderer.renderTargets.map((target) => [target.renderTarget.entryId, target.name, target.graphicInstances.length]),
-    [['1', 'Left', 1], ['2', 'Lower third', 0], ['3', 'Clock', 0]]);
+    [['1', 'Left', 1], ['2', 'Lower third', 0], ['3', 'Clock', 0], ['4', 'Sting', 0]]);
   assert.match(body.renderer.renderTargets[1].description, /\(disabled\)/);
   const target = await call('GET', `/renderers/main/target?renderTarget=${encodeURIComponent('{"entryId":"1"}')}`);
   assert.equal(target.body.graphicInstances[0].graphic.id, 'v1');
@@ -180,4 +181,43 @@ test('malformed bodies, preflights and unimplemented endpoints answer with probl
 
 test('the API URL uses the main page host and the token path scope', () => {
   assert.equal(apiUrl({ protocol: 'https', host: 'app.example.com' }, token), `https://app.example.com/${token}/ograf/v1/`);
+});
+
+const play = (entryId, graphicInstanceId) => call('POST', '/renderers/main/target/graphicInstance/playAction',
+  { renderTarget: { entryId }, graphicInstanceId, params: {} });
+
+test('a graphic with stepCount 0 is played once: afterwards it is ended, not on air', async () => {
+  const { body: { graphicInstanceId } } = await load('4', 'v3');
+  answer = () => ({ statusCode: 200 });
+  assert.equal((await play('4', graphicInstanceId)).status, 200);
+  assert.deepEqual([instances.get('4').playing, instances.get('4').ended], [false, true]);
+  const target = await call('GET', `/renderers/main/target?renderTarget=${encodeURIComponent('{"entryId":"4"}')}`);
+  assert.deepEqual([target.body.graphicInstances[0].playing, target.body.graphicInstances[0].ended], [false, true]);
+  // Playing it again works and it ends again.
+  assert.equal((await play('4', graphicInstanceId)).status, 200);
+  assert.equal(instances.get('4').playing, false);
+});
+
+test('playing past the last step ends a graphic that reports its steps', async () => {
+  const { body: { graphicInstanceId } } = await load();
+  answer = () => ({ statusCode: 200, currentStep: 0 });
+  await play('1', graphicInstanceId);
+  assert.deepEqual([instances.get('1').playing, instances.get('1').ended, instances.get('1').currentStep], [true, false, 0]);
+  answer = () => ({ statusCode: 200 });
+  await play('1', graphicInstanceId);
+  assert.deepEqual([instances.get('1').playing, instances.get('1').ended, instances.get('1').currentStep], [false, true, null]);
+  // From the end, a new play starts it again.
+  answer = () => ({ statusCode: 200, currentStep: 0 });
+  await play('1', graphicInstanceId);
+  assert.deepEqual([instances.get('1').playing, instances.get('1').ended], [true, false]);
+});
+
+test('graphics that never report a step stay on air until stopped', async () => {
+  const { body: { graphicInstanceId } } = await load();
+  answer = () => ({ statusCode: 200 });
+  await play('1', graphicInstanceId);
+  await play('1', graphicInstanceId);
+  assert.deepEqual([instances.get('1').playing, instances.get('1').ended], [true, false]);
+  await call('POST', '/renderers/main/target/graphicInstance/stopAction', { renderTarget: { entryId: '1' }, graphicInstanceId, params: {} });
+  assert.deepEqual([instances.get('1').playing, instances.get('1').ended], [false, true]);
 });

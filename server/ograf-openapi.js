@@ -107,7 +107,8 @@ export function ografOpenApi({ serverUrl } = {}) {
       RenderTargetInfo: { type: 'object', properties: {
         renderTarget: ref('RenderTarget'), name: { type: 'string', description: 'The entry label' }, description: { type: 'string' },
         graphicInstances: { type: 'array', maxItems: 1, items: { type: 'object', properties: {
-          graphicInstanceId: ref('GraphicInstanceId'), graphic: ref('GraphicListInfo'), playing: { type: 'boolean' }, currentStep: { type: 'number' }
+          graphicInstanceId: ref('GraphicInstanceId'), graphic: ref('GraphicListInfo'), playing: { type: 'boolean', description: 'On screen' },
+          ended: { type: 'boolean', description: 'Reached its end (played once, played past its last step, or stopped)' }, currentStep: { type: 'number' }
         }, required: ['graphicInstanceId', 'graphic'] } }
       }, required: ['renderTarget', 'name', 'graphicInstances'] },
       RendererInfo: { type: 'object', properties: {

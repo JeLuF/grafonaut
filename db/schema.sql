@@ -119,6 +119,8 @@ CREATE TABLE IF NOT EXISTS render_instances (
   data JSON NOT NULL,
   current_step INT NULL,
   playing BOOLEAN NOT NULL DEFAULT FALSE,
+  -- The graphic reached its end node (one-shot graphic played, played past its last step, or stopped).
+  ended BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (entry_id),
   KEY idx_render_instances_account (account_id),

@@ -24,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -237,4 +237,15 @@ test('the private catalog lists the latest version of each owned package', async
   assert.deepEqual([item.versionId, item.versionCount, item.isPrivate, item.thumbnailUrl], ['ver-2', 2, true, null]);
   assert.match(queries[0].sql, /JOIN package_versions pv ON pv.id = p.latest_version_id/);
   assert.match(queries[0].sql, /WHERE p.owner_account_id = \? AND p.disabled = FALSE/);
+});
+
+test('render entries carry the manifest stepCount (default 1) without the manifest itself', async () => {
+  rows = [{ entryId: '1', enabled: 1, packageDisabled: 0, manifest: { stepCount: 0 } }, { entryId: '2', enabled: 1, packageDisabled: 0, manifest: { id: 'x' } },
+    { entryId: '3', enabled: 0, packageDisabled: 0, manifest: { stepCount: 'two' } }];
+  const entries = await listRenderEntries('account');
+  assert.deepEqual(entries.map((item) => item.stepCount), [0, 1, 1]);
+  assert.equal('manifest' in entries[0], false);
+  await saveRenderInstance('account', '1', { instanceId: 'gi-1', data: {}, playing: false, ended: true });
+  assert.match(queries.at(-1).sql, /playing = VALUES\(playing\), ended = VALUES\(ended\)/);
+  assert.deepEqual(queries.at(-1).parameters, ['gi-1', '{}', null, false, true, '1', 'account']);
 });

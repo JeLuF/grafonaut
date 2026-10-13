@@ -34,7 +34,8 @@ export async function ografRequest(apiBaseUrl, method, path, body) {
   return payload;
 }
 
-// Play loads the graphic with the saved properties if it is not loaded yet, then plays (again: next step).
+// Play loads the graphic with the saved properties if it is not loaded yet or has ended (a one-shot graphic that
+// played, or one played past its last step), then plays; on a graphic on air it advances to the next step.
 // Stop animates out and then clears the instance, so the next play starts fresh with the current properties.
 // Update sends the complete saved state. Stop and update do nothing when the graphic is not loaded.
 export async function triggerGraphicAction(control, action, data) {
@@ -43,9 +44,10 @@ export async function triggerGraphicAction(control, action, data) {
   const renderer = `/renderers/${encodeURIComponent(control.rendererId)}`;
   const { renderTarget } = control;
   const target = await ografRequest(control.apiBaseUrl, 'GET', `${renderer}/target?renderTarget=${encodeURIComponent(JSON.stringify(renderTarget))}`);
-  let graphicInstanceId = target.graphicInstances?.[0]?.graphicInstanceId;
+  const instance = target.graphicInstances?.[0];
+  let graphicInstanceId = instance?.graphicInstanceId;
   if (action === 'playAction') {
-    if (!graphicInstanceId) {
+    if (!graphicInstanceId || instance.ended) {
       graphicInstanceId = (await ografRequest(control.apiBaseUrl, 'POST', `${renderer}/target/graphicInstance/load`,
         { renderTarget, graphicId: control.graphicId, params: { data: data ?? {} } })).graphicInstanceId;
     }
@@ -66,7 +68,7 @@ export async function fetchRendererStatus(apiBaseUrl, rendererId = 'main') {
   const instances = new Map();
   for (const target of renderer.renderTargets ?? []) {
     const instance = target.graphicInstances?.[0];
-    if (instance) instances.set(String(target.renderTarget?.entryId), { playing: Boolean(instance.playing) });
+    if (instance) instances.set(String(target.renderTarget?.entryId), { playing: Boolean(instance.playing), ended: Boolean(instance.ended) });
   }
   return { connections: Number(renderer.status?.connections ?? 0), instances };
 }

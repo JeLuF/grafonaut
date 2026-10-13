@@ -304,7 +304,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
         </div>
         <span className={`entry-availability${entry.live?.playing ? ' is-on-air' : ''}`}>{entry.packageDisabled ? 'Package unavailable'
           : !canControlGraphic(entry.control) ? 'Renderer unavailable'
-            : entry.live?.playing ? 'On air' : entry.live ? 'Loaded' : connections === 0 ? 'No renderer connected' : 'Ready'}</span>
+            : entry.live?.playing ? 'On air' : entry.live?.ended ? 'Played' : entry.live ? 'Loaded' : connections === 0 ? 'No renderer connected' : 'Ready'}</span>
       </div>
     </li>
   );
