@@ -279,6 +279,17 @@ function App() {
     finally { setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; }); }
   }
 
+  async function duplicateEntry(entry) {
+    setPending((current) => new Set(current).add(entry.entryId));
+    try {
+      await requestJson(`/api/my-graphics/${encodeURIComponent(entry.entryId)}/duplicate`, { method: 'POST' });
+      notify(`${entry.label || entry.display_name} duplicated`);
+      await refreshMyGraphics();
+      void rundownState.reload();
+    } catch (error) { notify(error.message, 'error'); throw error; }
+    finally { setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; }); }
+  }
+
   async function loadManifest(entry) {
     const response = await requestJson(`/api/my-graphics/${encodeURIComponent(entry.entryId)}/manifest`);
     return response.manifest;
@@ -393,7 +404,7 @@ function App() {
       {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName}
         groupActions={<GroupActionsPanel groups={groups} entries={controlledEntries} error={groupsError} running={runningGroups} disabled={!apiUrl}
           onRun={runGroup} onSave={saveGroup} onDelete={deleteGroup} />}
-        entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+        entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onDuplicate={duplicateEntry} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
       : view === 'private' ? <PrivateCatalogView account={account} authLoading={authLoading} count={privateItems.length} maxZipBytes={maxZipBytes}
         loading={privateLoading} error={privateError} onUploaded={loadPrivateCatalog}>

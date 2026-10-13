@@ -432,6 +432,37 @@ export async function findMyGraphic(accountId, entryId) {
   return rows[0] ?? null;
 }
 
+export const copyLabel = (name) => {
+  const suffix = ' (copy)';
+  const base = [...String(name ?? '')];
+  return (base.length + suffix.length > 100 ? base.slice(0, 100 - suffix.length).join('') : base.join('')) + suffix;
+};
+
+// Copies an entry of the current rundown (graphic version, properties, enabled state; label with " (copy)") and
+// places the copy directly below the original. Returns the new entry ID, or null when there is no such entry.
+export async function duplicateMyGraphic(accountId, entryId) {
+  return inTransaction(async (connection) => {
+    await connection.query('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
+    const [entries] = await connection.query(`SELECT CAST(g.id AS CHAR) AS entryId, g.rundown_id AS rundownId, g.package_version_id AS versionId,
+        g.label, g.schema_data AS schemaData, g.enabled, pv.manifest_name AS displayName
+      FROM my_graphics_entries g JOIN package_versions pv ON pv.id = g.package_version_id ${currentRundown}
+      WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC FOR UPDATE`, [accountId]);
+    const index = entries.findIndex((entry) => entry.entryId === String(entryId));
+    if (index < 0) return null;
+    const original = entries[index];
+    const [result] = await connection.query(`INSERT INTO my_graphics_entries (account_id, rundown_id, package_version_id, label, schema_data, enabled)
+      VALUES (?, ?, ?, ?, ?, ?)`, [accountId, original.rundownId, original.versionId, copyLabel(original.label || original.displayName),
+      JSON.stringify(original.schemaData ?? {}), Boolean(original.enabled)]);
+    const newId = String(result.insertId);
+    const order = entries.map((entry) => entry.entryId);
+    order.splice(index + 1, 0, newId);
+    const positions = order.map(() => 'WHEN ? THEN ?').join(' ');
+    await connection.query(`UPDATE my_graphics_entries SET sort_position = CASE id ${positions} ELSE sort_position END
+      WHERE account_id = ? AND id IN (?)`, [...order.flatMap((id, position) => [id, position]), accountId, order]);
+    return newId;
+  });
+}
+
 export async function deleteMyGraphic(accountId, entryId) {
   const [result] = await pool.query('DELETE FROM my_graphics_entries WHERE account_id = ? AND id = ?', [accountId, entryId]);
   return result.affectedRows === 1;

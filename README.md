@@ -125,7 +125,7 @@ Catalog previews use the first available image in the manifest's `thumbnails` ar
 
 Click a rundown in the sidebar after signing in. Each addition from the public or private catalog creates a new entry in the current rundown, pinned to that exact version, with an independent label, enabled flag and property state (starting with the manifest defaults). Disabled packages stay listed but cannot be enabled or controlled.
 
-A successful addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show details**, **Show manifest** for its pinned version and **Delete**, with confirmation. Deletion removes only that entry; the package and other copies remain unchanged.
+A successful addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show details**, **Show manifest** for its pinned version, **Duplicate** (a copy with the same version, properties and enabled state, labelled "… (copy)", placed directly below) and **Delete**, with confirmation. Deletion removes only that entry; the package and other copies remain unchanged.
 
 Reorder entries with the drag handle or the up/down arrows. The handle also supports keyboard sorting: focus it, press Space to pick up, use the arrow keys to move, and press Space to drop or Escape to cancel. The order is saved per rundown, survives reloads and defines the stacking in the renderer (first entry in front); failed saves leave the displayed order unchanged.
 
@@ -137,6 +137,7 @@ Authenticated endpoints for the current rundown's entries (the paths keep their 
 - `POST /api/my-graphics`: add a published or account-owned enabled version to the current rundown with `{ "versionId": "<uuid>" }`; returns the new `entryId` and permits duplicate additions.
 - `PUT /api/my-graphics/order`: atomically save the complete ordered list with `{ "entryIds": ["<entry-id>", "<entry-id>"] }`. Duplicate or invalid IDs are rejected; missing, foreign, or stale entries return a conflict and require refreshing the list.
 - `PATCH /api/my-graphics/:entryId`: save `label` (nullable, at most 100 characters), `enabled` (boolean), and/or `schemaData` (validated against the pinned version's schema). The package version cannot be changed here.
+- `POST /api/my-graphics/:entryId/duplicate`: copy an entry of the current rundown directly below the original; returns the new `entryId`.
 - `DELETE /api/my-graphics/:entryId`: delete one entry owned by the current account.
 - `GET /api/my-graphics/:entryId/manifest`: return the pinned version's original manifest, only to the entry owner.
 

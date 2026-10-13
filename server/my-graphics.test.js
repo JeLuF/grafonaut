@@ -24,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { createGroupAction, deleteGroupAction, listGroupActions, updateGroupAction, manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { copyLabel, duplicateMyGraphic, createGroupAction, deleteGroupAction, listGroupActions, updateGroupAction, manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -279,4 +279,40 @@ test('group actions belong to the current rundown', async () => {
   assert.deepEqual(queries[0].parameters, ['Renamed', '3', 'account']);
   assert.equal(await deleteGroupAction('account', '3'), true);
   assert.match(queries[1].sql, /^DELETE ga FROM group_actions ga/);
+});
+
+test('duplicating copies an entry of the current rundown directly below the original', async () => {
+  rows = [{ entryId: '1', rundownId: 5, versionId: 'v1', label: null, schemaData: { a: 1 }, enabled: 1, displayName: 'Lower third' },
+    { entryId: '2', rundownId: 5, versionId: 'v2', label: 'Right', schemaData: { name: 'Host' }, enabled: 0, displayName: 'Clock' },
+    { entryId: '3', rundownId: 5, versionId: 'v1', label: null, schemaData: {}, enabled: 1, displayName: 'Lower third' }];
+  nextId = 9;
+  assert.equal(await duplicateMyGraphic('account', '2'), '9');
+  const select = queries.find(({ sql }) => sql.includes('FROM my_graphics_entries g JOIN package_versions'));
+  assert.match(select.sql, /cur.current_rundown_id = g.rundown_id/);
+  assert.match(select.sql, /FOR UPDATE/);
+  const insert = queries.find(({ sql }) => sql.startsWith('INSERT INTO my_graphics_entries'));
+  assert.deepEqual(insert.parameters, ['account', 5, 'v2', 'Right (copy)', '{"name":"Host"}', false]);
+  const order = queries.at(-1);
+  assert.match(order.sql, /^UPDATE my_graphics_entries SET sort_position = CASE id/);
+  assert.deepEqual(order.parameters, ['1', 0, '2', 1, '9', 2, '3', 3, 'account', ['1', '2', '9', '3']]);
+  assert.deepEqual(transactionEvents, ['begin', 'commit', 'release']);
+  queries = [];
+  assert.equal(await duplicateMyGraphic('account', '77'), null);
+  assert.equal(queries.some(({ sql }) => sql.startsWith('INSERT')), false);
+});
+
+test('copy labels get a suffix and stay within 100 characters', () => {
+  assert.equal(copyLabel('Lower third'), 'Lower third (copy)');
+  assert.equal([...copyLabel('x'.repeat(100))].length, 100);
+  assert.ok(copyLabel('x'.repeat(100)).endsWith(' (copy)'));
+});
+
+test('the duplicate endpoint answers 201 with the new entry and 404 for unknown entries', async () => {
+  rows = [{ entryId: '1', rundownId: 5, versionId: 'v1', label: 'Left', schemaData: {}, enabled: 1, displayName: 'Lower third' }];
+  nextId = 12;
+  const created = await requestApi('POST', '/1/duplicate');
+  assert.equal(created.status, 201);
+  assert.deepEqual(await created.json(), { entryId: '12' });
+  assert.equal((await requestApi('POST', '/5/duplicate')).status, 404);
+  assert.equal((await requestApi('POST', '/abc/duplicate')).status, 400);
 });

@@ -1,7 +1,7 @@
 import express from 'express';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
-import { addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, reorderMyGraphics, updateMyGraphic } from './db.js';
+import { addMyGraphic, deleteMyGraphic, duplicateMyGraphic, findMyGraphic, listMyGraphics, reorderMyGraphics, updateMyGraphic } from './db.js';
 import { storageRoot } from './storage.js';
 import { resolvePropertySchema } from './asset-files.js';
 
@@ -95,6 +95,14 @@ router.delete('/:entryId', async (request, response) => {
     entriesChanged(request);
     response.json({ ok: true });
   } catch { response.status(503).json({ error: 'Unable to delete graphic entry' }); }
+});
+router.post('/:entryId/duplicate', async (request, response) => {
+  try {
+    const entryId = await duplicateMyGraphic(request.session.accountId, request.params.entryId);
+    if (!entryId) return response.status(404).json({ error: 'Graphic entry not found' });
+    entriesChanged(request);
+    response.status(201).json({ entryId });
+  } catch { response.status(503).json({ error: 'Unable to duplicate graphic entry' }); }
 });
 router.get('/:entryId/manifest', async (request, response) => {
   try {

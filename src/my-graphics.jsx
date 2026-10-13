@@ -2,7 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { getTemplate, getUiOptions } from '@rjsf/utils';
-import { ArrowDown, ArrowUp, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, Copy, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -172,10 +172,11 @@ export function ActionMenu({ label, busy, items, icon: TriggerIcon = MoreHorizon
   </div>;
 }
 
-function EntryMenu({ entry, busy, onDelete, onManifest }) {
+function EntryMenu({ entry, busy, onDelete, onDuplicate, onManifest }) {
   return <ActionMenu label={`More options for ${entry.label || entry.display_name}`} busy={busy} items={[
     !entry.packageDisabled && { key: 'details', label: 'Show details', icon: Info, href: `#graphic/${encodeURIComponent(entry.versionId)}` },
     { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => onManifest(entry) },
+    { key: 'duplicate', label: 'Duplicate', icon: Copy, onSelect: () => onDuplicate(entry) },
     { key: 'delete', label: 'Delete', icon: Trash2, onSelect: () => onDelete(entry), danger: true }
   ]} />;
 }
@@ -280,7 +281,7 @@ export function CustomActionDialog({ entry, action, onRun, onClose }) {
   );
 }
 
-function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, connections, onSave, onProperties, onAction, onCustomAction, onDelete, onManifest }) {
+function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, connections, onSave, onProperties, onAction, onCustomAction, onDelete, onDuplicate, onManifest }) {
   const [label, setLabel] = useState(entry.label ?? entry.display_name);
   const [editingLabel, setEditingLabel] = useState(false);
   const [savingLabel, setSavingLabel] = useState(false);
@@ -351,7 +352,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
           {entry.customActions?.length > 0 && <ActionMenu label={`Custom actions for ${entry.label || entry.display_name}`} busy={busy || !actionable}
             icon={Zap} title={actionable ? 'Custom actions' : unavailableReason} menuLabel="Custom actions"
             items={entry.customActions.map((action) => ({ key: action.id, label: action.name, icon: Zap, hint: action.description, onSelect: () => onCustomAction(entry, action) }))} />}
-          <EntryMenu entry={entry} busy={busy} onDelete={onDelete} onManifest={onManifest} />
+          <EntryMenu entry={entry} busy={busy} onDelete={onDelete} onDuplicate={onDuplicate} onManifest={onManifest} />
         </div>
         <span className={`entry-availability${entry.live?.playing ? ' is-on-air' : ''}`}>{entry.packageDisabled ? 'Package unavailable'
           : !canControlGraphic(entry.control) ? 'Renderer unavailable'
@@ -361,7 +362,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
   );
 }
 
-export default function MyGraphicsView({ account, rundownName, groupActions, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onManifest, onReorder }) {
+export default function MyGraphicsView({ account, rundownName, groupActions, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onDuplicate = async () => {}, onManifest, onReorder }) {
   const [editing, setEditing] = useState(null);
   const [customAction, setCustomAction] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
@@ -402,7 +403,7 @@ export default function MyGraphicsView({ account, rundownName, groupActions, ent
             <ul className="graphics-list">{entries.map((entry, index) => <GraphicEntry key={entry.entryId} entry={entry} busy={ordering || pending.has(entry.entryId)}
               orderDisabled={orderDisabled} first={index === 0} last={index === entries.length - 1} onMove={(direction) => moveEntry(index, index + direction)} Preview={Preview} connections={rendererStatus?.connections} onSave={onSave} onProperties={setEditing} onAction={onAction}
               onCustomAction={(item, action) => needsPayload(action) ? setCustomAction({ entry: item, action }) : onCustomAction(item, action, {}).catch(() => {})}
-              onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>
+              onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onDuplicate={(item) => { void onDuplicate(item).catch(() => {}); }} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>
           </SortableContext>
         </DndContext>}
         </div>

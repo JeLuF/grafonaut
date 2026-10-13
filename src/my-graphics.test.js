@@ -307,6 +307,8 @@ test('the menu opens, supports keyboard navigation and closes on Escape', () => 
   const manifest = screen.getByRole('menuitem', { name: 'Show manifest' });
   assertFocused(manifest);
   fireEvent.keyDown(manifest, { key: 'ArrowDown' });
+  assertFocused(screen.getByRole('menuitem', { name: 'Duplicate' }));
+  fireEvent.keyDown(document.activeElement, { key: 'ArrowDown' });
   assertFocused(screen.getByRole('menuitem', { name: 'Delete' }));
   fireEvent.keyDown(document.activeElement, { key: 'Escape' });
   assertAbsent(screen.queryByRole('menu'));
@@ -970,4 +972,13 @@ test('the landing page elements render: logo, Twitch login, hero art and the fea
   const hero = screen.getByRole('img', { name: /astronaut on a moon/ });
   assert.equal(hero.getAttribute('src'), '/brand/hero-astronaut-1536.webp');
   assert.match(hero.getAttribute('srcset'), /hero-astronaut-768\.webp 768w/);
+});
+
+test('the entry menu duplicates only the selected entry', async () => {
+  const duplicated = [];
+  showView({ onDuplicate: async (item) => { duplicated.push(item.entryId); } });
+  fireEvent.click(screen.getByRole('button', { name: 'More options for Right' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
+  await waitFor(() => assert.deepEqual(duplicated, ['2']));
+  assertAbsent(screen.queryByRole('menu'));
 });
