@@ -1,4 +1,4 @@
-// OGraf renderer page. Receives state and commands over the WebSocket and runs every graphic instance in its own
+// Grafanaut renderer page. Receives state and commands over the WebSocket and runs every graphic instance in its own
 // sandboxed iframe; the frames are stacked in My Graphics order (first entry in front).
 (() => {
   const config = JSON.parse(document.getElementById('renderer-config').textContent);

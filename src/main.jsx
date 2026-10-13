@@ -177,7 +177,7 @@ function App() {
     const timer = setInterval(refreshRendererStatus, 3000);
     return () => clearInterval(timer);
   }, [view, apiUrl, refreshRendererStatus]);
-  // Each entry is one RenderTarget of the account's renderer, controlled through the public OGraf API.
+  // Each entry is one RenderTarget of the account's renderer, controlled through the public OGraf Server API.
   const controlledEntries = useMemo(() => entries.map((entry) => ({ ...entry,
     control: apiUrl ? { apiBaseUrl: apiUrl, rendererId: 'main', renderTarget: { entryId: entry.entryId }, graphicId: entry.versionId } : undefined,
     live: rendererStatus?.instances.get(entry.entryId) })), [entries, apiUrl, rendererStatus]);
@@ -309,7 +309,7 @@ function App() {
     notify(`${group.name} deleted`);
   }
 
-  // Runs a group action through the public OGraf API (POST /x-actions/{id}), like any other controller would.
+  // Runs a group action through the OGraf Server API extension (POST /x-actions/{id}), like any other controller would.
   async function runGroup(group) {
     setRunningGroups((current) => new Set(current).add(group.id));
     try {
@@ -355,7 +355,7 @@ function App() {
   return (
     <div className="app-layout">
     <aside className="sidebar">
-      <a className="brand-mark" href="#catalog"><span>O</span>GRAF</a>
+      <a className="brand-mark" href="#catalog" aria-label="Grafanaut"><span aria-hidden="true">G</span><span className="brand-name" aria-hidden="true">RAFANAUT</span></a>
       <nav className="view-tabs" aria-label="Graphics views">
         <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#private" aria-current={view === 'private' ? 'page' : undefined}><Lock size={17} />Private catalog</a>
@@ -393,9 +393,9 @@ function App() {
         summary={[...catalog, ...privateItems].find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>
       {!authLoading && !account && <section className="hero">
-        <p className="eyebrow">PUBLIC CATALOG / MVP</p>
+        <p className="eyebrow">GRAFANAUT · OGRAF GRAPHICS</p>
         <h1>Broadcast graphics,<br /><em>ready to play.</em></h1>
-        <p className="hero-copy">Browse the shared OGraf library and build a working set for your next live production.</p>
+        <p className="hero-copy">Browse the shared library of OGraf graphics, prepare them in rundowns and play them out to OBS, vMix or any browser source.</p>
       </section>}
       <section className="catalog-section" aria-labelledby="catalog-heading">
         <div className="section-heading" ref={catalogHeading}>
@@ -408,7 +408,7 @@ function App() {
         <Pagination page={currentPage} pageCount={pageCount} total={filteredCatalog.length} onChange={changePage} />
       </section>
       </>}
-      <footer><span>OGRAF PLATFORM</span><span>Catalog preview · {new Date().getFullYear()}</span></footer>
+      <footer><span>GRAFANAUT</span><span>Catalog, rundowns and rendering for <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf</a> graphics · {new Date().getFullYear()}</span></footer>
       {toast && <Toast key={toast.id} toast={toast} onDismiss={setToast} />}
     </main>
     </div>

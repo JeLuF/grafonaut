@@ -59,7 +59,7 @@ input {
     font-weight: 700;
 }
 
-.brand-mark span {
+.brand-mark span:first-child {
     display: inline-grid;
     place-items: center;
     width: 25px;
@@ -2055,4 +2055,8 @@ footer {
 .error-message ul {
     margin: 6px 0 0;
     padding-left: 18px;
+}
+
+footer a {
+    color: inherit;
 }
