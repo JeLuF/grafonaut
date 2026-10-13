@@ -7,6 +7,7 @@ This is the first runnable slice of the OGraf hosting platform. It covers:
 - **BE-6**: Startup import of `.ograf.zip` files from built-in and mounted seed directories.
 - **FE-1**: Searchable public catalog UI.
 - **FE-2**: Rundowns with independent entries, labels, enable/disable, schema-driven property editing and play/stop/update through the OGraf API.
+- **FE-7**: Group actions per rundown: named lists of play/stop/update/custom/sleep steps triggered with one click.
 - **OPS-1**: Docker Compose with Node app, MySQL, persistent storage, and a separate seed volume.
 
 ## Run with Docker
@@ -85,6 +86,7 @@ The account's OGraf Server API lives at `https://<main host>/<api-token>/ograf/v
 - The renderer ID is `main`; its RenderTargets are the entries of the current rundown, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
 - Implemented: `GET /`, `GET /graphics`, `GET /graphics/{id}`, `GET /renderers`, `GET /renderers/main`, `GET /renderers/main/target`, `POST …/graphicInstance/load`, `…/playAction`, `…/stopAction`, `…/updateAction`, `…/customActions/{id}` and `PUT …/graphicInstance/clear`. `graphicId` is the package version ID. Other endpoints answer `501 Not Implemented`.
 - Instances follow the OGraf step model: a graphic with `stepCount: 0` is played once and animates out by itself, so after a successful play it is *ended* (shown as "Played"), not on air. A graphic that reported a step before and returns no `currentStep` from a play has reached its end as well. Graphics that never report a step stay on air until stopped. Ended graphics are not replayed when a renderer reconnects.
+- Vendor extension: `GET /x-actions` lists the group actions of the current rundown with their steps; `POST /x-actions/{id}` runs one and answers when its steps are done, listing failed steps (`409` while it is already running, `503` without a connected renderer). Stream Deck/Companion buttons can trigger a whole group with one call.
 - Custom actions (`…/graphicInstance/customActions/{id}`) must be declared in the graphic's manifest (`customActions`), otherwise `404`. If the action declares a `schema`, the payload is validated against it (`400` with `errors`).
 - Actions answer `503` when no renderer page is connected, `550` when the graphic's method threw, and otherwise the first renderer's result.
 - Interactive documentation (Swagger UI) is served at `/api-docs/` and linked from the Renderer page. Its OpenAPI document (`/api-docs/openapi.json`) is built from `server/ograf-openapi.js`; a test checks it against the routes the API registers. For signed-in users the document's server is their own API URL, so "Try it out" works directly.
@@ -133,6 +135,8 @@ Authenticated endpoints for the current rundown's entries (the paths keep their 
 - `PATCH /api/my-graphics/:entryId`: save `label` (nullable, at most 100 characters), `enabled` (boolean), and/or `schemaData` (validated against the pinned version's schema). The package version cannot be changed here.
 - `DELETE /api/my-graphics/:entryId`: delete one entry owned by the current account.
 - `GET /api/my-graphics/:entryId/manifest`: return the pinned version's original manifest, only to the entry owner.
+
+**Group actions (FE-7).** Each rundown has a list of group actions shown above its entries: a run button and a pencil (edit) per group, plus *New group action*. A group has a name and up to 50 steps: Play, Stop, Update or a custom action (with a payload form when the action has a schema) on an entry of the rundown, or Sleep (seconds). Sleep steps split a group into phases that run one after the other; within a phase all steps start together, so e.g. "stop lower third, play coming next" happen at the same moment, and only steps on the same entry keep their order. A failing step does not stop the others; the result is shown as a toast. Groups run on the server and are triggered through the OGraf API extension `POST /x-actions/{id}` (the run button uses it too); the sleep steps of a group may add up to at most 10 minutes. Groups are stored per rundown (`GET/POST /api/group-actions`, `PATCH`/`DELETE /api/group-actions/:id`); steps must reference entries of the current rundown.
 
 Rundowns themselves are managed with `GET/POST /api/rundowns`, `PATCH`/`DELETE /api/rundowns/:id` and `PUT /api/rundowns/current`; private uploads with `GET`/`POST /api/private/packages`.
 

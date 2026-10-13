@@ -34,13 +34,15 @@ const rundownsUrl = (await compileModule('./rundowns.jsx')).url;
 const { RundownPanel, useRundowns } = await import(rundownsUrl);
 const privateCatalogUrl = (await compileModule('./private-catalog.jsx')).url;
 const { default: PrivateCatalogView } = await import(privateCatalogUrl);
+const groupActionsUrl = (await compileModule('./group-actions.jsx', { './my-graphics.jsx': myGraphicsUrl })).url;
+const { GroupActionsPanel } = await import(groupActionsUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
 const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   filename: mainUrl.pathname, configFile: false, babelrc: false, plugins: [jsx, () => ({ visitor: {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -884,4 +886,74 @@ test('custom actions run from the entry menu, asking for a payload when the acti
   fireEvent.click(dialog.getByRole('button', { name: 'Run action' }));
   await waitFor(() => assertAbsent(screen.queryByRole('dialog')));
   assert.deepEqual(runs.at(-1), ['1', 'setColor', { color: 'blue' }]);
+});
+
+const groupEntries = [{ ...entry, entryId: '1', label: 'Left' },
+  { ...entry, entryId: '2', label: 'Ticker', customActions: [{ id: 'speed', name: 'Set speed', schema: { type: 'object', properties: { speed: { type: 'number', title: 'Speed', default: 1 } } } },
+    { id: 'pause', name: 'Pause', schema: null }] }];
+function showGroups(props = {}) {
+  const calls = [];
+  render(React.createElement(GroupActionsPanel, { groups: [], entries: groupEntries, error: '', running: new Set(), disabled: false,
+    onRun: (group) => calls.push(['run', group.id]), onSave: async (group, data) => { calls.push(['save', group?.id ?? null, data]); },
+    onDelete: async (group) => { calls.push(['delete', group.id]); }, ...props }));
+  return calls;
+}
+
+test('group actions show a run button and a pencil each', () => {
+  const calls = showGroups({ groups: [{ id: '4', name: 'Opener', steps: [{ type: 'play', entryId: '1' }] }], running: new Set(['5']) });
+  fireEvent.click(screen.getByRole('button', { name: 'Run Opener' }));
+  assert.deepEqual(calls, [['run', '4']]);
+  assert.equal(screen.getByRole('button', { name: 'Run Opener' }).getAttribute('title'), '1 step');
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Opener' }));
+  const dialog = within(screen.getByRole('dialog'));
+  assert.equal(dialog.getByRole('textbox', { name: 'Name' }).value, 'Opener');
+  assert.equal(dialog.getByRole('combobox', { name: 'Step 1 type' }).value, 'play');
+});
+
+test('a new group action is built from play, sleep and custom action steps', async () => {
+  const calls = showGroups();
+  fireEvent.click(screen.getByRole('button', { name: 'New group action' }));
+  const dialog = within(screen.getByRole('dialog'));
+  fireEvent.change(dialog.getByRole('textbox', { name: 'Name' }), { target: { value: 'Break' } });
+  fireEvent.change(dialog.getByRole('combobox', { name: 'Step 1 type' }), { target: { value: 'stop' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Add step' }));
+  fireEvent.change(dialog.getByRole('combobox', { name: 'Step 2 type' }), { target: { value: 'sleep' } });
+  fireEvent.change(dialog.getByRole('spinbutton', { name: 'Step 2 seconds' }), { target: { value: '1.5' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Add step' }));
+  fireEvent.change(dialog.getByRole('combobox', { name: 'Step 3 type' }), { target: { value: 'custom' } });
+  assert.ok(dialog.getByText('This graphic has no custom actions'));
+  fireEvent.change(dialog.getByRole('combobox', { name: 'Step 3 graphic' }), { target: { value: '2' } });
+  assert.equal(dialog.getByRole('combobox', { name: 'Step 3 custom action' }).value, 'speed');
+  fireEvent.change(dialog.getByRole('spinbutton', { name: 'Speed' }), { target: { value: '3' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Move step 3 up' }));
+  fireEvent.click(dialog.getByRole('button', { name: 'Save group action' }));
+  await waitFor(() => assert.equal(calls.length, 1));
+  assert.deepEqual(calls[0], ['save', null, { name: 'Break', steps: [{ type: 'stop', entryId: '1' },
+    { type: 'custom', entryId: '2', actionId: 'speed', payload: { speed: 3 } }, { type: 'sleep', ms: 1500 }] }]);
+  await waitFor(() => assertAbsent(screen.queryByRole('dialog')));
+});
+
+test('server validation problems stay visible and group actions can be deleted', async () => {
+  const group = { id: '4', name: 'Opener', steps: [{ type: 'play', entryId: '99' }] };
+  let attempts = 0;
+  const calls = showGroups({ groups: [group], onSave: async () => {
+    attempts += 1;
+    throw Object.assign(new Error('The group action has invalid steps'), { payload: { details: ['Step 1: the graphic is not in the current rundown'] } });
+  } });
+  fireEvent.click(screen.getByRole('button', { name: 'Edit Opener' }));
+  const dialog = within(screen.getByRole('dialog'));
+  assert.equal(dialog.getByRole('combobox', { name: 'Step 1 graphic' }).value, '');
+  assert.ok(dialog.getByRole('option', { name: 'Missing graphic' }));
+  fireEvent.click(dialog.getByRole('button', { name: 'Save group action' }));
+  await waitFor(() => assert.match(dialog.getByRole('alert').textContent, /Step 1: the graphic is not in the current rundown/));
+  assert.equal(attempts, 1);
+  fireEvent.click(dialog.getByRole('button', { name: 'Delete' }));
+  const confirm = within(dialog.getByRole('group', { name: 'Confirm group action deletion' }));
+  fireEvent.click(confirm.getByRole('button', { name: 'Delete' }));
+  await waitFor(() => assert.deepEqual(calls, [['delete', '4']]));
+});
+
+test('new group actions need graphics in the rundown', () => {
+  showGroups({ entries: [] });
+  assert.equal(screen.getByRole('button', { name: 'New group action' }).disabled, true);
 });

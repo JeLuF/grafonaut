@@ -6,7 +6,8 @@ import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
-import { fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction } from './api.js';
+import { GroupActionsPanel } from './group-actions.jsx';
+import { fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction, triggerGroupAction } from './api.js';
 import './styles.css';
 
 const PAGE_SIZE = 6;
@@ -148,6 +149,17 @@ function App() {
     finally { setPrivateLoading(false); }
   }, [account]);
   useEffect(() => { void loadPrivateCatalog(); }, [loadPrivateCatalog]);
+  const [groups, setGroups] = useState([]);
+  const [groupsError, setGroupsError] = useState('');
+  const [runningGroups, setRunningGroups] = useState(new Set());
+  const loadGroups = useCallback(async () => {
+    if (!account) { setGroups([]); return; }
+    try {
+      setGroups((await requestJson('/api/group-actions')).groups ?? []);
+      setGroupsError('');
+    } catch (error) { setGroupsError(error.message); }
+  }, [account]);
+  useEffect(() => { void loadGroups(); }, [loadGroups, rundownState.currentRundownId]);
   const rundownName = rundownState.current?.name;
   const [rendererStatus, setRendererStatus] = useState(null);
   const statusRequest = useRef(0);
@@ -284,6 +296,36 @@ function App() {
     } finally { setPending((current) => { const next = new Set(current); next.delete(entryId); return next; }); }
   }
 
+  async function saveGroup(group, data) {
+    const options = { method: group ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) };
+    await requestJson(group ? `/api/group-actions/${encodeURIComponent(group.id)}` : '/api/group-actions', options);
+    await loadGroups();
+    notify(`${data.name} saved`);
+  }
+
+  async function deleteGroup(group) {
+    await requestJson(`/api/group-actions/${encodeURIComponent(group.id)}`, { method: 'DELETE' });
+    await loadGroups();
+    notify(`${group.name} deleted`);
+  }
+
+  // Runs a group action through the public OGraf API (POST /x-actions/{id}), like any other controller would.
+  async function runGroup(group) {
+    setRunningGroups((current) => new Set(current).add(group.id));
+    try {
+      const { ran, failures } = await triggerGroupAction(apiUrl, group.id);
+      if (!failures.length) notify(`${group.name} done`);
+      else {
+        notify(`${group.name}: ${failures.length} of ${ran} step${ran === 1 ? '' : 's'} failed. ${failures.map(({ entryName, message }) =>
+          `${entryName ?? 'Missing graphic'}: ${message}`).join('; ')}`, 'error');
+      }
+    } catch (error) { notify(`${group.name}: ${error.message}`, 'error'); }
+    finally {
+      setRunningGroups((current) => { const next = new Set(current); next.delete(group.id); return next; });
+      void refreshRendererStatus();
+    }
+  }
+
   async function runCustomAction(entry, action, payload) {
     const name = entry.label || entry.display_name;
     setPending((current) => new Set(current).add(entry.entryId));
@@ -331,7 +373,10 @@ function App() {
     </aside>
     <main className="app-shell">
       {notice && <p className="notice" role="status">{notice}</p>}
-      {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName} entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+      {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName}
+        groupActions={<GroupActionsPanel groups={groups} entries={controlledEntries} error={groupsError} running={runningGroups} disabled={!apiUrl}
+          onRun={runGroup} onSave={saveGroup} onDelete={deleteGroup} />}
+        entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
       : view === 'private' ? <PrivateCatalogView account={account} authLoading={authLoading} count={privateItems.length} maxZipBytes={maxZipBytes}
         loading={privateLoading} error={privateError} onUploaded={loadPrivateCatalog}>

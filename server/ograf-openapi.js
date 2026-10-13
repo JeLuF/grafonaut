@@ -42,8 +42,9 @@ export function ografOpenApi({ serverUrl } = {}) {
       : { url: '{origin}/{apiToken}/ograf/v1', description: 'Your account (sign in to fill in your API URL)',
         variables: { origin: { default: 'https://example.com' }, apiToken: { default: 'your-api-token' } } }],
     tags: [
-      { name: 'Server' }, { name: 'Graphics', description: 'The graphic versions in your My Graphics list' },
-      { name: 'Renderers' }, { name: 'Graphic instances', description: 'Load and control graphics on a render target' }
+      { name: 'Server' }, { name: 'Graphics', description: 'The graphic versions in your current rundown' },
+      { name: 'Renderers' }, { name: 'Graphic instances', description: 'Load and control graphics on a render target' },
+      { name: 'Actions (extension)', description: 'Vendor extension: the group actions defined in the current rundown, each a list of steps triggered with one call' }
     ],
     paths: {
       '/': { get: { tags: ['Server'], summary: 'Server information',
@@ -91,13 +92,31 @@ export function ografOpenApi({ serverUrl } = {}) {
       '/renderers/{rendererId}/target/graphicInstance/customActions/{customActionId}': { post: {
         ...instanceAction('Custom action', 'Calls customAction() with an action the graphic declares in its manifest (`customActions`, see GET /graphics/{graphicId}). If the action declares a `schema`, the payload must match it (`400` with `errors` otherwise); actions without a schema accept any payload, e.g. `{}`. `404` when the graphic does not declare the action.', ref('CustomActionParams'), 'customAction').post,
         parameters: [rendererId, { in: 'path', name: 'customActionId', required: true, description: 'ID of the custom action as defined by the graphic manifest', schema: { type: 'string', example: 'highlight' } }]
-      } }
+      } },
+      '/x-actions': { get: { tags: ['Actions (extension)'], summary: 'List the actions of the current rundown',
+        description: 'The group actions defined in the current rundown, with their steps. `entryName` is the label of the step\'s graphic, or null when the graphic is no longer in the rundown.',
+        responses: { 200: json({ type: 'object', properties: { actions: { type: 'array', items: ref('XAction') } }, required: ['actions'] }, 'The actions') } } },
+      '/x-actions/{actionId}': { post: { tags: ['Actions (extension)'], summary: 'Trigger an action',
+        description: 'Runs the action\'s steps on the renderer and answers when they are done. Sleep steps split the action into phases that run one after the other; all steps of a phase start together, steps on the same graphic keep their order. Play and custom actions load the graphic with its saved properties when it is not loaded or has ended; stop animates out and clears it; update sends the saved properties. A failing step does not stop the others; failures are listed in the answer. No request body is needed.',
+        parameters: [{ in: 'path', name: 'actionId', required: true, description: 'ID of the action (see GET /x-actions)', schema: { type: 'string', example: '1' } }],
+        responses: {
+          200: json({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, ran: { type: 'integer', description: 'Steps run (sleep steps not counted)' },
+            failures: { type: 'array', items: { type: 'object', properties: { step: { type: 'integer', description: '1-based position in the action' }, type: { type: 'string' },
+              entryId: { type: 'string' }, entryName: { type: 'string', nullable: true }, message: { type: 'string' } } } } }, required: ['id', 'name', 'ran', 'failures'] }, 'The action ran; failed steps are listed'),
+          404: problem('No action with this ID in the current rundown'),
+          409: problem('The action is already running'),
+          503: problem('No renderer page is connected')
+        } } }
     },
     components: { schemas: {
       ErrorResponse: { type: 'object', description: 'RFC 7807 problem details', properties: { title: { type: 'string' }, status: { type: 'integer' }, detail: { type: 'string' }, instance: { type: 'string' } } },
       RendererId: { type: 'string', example: 'main' },
       GraphicId: { type: 'string', description: 'ID of a graphic version (see GET /graphics)', example: '22222222-2222-4222-8222-222222222222' },
       GraphicInstanceId: { type: 'string', example: 'gi-0f6b4c1e-8d1a-4c47-9a9b-2f4f0c1d2e3f' },
+      XAction: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, steps: { type: 'array', items: { type: 'object', properties: {
+        type: { type: 'string', enum: ['play', 'stop', 'update', 'custom', 'sleep'] }, entryId: { type: 'string' }, entryName: { type: 'string', nullable: true },
+        actionId: { type: 'string', description: 'Custom action ID (type custom)' }, payload: { description: 'Custom action payload (type custom)' },
+        ms: { type: 'integer', description: 'Sleep duration in milliseconds (type sleep)' } }, required: ['type'] } } }, required: ['id', 'name', 'steps'] },
       RenderTarget: { type: 'object', description: 'A My Graphics entry', properties: { entryId: { type: 'string', example: '1' } }, required: ['entryId'] },
       GraphicListInfo: { type: 'object', properties: { id: ref('GraphicId'), name: { type: 'string' }, description: { type: 'string' } }, required: ['id', 'name'] },
       GraphicMetadata: { type: 'object', properties: { createdAt: { type: 'string', format: 'date-time' } }, required: ['createdAt'] },

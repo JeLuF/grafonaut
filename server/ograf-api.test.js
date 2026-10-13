@@ -11,6 +11,7 @@ let instances;
 let commands;
 let connected;
 let answer;
+let groups = [];
 const store = {
   listRenderEntries: async () => entries,
   listRenderInstances: async () => [...instances.values()],
@@ -20,7 +21,8 @@ const store = {
       playing: Boolean(state.playing), ended: Boolean(state.ended), versionId: entry.versionId, mainFile: entry.mainFile });
   },
   deleteRenderInstances: async (_account, ids) => { for (const id of ids) instances.delete(id); },
-  findAccountGraphic: async (_account, versionId) => versionId === 'v1' ? { manifest: { id: 'l3rd', name: 'Lower third' }, createdAt: '2026-10-01T10:00:00Z' } : null
+  findAccountGraphic: async (_account, versionId) => versionId === 'v1' ? { manifest: { id: 'l3rd', name: 'Lower third' }, createdAt: '2026-10-01T10:00:00Z' } : null,
+  listGroupActions: async () => groups
 };
 const hub = {
   connections: () => Array.from({ length: connected }),
@@ -242,4 +244,51 @@ test('custom actions must be declared by the graphic and match the action\'s pay
   assert.equal((await custom('highlight', null)).status, 200);
   // Without a loaded instance the declared action still answers 404 for the instance.
   assert.equal((await call('POST', '/renderers/main/target/graphicInstance/customActions/highlight', { renderTarget: { entryId: '1' }, graphicInstanceId: 'gi-old', params: { payload: {} } })).body.detail, 'No GraphicInstance found.');
+});
+
+const step = (type, entryId, extra = {}) => ({ type, entryId, ...extra });
+
+test('x-actions lists the group actions of the current rundown with the names of their graphics', async () => {
+  groups = [{ id: '5', name: 'Opener', steps: [step('stop', '3'), { type: 'sleep', ms: 200 }, step('play', '1'), step('play', '42')] }];
+  const { status, body } = await call('GET', '/x-actions');
+  assert.equal(status, 200);
+  assert.deepEqual(body.actions, [{ id: '5', name: 'Opener', steps: [{ type: 'stop', entryId: '3', entryName: 'Clock' }, { type: 'sleep', ms: 200 },
+    { type: 'play', entryId: '1', entryName: 'Left' }, { type: 'play', entryId: '42', entryName: null }] }]);
+});
+
+test('triggering an x-action runs its steps like the rundown buttons and lists failures', async () => {
+  entries[0].schemaData = { name: 'Saved host' };
+  await load('3', 'v2');
+  const clock = instances.get('3').instanceId;
+  commands = [];
+  groups = [{ id: '5', name: 'Opener', steps: [step('stop', '3'), step('play', '1'), { type: 'sleep', ms: 10 },
+    step('custom', '1', { actionId: 'setColor', payload: { color: 'red' } }), step('update', '2'), step('play', '42')] }];
+  const { status, body } = await call('POST', '/x-actions/5');
+  assert.equal(status, 200);
+  assert.equal(body.ran, 5);
+  assert.deepEqual(body.failures, [{ step: 6, type: 'play', entryId: '42', entryName: null, message: 'the graphic is no longer in this rundown' }]);
+  const sent = commands.map(({ message }) => [message.action, message.entryId]);
+  // Phase 1 (stop 3, play 1 = load + play) runs together; after the sleep the custom action; entry 2 has nothing loaded.
+  assert.deepEqual(sent.filter(([action]) => action !== 'state'), [['stopAction', '3'], ['load', '1'], ['playAction', '1'], ['customAction', '1']]);
+  assert.equal(commands.find(({ message }) => message.action === 'load').message.data.name, 'Saved host');
+  assert.deepEqual(commands.find(({ message }) => message.action === 'customAction').message.params, { id: 'setColor', payload: { color: 'red' } });
+  assert.equal(instances.has('3'), false, `stop clears ${clock}`);
+  assert.equal(instances.get('1').playing, true);
+});
+
+test('x-actions report invalid custom payloads per step and refuse unknown, running or unrenderable actions', async () => {
+  groups = [{ id: '5', name: 'Color', steps: [step('custom', '1', { actionId: 'setColor', payload: { color: 'green' } })] },
+    { id: '6', name: 'Slow', steps: [step('play', '1')] }];
+  const invalid = await call('POST', '/x-actions/5');
+  assert.equal(invalid.body.failures[0].message, 'The payload does not match the custom action\'s schema.');
+  assert.equal((await call('POST', '/x-actions/99')).status, 404);
+  let release;
+  answer = (message) => message.action === 'playAction' ? new Promise((resolve) => { release = () => resolve({ statusCode: 200, currentStep: 0 }); }) : { statusCode: 200 };
+  const first = call('POST', '/x-actions/6');
+  for (let i = 0; i < 50 && !release; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal((await call('POST', '/x-actions/6')).status, 409);
+  release();
+  assert.equal((await first).status, 200);
+  connected = 0;
+  assert.equal((await call('POST', '/x-actions/6')).status, 503);
 });

@@ -24,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { createGroupAction, deleteGroupAction, listGroupActions, updateGroupAction, manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -261,4 +261,22 @@ test('custom actions are read from the manifest with names, descriptions and pay
     { id: 'list', name: 'list', description: null, schema: null }
   ]);
   assert.deepEqual(manifestCustomActions({}), []);
+});
+
+test('group actions belong to the current rundown', async () => {
+  rows = [{ id: 3, name: 'Opener', steps: [{ type: 'play', entryId: '1' }] }, { id: 4, name: 'Broken', steps: null }];
+  assert.deepEqual(await listGroupActions('account'), [{ id: '3', name: 'Opener', steps: [{ type: 'play', entryId: '1' }] }, { id: '4', name: 'Broken', steps: [] }]);
+  assert.match(queries[0].sql, /cur.current_rundown_id = ga.rundown_id/);
+  queries = [];
+  const created = await createGroupAction('account', { name: 'Break', steps: [{ type: 'sleep', ms: 500 }] });
+  assert.equal(created.name, 'Break');
+  const insert = queries.find(({ sql }) => sql.startsWith('INSERT INTO group_actions'));
+  assert.deepEqual(insert.parameters, ['account', '5', 'Break', '[{"type":"sleep","ms":500}]']);
+  queries = [];
+  assert.equal(await updateGroupAction('account', '3', { name: 'Renamed' }), true);
+  assert.match(queries[0].sql, /SET ga.name = \? WHERE ga.id = \? AND ga.account_id = \?/);
+  assert.match(queries[0].sql, /cur.current_rundown_id = ga.rundown_id/);
+  assert.deepEqual(queries[0].parameters, ['Renamed', '3', 'account']);
+  assert.equal(await deleteGroupAction('account', '3'), true);
+  assert.match(queries[1].sql, /^DELETE ga FROM group_actions ga/);
 });

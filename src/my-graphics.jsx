@@ -8,7 +8,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { canControlGraphic } from './api.js';
 
-class PropertyFormBoundary extends React.Component {
+export class PropertyFormBoundary extends React.Component {
   state = { error: false };
   static getDerivedStateFromError() { return { error: true }; }
   render() {
@@ -68,7 +68,7 @@ function PropertyField(props) {
   </WrapIfAdditionalTemplate>;
 }
 
-const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription };
+export const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription };
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -361,7 +361,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
   );
 }
 
-export default function MyGraphicsView({ account, rundownName, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onManifest, onReorder }) {
+export default function MyGraphicsView({ account, rundownName, groupActions, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onManifest, onReorder }) {
   const [editing, setEditing] = useState(null);
   const [customAction, setCustomAction] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
@@ -386,6 +386,7 @@ export default function MyGraphicsView({ account, rundownName, entries, loading,
       <div className="working-set-heading"><h1 id="my-graphics-heading">{account && rundownName ? rundownName : 'Rundown'}</h1>{account && <span>{entries.length} entries / {entries.filter((entry) => entry.enabled).length} enabled{rendererStatus && <>
         {' · '}<span className={rendererStatus.connections ? 'renderer-connected' : 'renderer-disconnected'}>{rendererStatus.connections
           ? `${rendererStatus.connections} renderer${rendererStatus.connections === 1 ? '' : 's'} connected` : 'No renderer connected'}</span></>}</span>}</div>
+      {account && groupActions}
       {!account ? <div className="empty-state"><strong>Sign in to prepare your rundowns.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <div className="my-graphics-layout">
         {rendererPreview}
         <div className="my-graphics-entries">

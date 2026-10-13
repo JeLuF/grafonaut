@@ -475,7 +475,7 @@ export async function updateMyGraphic(accountId, entryId, changes) {
 // ---- Renderer state: one graphic instance per My Graphics entry, in My Graphics order ----
 
 export async function listRenderEntries(accountId) {
-  const [rows] = await pool.query(`SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
+  const [rows] = await pool.query(`SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled, g.schema_data AS schemaData,
       pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel, pv.manifest_name AS display_name,
       pv.manifest_description AS description, pv.main_file_relpath AS mainFile, p.disabled AS packageDisabled,
       pv.manifest_json AS manifest
@@ -519,6 +519,43 @@ export async function findAccountGraphic(accountId, versionId) {
     ${currentRundown}
     WHERE g.account_id = ? AND pv.id = ? LIMIT 1`, [accountId, versionId]);
   return rows[0] ?? null;
+}
+
+// ---- Group actions of the current rundown (FE-7) ----
+
+const groupRow = (row) => ({ id: String(row.id), name: row.name, steps: Array.isArray(row.steps) ? row.steps : [] });
+
+export async function listGroupActions(accountId) {
+  const [rows] = await pool.query(`SELECT ga.id, ga.name, ga.steps FROM group_actions ga
+    JOIN accounts cur ON cur.id = ga.account_id AND cur.current_rundown_id = ga.rundown_id
+    WHERE ga.account_id = ? ORDER BY ga.created_at, ga.id`, [accountId]);
+  return rows.map(groupRow);
+}
+
+export async function createGroupAction(accountId, { name, steps }) {
+  const rundownId = await ensureCurrentRundown(accountId);
+  const [result] = await pool.query('INSERT INTO group_actions (account_id, rundown_id, name, steps) VALUES (?, ?, ?, ?)',
+    [accountId, rundownId, name, JSON.stringify(steps)]);
+  return { id: String(result.insertId), name, steps };
+}
+
+// Changes name and/or steps of a group of the current rundown; returns false when there is no such group.
+export async function updateGroupAction(accountId, groupId, changes) {
+  const fields = [];
+  const values = [];
+  if (changes.name !== undefined) { fields.push('ga.name = ?'); values.push(changes.name); }
+  if (changes.steps !== undefined) { fields.push('ga.steps = ?'); values.push(JSON.stringify(changes.steps)); }
+  const [result] = await pool.query(`UPDATE group_actions ga
+    JOIN accounts cur ON cur.id = ga.account_id AND cur.current_rundown_id = ga.rundown_id
+    SET ${fields.join(', ')} WHERE ga.id = ? AND ga.account_id = ?`, [...values, groupId, accountId]);
+  return result.affectedRows === 1;
+}
+
+export async function deleteGroupAction(accountId, groupId) {
+  const [result] = await pool.query(`DELETE ga FROM group_actions ga
+    JOIN accounts cur ON cur.id = ga.account_id AND cur.current_rundown_id = ga.rundown_id
+    WHERE ga.id = ? AND ga.account_id = ?`, [groupId, accountId]);
+  return result.affectedRows === 1;
 }
 
 export async function findVersionByChecksum(checksum) {

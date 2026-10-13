@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
-import { deleteRenderInstances, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findCatalogItem, findRenderableVersion, findVisibleVersion,
+import { deleteRenderInstances, listGroupActions, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findCatalogItem, findRenderableVersion, findVisibleVersion,
   initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertTwitchAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
@@ -9,6 +9,7 @@ import { findThumbnail, findThumbnails } from './thumbnails.js';
 import myGraphicsRouter from './my-graphics.js';
 import rundownsRouter from './rundowns.js';
 import { createPrivateCatalog } from './private-catalog.js';
+import { createGroupActions } from './group-actions.js';
 import { configureSession } from './session.js';
 import { assetRoute, createAssetHandler, frameDocument, framePath, parseRendererHost, rendererDocument, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
 import { createRenderHub } from './render-hub.js';
@@ -23,7 +24,7 @@ const rendererHost = parseRendererHost(process.env.RENDERER_HOST);
 // Graphics may only share an origin with their package files when the renderer runs on its own host.
 const rendererIsolated = rendererHost !== null;
 tokenKey();
-const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic };
+const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic, listGroupActions };
 const renderHub = createRenderHub(renderStore);
 app.locals.onEntriesChanged = (accountId) => renderHub.syncEntries(accountId)
   .catch((error) => console.error('Renderer sync failed:', error.message));
@@ -79,6 +80,7 @@ app.get('/api/catalog/:versionId/thumbnails/:index', async (request, response) =
 app.use('/api/my-graphics', myGraphicsRouter);
 app.use('/api/rundowns', rundownsRouter);
 app.use('/api/private', createPrivateCatalog());
+app.use('/api/group-actions', createGroupActions());
 app.use('/api-docs', createApiDocs({ apiUrlFor: async (request) => request.session?.accountId
   ? apiUrl(request, await findAccountToken(request.session.accountId, 'api')) : undefined }));
 // Account token URLs: GET shows the current one, POST replaces the token (the old URL stops working).

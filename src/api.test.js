@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, mock, test } from 'node:test';
-import { canControlGraphic, fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction } from './api.js';
+import { canControlGraphic, fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction, triggerGroupAction } from './api.js';
 
 const base = 'https://app.example.invalid/token/ograf/v1/';
 const control = { apiBaseUrl: base, rendererId: 'main', renderTarget: { entryId: '7' }, graphicId: 'version-1' };
@@ -142,4 +142,13 @@ test('a custom action loads the graphic with the saved properties first when it 
     assert.equal(calls[2].body.graphicInstanceId, 'gi-new');
     mock.restoreAll();
   }
+});
+
+test('group actions are triggered through the API extension', async () => {
+  const fetchMock = mock.method(globalThis, 'fetch', async () => Response.json({ id: '5', name: 'Opener', ran: 2, failures: [] }));
+  assert.deepEqual(await triggerGroupAction(base, '5'), { id: '5', name: 'Opener', ran: 2, failures: [] });
+  const [url, options] = fetchMock.mock.calls[0].arguments;
+  assert.equal(url, 'https://app.example.invalid/token/ograf/v1/x-actions/5');
+  assert.equal(options.method, 'POST');
+  assert.equal(options.credentials, 'omit');
 });

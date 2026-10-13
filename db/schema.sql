@@ -127,3 +127,19 @@ CREATE TABLE IF NOT EXISTS render_instances (
   CONSTRAINT fk_render_instances_entry FOREIGN KEY (entry_id) REFERENCES my_graphics_entries (id) ON DELETE CASCADE,
   CONSTRAINT fk_render_instances_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Named groups of actions on the entries of a rundown, triggered with one click (FE-7). Steps are stored as JSON:
+-- { type: play|stop|update, entryId } | { type: custom, entryId, actionId, payload } | { type: sleep, ms }.
+CREATE TABLE IF NOT EXISTS group_actions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  account_id BIGINT UNSIGNED NOT NULL,
+  rundown_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  steps JSON NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_group_actions_rundown (rundown_id),
+  CONSTRAINT fk_group_actions_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_group_actions_rundown FOREIGN KEY (rundown_id) REFERENCES rundowns (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

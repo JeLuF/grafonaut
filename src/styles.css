@@ -1911,3 +1911,148 @@ footer {
 .private-heading {
     margin-top: 40px;
 }
+
+.group-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 26px;
+    padding: 16px 18px;
+    border: 1px solid #d8d6ca;
+    background: #fffdf7;
+    font-family: Arial, sans-serif;
+}
+
+.group-actions .status {
+    margin: 0;
+    font-size: 13px;
+}
+
+.group-action-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.group-action {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.group-action .primary-button {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.group-action-dialog {
+    width: min(960px, calc(100vw - 32px));
+}
+
+.group-steps-heading {
+    margin: 22px 0 10px;
+    font: 700 13px Arial, sans-serif;
+}
+
+.group-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 0;
+    list-style: none;
+}
+
+.group-step {
+    padding: 10px 12px;
+    border: 1px solid #d8d6ca;
+    border-radius: 4px;
+    background: #f9f7f1;
+}
+
+.group-step-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.group-step-number {
+    min-width: 22px;
+    color: #6b756e;
+    font: 700 12px Arial, sans-serif;
+    font-variant-numeric: tabular-nums;
+}
+
+.group-step select,
+.group-step input {
+    padding: 6px 8px;
+    border: 1px solid #abb5aa;
+    border-radius: 4px;
+    background: #fffdf7;
+    color: #17332f;
+    font: 13px Arial, sans-serif;
+}
+
+/* The dialog's form styles make selects full width; in a step row they share one line instead. */
+.dialog-content .group-step select {
+    flex: 1 1 180px;
+    width: auto;
+    min-width: 0;
+}
+
+.dialog-content .group-step select[aria-label$="type"] {
+    flex: 0 0 140px;
+}
+
+.dialog-content .group-step-sleep input {
+    width: 90px;
+}
+
+.group-step-sleep {
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+    margin: 0 !important;
+    font-size: 13px;
+}
+
+.group-step-sleep input {
+    width: 90px;
+}
+
+.group-step-note {
+    color: #a52d23;
+    font-size: 12px;
+}
+
+.group-step-tools {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+
+.group-step-tools .icon-button {
+    width: 28px;
+    height: 28px;
+    border: 0;
+}
+
+.group-step-payload {
+    margin: 10px 0 0 30px;
+}
+
+.group-delete {
+    margin-right: auto;
+    color: #a52d23;
+}
+
+.error-message ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}

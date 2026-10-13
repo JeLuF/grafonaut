@@ -23,9 +23,9 @@ function apiBase(apiBaseUrl) {
 }
 
 // Calls the public OGraf Server API: the Control UI uses the same API as any third-party controller.
-export async function ografRequest(apiBaseUrl, method, path, body) {
+export async function ografRequest(apiBaseUrl, method, path, body, timeoutMs = 15000) {
   const response = await fetch(`${apiBase(apiBaseUrl)}${path}`, { method, credentials: 'omit', referrerPolicy: 'no-referrer',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(timeoutMs),
     body: body === undefined ? undefined : JSON.stringify(body) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || (typeof payload.statusCode === 'number' && (payload.statusCode < 200 || payload.statusCode >= 300))) {
@@ -80,6 +80,12 @@ export async function triggerCustomAction(control, actionId, payload = {}, data 
   }
   return ografRequest(control.apiBaseUrl, 'POST', `${renderer}/target/graphicInstance/customActions/${encodeURIComponent(actionId)}`,
     { renderTarget, graphicInstanceId, params: { payload } });
+}
+
+// Triggers a group action of the current rundown through the API extension; resolves when its steps are done
+// (groups may sleep up to 10 minutes in total) with { ran, failures }.
+export async function triggerGroupAction(apiBaseUrl, actionId) {
+  return ografRequest(apiBaseUrl, 'POST', `/x-actions/${encodeURIComponent(actionId)}`, undefined, 11 * 60 * 1000);
 }
 
 // Connection count and per-entry instance state of the account's renderer.
