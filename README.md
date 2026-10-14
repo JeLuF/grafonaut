@@ -4,20 +4,53 @@ Grafanaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a
 
 **Naming:** *Grafanaut* is this application. *OGraf* is the EBU specification it implements (graphics packages with `*.ograf.json` manifests, the OGraf Server API under `/ograf/v1`). Code and documentation keep the OGraf name wherever they refer to the specification, e.g. "OGraf graphic", "OGraf Server API" or `ograf-api.js`.
 
-This version covers:
+## Status of the work packages
 
-- **BE-2**: Twitch OAuth account creation and cookie session.
-- **BE-5**: UUID-based package storage with original archive and extracted tree.
-- **BE-6**: Startup import of `.ograf.zip` files from built-in and mounted seed directories.
-- **FE-1**: Searchable public catalog UI.
-- **FE-2**: Rundowns with independent entries, labels, enable/disable, schema-driven property editing and play/stop/update through the OGraf Server API.
-- **FE-7**: Group actions per rundown: named lists of play/stop/update/custom/sleep steps triggered with one click.
-- **OPS-1**: Docker Compose with Node app, MySQL, persistent storage, and a separate seed volume.
+Work packages as defined in `ograf-platform-requirements.md`, section 13.
+
+**Done**
+
+- **BE-2** Sign-in with Twitch, and with Google (shown as "YouTube login"); separate accounts per provider, OAuth `state` checks, PKCE for Google; new accounts get the User role.
+- **BE-3** Renderer and API tokens: 32 random bytes, stored AES-256-GCM encrypted, shown on demand, replaceable (the old URL stops working).
+- **BE-5** Storage of the original archive and the unpacked files (once per archive, shared by all its graphics), SHA-256 checksums, UUID-based paths.
+- **BE-7** OGraf Server API per account under `/<api-token>/ograf/v1`: server info, graphics, renderers, render targets, load/play/stop/update/custom actions, clear; plus the `x-actions` extension for group actions.
+- **BE-8** WebSocket protocol between server and renderer pages: any number of connections per account kept in sync, on-air state stored in the database, reconnects catch up.
+- **RN-1** Renderer page with CSP, an own host via `RENDERER_HOST`, one sandboxed iframe per graphic, stacked in rundown order.
+- **FE-1** Public catalog: search, pagination, detail pages, adding graphics to the current rundown.
+- **FE-2** Rundown view: entries with labels, enable/disable, reordering, duplicating, properties, play/stop/update and live status.
+- **FE-4** Private uploads wired to the ingestion pipeline and storage.
+- **FE-5** Property dialog generated from the manifest schema, including GDD `order`, `label` and select labels, SPX file lists and instructions.
+- **FE-7** Group actions per rundown: steps across entries, mixed action types and sleep steps, one click to run.
+- **FE-9** Renderer page: renderer and API URLs, copy, new token.
+- **OPS-1** Docker Compose with the app (including the renderer), MySQL, persistent storage and a separate seed volume.
+- **OPS-4** Example nginx configuration for the main host and the renderer host (see [Proxy and sessions](#proxy-and-sessions)).
+
+Beyond the work packages: rundowns (several prepared events per account), the private catalog, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafanaut website design.
+
+**Partly done**
+
+- **BE-1** Schema for accounts, packages, versions, tokens, rundowns, entries and render state. Missing: the reviewer note; `review_state` and the approver flag exist but are not used yet.
+- **BE-4** Upload checks (size, file count, real unpacked size, extensions, unsafe paths, symlinks, OGraf schema, `main` file, time limit). Missing: blocking re-uploads of rejected files (needs BE-9), removing scripts from SVGs (they are only served in a CSP sandbox), extraction in an isolated worker.
+- **BE-6** Startup import of seed packages. Missing: seeds do not go through the hardened upload checks yet.
+- **FE-3** Upload and list of private graphics. Missing: deleting packages, version history.
+- **FE-6** Play/stop/update/custom actions through the public API, renderer connection count, on-air status. Missing: explicit step controls (previous step, go to step) for multi-step graphics; Play advances to the next step.
+- **OPS-2** Hosts, upload limits and keys are configured by environment variables. Missing: a configurable CSP policy.
+- **XC-1** Hardening and tests for uploads, tokens, sandboxing and OAuth. Missing: a formal security review.
+- **XC-3** Deployment and operations notes in this README, interactive API documentation. Missing: a guide for graphic authors.
+
+**Not started**
+
+- **BE-9** Publication workflow (draft, pending, published, rejected; approver actions, reviewer notes, in-app notifications).
+- **BE-10** Roles and permissions (User vs. Approver).
+- **FE-8** Publication management view.
+- **OPS-3** CI/CD pipeline.
+- **OPS-5** Access logs with redacted tokens, error tracking, monitoring.
+- **XC-2** Moderation: reporting/flagging, terms of service.
 
 ## Run with Docker
 
 1. Copy `.env.example` to `.env` and set `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
-2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafanaut.mov/api/auth/twitch/callback`) and register that exact URL in Twitch.
+2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafanaut.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
 3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/`.
 4. Start the stack:
 
@@ -64,6 +97,49 @@ map $http_upgrade $connection_upgrade {
 
 This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie. Keep `SESSION_SECRET` stable across restarts and identical across app replicas; changing it invalidates existing sessions.
 
+#### Renderer host
+
+The renderer should run on its own host name (see [Renderer](#renderer)), e.g. `render.example.com` next to `grafanaut.example.com`. Both host names point to the same container; set `RENDERER_HOST=render.example.com` in `.env`.
+
+Everything the renderer needs lives under `/render/`: the renderer page, its WebSocket (`/render/<token>/ws`), the graphic frame page (`/render/frame`) and the package files (`/render/assets/…`). The renderer host only proxies that prefix and redirects everything else to the main host:
+
+```nginx
+server {
+	listen 443 ssl;
+	server_name render.example.com;
+	# ssl_certificate / ssl_certificate_key …
+
+	# Renderer page, its WebSocket, graphic frames and package files
+	location /render/ {
+		proxy_pass http://127.0.0.1:3000;          # no trailing slash, see below
+		proxy_set_header Host $host;
+		proxy_set_header X-Forwarded-Proto $scheme;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		proxy_http_version 1.1;
+		proxy_set_header Upgrade $http_upgrade;
+		proxy_set_header Connection $connection_upgrade;
+		proxy_read_timeout 1h;
+	}
+
+	# Everything else belongs to the app
+	location / {
+		return 301 https://grafanaut.example.com$request_uri;
+	}
+}
+```
+
+`proxy_pass` must not end with a slash here: inside `location /render/`, a trailing slash would make nginx replace `/render/` with `/`, and every renderer request would reach the wrong path.
+
+**Block `/render/` on the main host.** With `RENDERER_HOST` set, graphic frames and package HTML files are served so that they keep the origin of the host they are loaded from, which SPX-style graphics need. That is only safe on the renderer host: a package's HTML file opened through the main host would run its scripts in the app's own origin, with access to the signed-in user's session. Add this to the main host's `server` block (nothing on the main host needs `/render/` once `RENDERER_HOST` is set; the renderer URL and the preview in the rundown view point to the renderer host):
+
+```nginx
+	location /render/ {
+		return 404;
+	}
+```
+
+The session cookie is bound to the main host, so it is never sent to the renderer host.
+
 ### Private catalog
 
 Signed-in users upload `.ograf.zip` packages on the Private catalog page. The graphics are only visible to their owner and can be added to rundowns like catalog graphics. Uploading a graphic whose manifest `id` already exists in the account adds a new version of that package; rundown entries keep the version they were added with. Re-uploading an identical file is skipped.
@@ -87,7 +163,7 @@ Every account has one renderer: the page at `/render/<renderer-token>/`, used as
 
 Each graphic runs in its own sandboxed iframe. To be forgiving with graphics whose `load()` resolves before the pages they create in nested frames have loaded (e.g. SPX-style templates that define `play()` there), the renderer waits up to 5 seconds for such frames before it reports the graphic as loaded, so an action sent right after loading finds them ready. The frames are stacked in rundown order: the first entry is in front. Package files are served from `/render/assets/<version>/...` to the frames; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin.
 
-**Use a separate renderer host.** Set `RENDERER_HOST` to a host name that is different from the main page (e.g. `render.grafanaut.mov` next to `grafanaut.mov`, optionally with a port, or a full origin such as `https://render.grafanaut.mov`) and route it to the same container. Only then do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When `RENDERER_HOST` is empty, the renderer uses the main page's host and every graphic runs in an opaque origin to keep package code away from the app's session; such graphics then cannot fill their content.
+**Use a separate renderer host.** Set `RENDERER_HOST` to a host name that is different from the main page (e.g. `render.example.com` next to `grafanaut.example.com`, optionally with a port, or a full origin such as `https://render.example.com`) and route it to the same container. Only then do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When `RENDERER_HOST` is empty, the renderer uses the main page's host and every graphic runs in an opaque origin to keep package code away from the app's session; such graphics then cannot fill their content.
 
 The Renderer page (sidebar link) shows the renderer URL and the API URL and lets users create new tokens.
 
