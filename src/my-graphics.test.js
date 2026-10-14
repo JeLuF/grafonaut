@@ -56,7 +56,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     }
   } })]
 });
-const { AddGraphicButton, Pagination, Toast, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
+const { AddGraphicButton, Pagination, SearchBox, Toast, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
 // Never hand DOM nodes to assert.equal/deepEqual: a failing comparison makes Node inspect and diff the whole jsdom
 // object graph, which exhausts memory instead of failing (and inside waitFor's first, expected miss, it stalls the run).
 const describeNode = (node) => node?.outerHTML?.slice(0, 160) ?? String(node);
@@ -1012,4 +1012,22 @@ test('the YouTube login is only offered when the server has Google configured', 
   cleanup();
   buttons({ twitch: false, google: true });
   assertAbsent(screen.queryByRole('link', { name: 'Login with Twitch' }));
+});
+
+test('the catalog search can be cleared with the x button or Escape', () => {
+  function Harness() {
+    const [value, setValue] = React.useState('lower');
+    return React.createElement(SearchBox, { value, onChange: setValue });
+  }
+  render(React.createElement(Harness));
+  const input = screen.getByRole('textbox', { name: 'Search graphics' });
+  assert.equal(input.value, 'lower');
+  fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+  assert.equal(input.value, '');
+  assertFocused(input);
+  assertAbsent(screen.queryByRole('button', { name: 'Clear search' }));
+  fireEvent.change(input, { target: { value: 'clock' } });
+  assert.ok(screen.getByRole('button', { name: 'Clear search' }));
+  fireEvent.keyDown(input, { key: 'Escape' });
+  assert.equal(input.value, '');
 });

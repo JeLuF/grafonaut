@@ -54,6 +54,21 @@ export function Pagination({ page, pageCount, total, onChange }) {
   </nav>;
 }
 
+// Catalog search; the ✕ button (or Escape) clears the filter and keeps the focus in the field.
+export function SearchBox({ value, onChange, label = 'Search graphics' }) {
+  const input = useRef(null);
+  function clear() {
+    onChange('');
+    input.current?.focus();
+  }
+  return <div className="search-box" role="search">
+    <Search size={16} aria-hidden="true" />
+    <input ref={input} aria-label={label} value={value} placeholder={label} onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => { if (event.key === 'Escape' && value) { event.preventDefault(); clear(); } }} />
+    {value && <button className="search-clear" type="button" onClick={clear} aria-label="Clear search" title="Clear search"><X size={15} /></button>}
+  </div>;
+}
+
 // Catalog cards: preview and title link to the detail page, the button adds the graphic to the current rundown.
 function GraphicCards({ items, account, onAdd }) {
   return <div className="catalog-grid">
@@ -446,7 +461,7 @@ function App() {
             ? <div><p className="eyebrow">FEATURED ANIMATIONS</p><h2 id="catalog-heading">Ready to use. Easy to customize.</h2>
               <p className="section-copy">From lower thirds to scoreboards: find the right animation for your stream.</p></div>
             : <div><p className="eyebrow">THE LIBRARY</p><h2 id="catalog-heading">Published graphics</h2></div>}
-          <label className="search-box"><Search size={16} aria-hidden="true" /><input aria-label="Search graphics" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} placeholder="Search graphics" /></label>
+          <SearchBox value={query} onChange={(value) => { setQuery(value); setPage(0); }} />
         </div>
         {status && <p className="status">{status}</p>}
         {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>Seed packages will appear here after the first startup import.</span></div>}
