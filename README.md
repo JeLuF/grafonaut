@@ -19,7 +19,7 @@ Work packages as defined in `ograf-platform-requirements.md`, section 13.
 - **FE-1** Public catalog: search, pagination, detail pages, adding graphics to the current rundown.
 - **FE-2** Rundown view: entries with labels, enable/disable, reordering, duplicating, properties, play/stop/update and live status.
 - **FE-4** Private uploads wired to the ingestion pipeline and storage.
-- **FE-5** Property dialog generated from the manifest schema, including GDD `order`, `label` and select labels, SPX file lists and instructions.
+- **FE-5** Property dialog generated from the manifest schema, including GDD `order`, `label` and select labels, colour pickers (`color-rrggbb`, `color-rrggbbaa` with opacity; the last 8 colours picked in the browser are offered as quick choices), file choosers with the media library (`file-path`), SPX file lists and instructions.
 - **FE-7** Group actions per rundown: steps across entries, mixed action types and sleep steps, one click to run.
 - **FE-9** Renderer page: renderer and API URLs, copy, new token.
 - **OPS-1** Docker Compose with the app (including the renderer), MySQL, persistent storage and a separate seed volume.
@@ -161,7 +161,7 @@ Signed-in users manage their own files on the Media page (sidebar): upload (seve
 
 Graphic properties with a `gddType` of `file-path` (e.g. `file-path/image-path`) get a file chooser in the property dialog and in custom-action dialogs: keep the graphic's default, pick a file from the media library or upload a new one. Choices are limited to the property's `gddOptions.extensions` (image types for `image-path`). The property gets the file's absolute URL. Replacing a file keeps its URL, so every graphic that uses it shows the new content; the media page shows how many rundown entries use a file and warns before deleting it.
 
-Hotlink protection: package files (`/render/assets/…`) and media files (`/render/media/…`) are only served when the request's `Referer` names the renderer host, a host in `APP_HOST` or the requested host itself; other sites get `403`. Renderer pages and graphic frames send only their origin as referrer (`Referrer-Policy: strict-origin`), never the token path. `ASSET_REFERER_CHECK` sets the mode:
+Hotlink protection: package files (`/render/assets/…`) and media files (`/render/media/…`) are not served when the request's `Referer` names another site than the renderer host, a host in `APP_HOST` or the requested host itself; such requests get `403`. Media files are always served to requests without `Referer` (direct downloads). Renderer pages and graphic frames send only their origin as referrer (`Referrer-Policy: strict-origin`), never the token path. `ASSET_REFERER_CHECK` sets the mode for package files (for media files, only `off` applies):
 
 - `strict` (default with `RENDERER_HOST`): requests without `Referer` are refused as well.
 - `lenient` (default without `RENDERER_HOST`): requests without `Referer` are served, foreign referers are refused. Without an own renderer host, graphics run in an opaque origin, and browsers send no `Referer` for their images and nested pages.

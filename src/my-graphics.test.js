@@ -27,7 +27,9 @@ const brandUrl = (await compileModule('./brand.jsx')).url;
 const brand = { './brand.jsx': brandUrl };
 const mediaUrl = (await compileModule('./media.jsx')).url;
 const { default: MediaCatalogView, MediaPathWidget, acceptedExtensions } = await import(mediaUrl);
-const compiled = await compileModule('./my-graphics.jsx', { ...brand, './media.jsx': mediaUrl });
+const colorUrl = (await compileModule('./color.jsx')).url;
+const { parseColor, formatColor, hexToHsv, hsvToHex } = await import(colorUrl);
+const compiled = await compileModule('./my-graphics.jsx', { ...brand, './media.jsx': mediaUrl, './color.jsx': colorUrl });
 const myGraphicsUrl = compiled.url;
 const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-graphics.jsx': myGraphicsUrl, ...brand })).url;
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
@@ -1105,4 +1107,80 @@ test('the media catalog lists files and lets the owner rename, replace and delet
   await waitFor(() => assert.deepEqual(calls.at(-1), ['remove', 'a']));
   fireEvent.change(screen.getByLabelText('Choose files to upload'), { target: { files: [new dom.window.File(['1'], 'a.png'), new dom.window.File(['2'], 'b.png')] } });
   await waitFor(() => assert.deepEqual(calls.slice(-2), [['upload', 'a.png'], ['upload', 'b.png']]));
+});
+
+const colorEntry = { ...entry, schemaData: {}, schema: { type: 'object', properties: {
+  homeColor: { type: 'string', label: 'Home colour', gddType: 'color-rrggbb', default: '#005ca9', pattern: '^#[0-9a-f]{6}$' },
+  shade: { type: 'string', label: 'Shade', gddType: 'color-rrggbbaa', default: '#00000080' }
+} } };
+
+test('the colour picker shows the picker area, the hue bar and the last 8 colours picked in one panel', async () => {
+  const saved = [];
+  render(React.createElement(PropertiesDialog, { entry: colorEntry, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const dialog = within(screen.getByRole('dialog'));
+  const hex = dialog.getByLabelText('Home colour');
+  const swatch = dialog.getByRole('button', { name: 'Pick Home colour' });
+  assert.equal(hex.value, '#005ca9');
+  const panel = () => within(dialog.getByRole('group', { name: 'Home colour picker' }));
+  const recent = () => panel().queryAllByRole('button', { name: /^Use / }).map((button) => button.title);
+  fireEvent.click(swatch);
+  assert.equal(swatch.getAttribute('aria-expanded'), 'true');
+  assert.deepEqual(recent(), []);
+  // Moving in the panel changes the value; only closing the panel marks the colour as picked.
+  const area = panel().getByRole('slider', { name: 'Saturation and brightness' });
+  const hue = panel().getByRole('slider', { name: 'Hue' });
+  fireEvent.keyDown(hue, { key: 'Home' });
+  for (let press = 0; press < 4; press += 1) fireEvent.keyDown(area, { key: 'ArrowUp', shiftKey: true });
+  assert.equal(hex.value, '#ff0000');
+  fireEvent.keyDown(area, { key: 'ArrowLeft', shiftKey: true });
+  assert.equal(hex.value, '#ff1919');
+  assert.deepEqual(recent(), []);
+  fireEvent.click(swatch);
+  assert.equal(dialog.queryByRole('group', { name: 'Home colour picker' }), null);
+  // Typed colours count when the field is left; shorthand and upper case are normalized.
+  fireEvent.change(hex, { target: { value: '#ABC' } });
+  fireEvent.blur(hex);
+  assert.equal(hex.value, '#aabbcc');
+  for (const color of ['#111111', '#222222', '#333333', '#444444', '#555555', '#666666', '#777777']) {
+    fireEvent.change(hex, { target: { value: color } });
+    fireEvent.blur(hex);
+  }
+  fireEvent.click(swatch);
+  assert.deepEqual(recent(), ['#777777', '#666666', '#555555', '#444444', '#333333', '#222222', '#111111', '#aabbcc']);
+  assert.equal(panel().getByRole('button', { name: 'Use #777777' }).getAttribute('aria-pressed'), 'true');
+  fireEvent.click(panel().getByRole('button', { name: 'Use #aabbcc' }));
+  assert.equal(hex.value, '#aabbcc');
+  // Escape closes the panel (and records the pick), not the dialog.
+  fireEvent.keyDown(panel().getByRole('button', { name: 'Use #aabbcc' }), { key: 'Escape' });
+  assert.equal(dialog.queryByRole('group', { name: 'Home colour picker' }), null);
+  assert.ok(screen.getByRole('dialog').open);
+  fireEvent.click(swatch);
+  assert.equal(recent()[0], '#aabbcc');
+  fireEvent.pointerDown(document.body);
+  assert.equal(dialog.queryByRole('group', { name: 'Home colour picker' }), null);
+  // Fields with opacity keep it when a colour is picked.
+  const shade = dialog.getByLabelText('Shade');
+  assert.equal(shade.value, '#00000080');
+  fireEvent.click(dialog.getByRole('button', { name: 'Pick Shade' }));
+  fireEvent.click(within(dialog.getByRole('group', { name: 'Shade picker' })).getByRole('button', { name: 'Use #777777' }));
+  assert.equal(shade.value, '#77777780');
+  fireEvent.change(dialog.getByRole('slider', { name: 'Opacity' }), { target: { value: '100' } });
+  assert.equal(shade.value, '#777777ff');
+  fireEvent.change(hex, { target: { value: 'nonsense' } });
+  fireEvent.blur(hex);
+  assert.equal(hex.value, '#aabbcc');
+  fireEvent.click(dialog.getAllByRole('button', { name: 'Default' })[0]);
+  fireEvent.click(dialog.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved.at(-1), ['1', { schemaData: { homeColor: '#005ca9', shade: '#777777ff' } }]));
+});
+
+test('colours are parsed leniently and written in the form the field pattern expects', () => {
+  assert.deepEqual(parseColor('ABC'), { rgb: '#aabbcc', alpha: 'ff' });
+  assert.deepEqual(parseColor('#00112233'), { rgb: '#001122', alpha: '33' });
+  assert.equal(parseColor('#12345'), null);
+  for (const color of ['#005ca9', '#ffffff', '#000000', '#ff0000', '#7a1fa2', '#00a651']) assert.equal(hsvToHex(hexToHsv(color)), color);
+  assert.deepEqual(hexToHsv('#ff0000'), { h: 0, s: 1, v: 1 });
+  assert.equal(formatColor({ gddType: 'color-rrggbb' }, { rgb: '#aabbcc', alpha: '80' }), '#aabbcc');
+  assert.equal(formatColor({ gddType: 'color-rrggbbaa' }, { rgb: '#aabbcc', alpha: '80' }), '#aabbcc80');
+  assert.equal(formatColor({ gddType: 'color-rrggbb', pattern: '^#[0-9A-F]{6}$' }, { rgb: '#aabbcc', alpha: 'ff' }), '#AABBCC');
 });

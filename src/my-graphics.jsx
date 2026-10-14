@@ -7,6 +7,7 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { LoginButtons } from './brand.jsx';
+import { ColorWidget } from './color.jsx';
 import { MediaPathWidget } from './media.jsx';
 import { canControlGraphic } from './api.js';
 
@@ -98,21 +99,24 @@ export function displaySchema(schema) {
   return result;
 }
 
-// File fields (GDD "file-path", e.g. "file-path/image-path") use the media picker; returns the RJSF uiSchema for them.
-export function fileWidgets(schema) {
+// Widgets for GDD types; returns the RJSF uiSchema for them. File fields ("file-path", e.g. "file-path/image-path") use
+// the media picker, colour fields ("color-rrggbb", "color-rrggbbaa") the colour picker.
+export function propertyWidgets(schema) {
   if (!isObject(schema)) return {};
-  if (schema.type === 'string' && String(schema.gddType ?? '').startsWith('file-path')) return { 'ui:widget': 'mediaPath' };
+  const gddType = String(schema.gddType ?? '');
+  if (schema.type === 'string' && gddType.startsWith('file-path')) return { 'ui:widget': 'mediaPath' };
+  if (schema.type === 'string' && ['color-rrggbb', 'color-rrggbbaa'].includes(gddType)) return { 'ui:widget': 'gddColor' };
   if (!isObject(schema.properties)) return {};
-  return Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, fileWidgets(value)]).filter(([, value]) => Object.keys(value).length));
+  return Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, propertyWidgets(value)]).filter(([, value]) => Object.keys(value).length));
 }
-const formWidgets = { mediaPath: MediaPathWidget };
+const formWidgets = { mediaPath: MediaPathWidget, gddColor: ColorWidget };
 
 export function PropertiesDialog({ entry, media, onSave, onClose }) {
   const dialog = useRef(null);
   const headingId = useId();
   const [data, setData] = useState(entry.schemaData ?? {});
   const schema = useMemo(() => displaySchema(entry.schema), [entry.schema]);
-  const uiSchema = useMemo(() => fileWidgets(entry.schema), [entry.schema]);
+  const uiSchema = useMemo(() => propertyWidgets(entry.schema), [entry.schema]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -260,7 +264,7 @@ export function CustomActionDialog({ entry, action, media, onRun, onClose }) {
   const dialog = useRef(null);
   const headingId = useId();
   const schema = useMemo(() => displaySchema(action.schema), [action.schema]);
-  const uiSchema = useMemo(() => fileWidgets(action.schema), [action.schema]);
+  const uiSchema = useMemo(() => propertyWidgets(action.schema), [action.schema]);
   const [data, setData] = useState({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');

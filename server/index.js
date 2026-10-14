@@ -32,6 +32,9 @@ const instanceHosts = [...parseHosts(process.env.APP_HOST), ...(rendererHost ? p
 // browser sends no Referer for their images and nested pages, so missing referers are allowed (foreign ones are not).
 const assetRefererCheck = createRefererCheck({ hosts: instanceHosts,
   mode: refererMode(process.env.ASSET_REFERER_CHECK || (rendererIsolated ? 'strict' : 'lenient')) });
+// Media files may also be fetched without a Referer (direct downloads, players that strip it); foreign referers are refused.
+const mediaRefererCheck = createRefererCheck({ hosts: instanceHosts,
+  mode: refererMode(process.env.ASSET_REFERER_CHECK) === 'off' ? 'off' : 'lenient' });
 const rendererOrigin = (request) => rendererHost?.origin ?? `${request.protocol}://${rendererHost?.host ?? request.host}`;
 tokenKey();
 const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic, listGroupActions };
@@ -122,7 +125,7 @@ app.post('/api/tokens/:kind', async (request, response) => {
 const frame = frameDocument(rendererIsolated);
 app.get(framePath, (_request, response) => response.set(frame.headers).type('html').send(frame.html));
 app.get(assetRoute, assetRefererCheck, createAssetHandler({ findVersion: findRenderableVersion, storageRoot, isolated: rendererIsolated }));
-app.get(mediaFileRoute, assetRefererCheck, createMediaFileHandler({ storageRoot, isolated: rendererIsolated }));
+app.get(mediaFileRoute, mediaRefererCheck, createMediaFileHandler({ storageRoot, isolated: rendererIsolated }));
 app.get(rendererRoute, async (request, response) => {
   try {
     if (!await findAccountByToken(request.params.token, 'renderer')) {

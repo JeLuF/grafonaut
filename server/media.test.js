@@ -31,7 +31,7 @@ app.use(express.json());
 app.use((request, _response, next) => { request.session = request.headers['x-account'] ? { accountId: request.headers['x-account'] } : null; next(); });
 app.use('/api/media', createMedia({ store, storageRoot, limits: { maxBytes: 2000, allowedExtensions: new Set(['.png', '.jpg', '.svg', '.html']) },
   rendererOrigin: () => 'https://render.example.com' }));
-app.get(mediaFileRoute, createRefererCheck({ hosts: ['render.example.com'], mode: 'strict' }), createMediaFileHandler({ store, storageRoot, isolated: true }));
+app.get(mediaFileRoute, createRefererCheck({ hosts: ['render.example.com'], mode: 'lenient' }), createMediaFileHandler({ store, storageRoot, isolated: true }));
 const server = app.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -95,7 +95,7 @@ test('files can be renamed, replaced (same URL, same type only) and deleted by t
   await assert.rejects(fs.access(path.join(storageRoot, 'media', '7', `${item.id}.png`)));
 });
 
-test('graphics get media from the renderer host only with an own referer', async () => {
+test('media files are served without a referer or with an own one, never to foreign sites', async () => {
   const { item } = (await upload('logo.png')).body;
   const file = `/render/media/${item.id}.png`;
   const served = await call('GET', file, { account: null, referer: 'https://render.example.com/' });
@@ -105,7 +105,7 @@ test('graphics get media from the renderer host only with an own referer', async
   assert.equal(served.headers.get('x-content-type-options'), 'nosniff');
   assert.match(served.headers.get('content-security-policy'), /^sandbox allow-scripts allow-same-origin$/);
   assert.equal((await call('GET', file, { account: null, referer: `${base}/render/abc/` })).status, 200);
-  assert.equal((await call('GET', file, { account: null })).status, 403);
+  assert.equal((await call('GET', file, { account: null })).status, 200);
   assert.equal((await call('GET', file, { account: null, referer: 'https://hotlinker.example/page' })).status, 403);
   assert.equal((await call('GET', `/render/media/${item.id}.jpg`, { account: null, referer: 'https://render.example.com/' })).status, 404);
   assert.equal((await call('GET', '/render/media/not-an-id.png', { account: null, referer: 'https://render.example.com/' })).status, 404);
