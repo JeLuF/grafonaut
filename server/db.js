@@ -593,6 +593,47 @@ export async function deleteGroupAction(accountId, groupId) {
   return result.affectedRows === 1;
 }
 
+// ---- Media library ----
+
+const mediaRow = (row) => row && { id: row.id, name: row.name, extension: row.extension, size: Number(row.size_bytes),
+  checksum: row.checksum_sha256, createdAt: row.created_at, updatedAt: row.updated_at, accountId: String(row.account_id),
+  ...(row.usage_count !== undefined ? { usage: Number(row.usage_count) } : {}) };
+
+// The account's media, newest first, with how many rundown entries (of any rundown) reference each file.
+export async function listMedia(accountId) {
+  const [rows] = await pool.query(`SELECT m.*, (SELECT COUNT(*) FROM my_graphics_entries g
+      WHERE g.account_id = m.account_id AND CAST(g.schema_data AS CHAR) LIKE CONCAT('%', m.id, '%')) AS usage_count
+    FROM media m WHERE m.account_id = ? ORDER BY m.created_at DESC, m.name`, [accountId]);
+  return rows.map(mediaRow);
+}
+
+export async function findMedia(id, accountId = null) {
+  const [rows] = await pool.query(`SELECT * FROM media WHERE id = ?${accountId == null ? '' : ' AND account_id = ?'}`,
+    accountId == null ? [id] : [id, accountId]);
+  return mediaRow(rows[0]) ?? null;
+}
+
+export async function insertMedia(accountId, media) {
+  await pool.query('INSERT INTO media (id, account_id, name, extension, size_bytes, checksum_sha256) VALUES (?, ?, ?, ?, ?, ?)',
+    [media.id, accountId, media.name, media.extension, media.size, media.checksum]);
+}
+
+// Changes the name and/or the content details of a file; returns false when the account has no such file.
+export async function updateMedia(accountId, id, changes) {
+  const fields = [];
+  const values = [];
+  if (changes.name !== undefined) { fields.push('name = ?'); values.push(changes.name); }
+  if (changes.size !== undefined) { fields.push('size_bytes = ?', 'checksum_sha256 = ?'); values.push(changes.size, changes.checksum); }
+  const [result] = await pool.query(`UPDATE media SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND account_id = ?`,
+    [...values, id, accountId]);
+  return result.affectedRows === 1;
+}
+
+export async function deleteMedia(accountId, id) {
+  const [result] = await pool.query('DELETE FROM media WHERE id = ? AND account_id = ?', [id, accountId]);
+  return result.affectedRows === 1;
+}
+
 export async function findVersionByChecksum(checksum) {
   const [rows] = await pool.query('SELECT id FROM package_versions WHERE zip_checksum_sha256 = ?', [checksum]);
   return rows[0] ?? null;

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, LayoutGrid, Lock, MonitorPlay, Plus, Search, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, MonitorPlay, Plus, Search, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
+import MediaCatalogView, { useMedia } from './media.jsx';
 import { GroupActionsPanel } from './group-actions.jsx';
 import { FeatureRow, HeroArt, LoginButtons, LoginProvidersContext, Wordmark } from './brand.jsx';
 import { fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction, triggerGroupAction } from './api.js';
@@ -22,6 +23,7 @@ const PAGE_SIZE = 6;
 export function parseRoute(hash) {
   if (hash === '#rundown' || hash === '#my-graphics') return { view: 'rundown' };
   if (hash === '#private') return { view: 'private' };
+  if (hash === '#media') return { view: 'media' };
   if (hash === '#renderer') return { view: 'renderer' };
   const match = /^#graphic\/(.+)$/.exec(hash);
   if (match) {
@@ -159,6 +161,8 @@ function App() {
 
   const { url: apiUrl } = useApiUrl(account);
   const rundownState = useRundowns(account);
+  const media = useMedia(account);
+  useEffect(() => { if (view === 'media') void media.reload(); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
   const [loginProviders, setLoginProviders] = useState({ twitch: true, google: false });
   useEffect(() => {
     requestJson('/api/auth/providers').then((response) => setLoginProviders({ twitch: false, google: false, ...response.providers })).catch(() => {});
@@ -407,6 +411,7 @@ function App() {
       <nav className="view-tabs" aria-label="Graphics views">
         <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#private" aria-current={view === 'private' ? 'page' : undefined}><Lock size={17} />Private catalog</a>
+        <a href="#media" aria-current={view === 'media' ? 'page' : undefined}><ImageIcon size={17} />Media</a>
         <a href="#renderer" aria-current={view === 'renderer' ? 'page' : undefined}><MonitorPlay size={17} />Renderer</a>
       </nav>
       {account && <RundownPanel state={rundownState} viewing={view === 'rundown'} onOpen={() => { window.location.hash = '#rundown'; }}
@@ -424,8 +429,10 @@ function App() {
       {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName}
         groupActions={<GroupActionsPanel groups={groups} entries={controlledEntries} error={groupsError} running={runningGroups} disabled={!apiUrl}
           onRun={runGroup} onSave={saveGroup} onDelete={deleteGroup} />}
-        entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onDuplicate={duplicateEntry} onManifest={loadManifest} onReorder={reorderEntries} />
+        entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onDuplicate={duplicateEntry} media={media} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
+      : view === 'media' ? <MediaCatalogView account={account} authLoading={authLoading} media={media}
+        onCopied={(item) => notify(`URL of ${item.name} copied`)}><LoginButtons compact /></MediaCatalogView>
       : view === 'private' ? <PrivateCatalogView account={account} authLoading={authLoading} count={privateItems.length} maxZipBytes={maxZipBytes}
         loading={privateLoading} error={privateError} onUploaded={loadPrivateCatalog}>
         {(() => {

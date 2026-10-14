@@ -2651,3 +2651,180 @@ footer {
     color: var(--text);
     background: var(--border-strong);
 }
+
+/* Media: picker in the property dialog and the media catalog */
+.media-thumb {
+    display: block;
+    flex-shrink: 0;
+    width: 64px;
+    aspect-ratio: 16 / 9;
+    border-radius: 6px;
+    background-color: var(--checker-b);
+    background-image: linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%),
+        linear-gradient(45deg, var(--checker-a) 25%, transparent 25%, transparent 75%, var(--checker-a) 75%);
+    background-position: 0 0, 6px 6px;
+    background-size: 12px 12px;
+    object-fit: contain;
+}
+
+.media-thumb-icon {
+    display: grid;
+    place-items: center;
+    background: var(--surface-3);
+    color: var(--muted);
+}
+
+.media-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.media-field-current {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.media-field-label {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    font-size: 14px;
+}
+
+.media-field-label small {
+    overflow: hidden;
+    color: var(--faint);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.media-field-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.media-field-actions .text-button {
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.media-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+    max-height: 240px;
+    padding: 8px;
+    overflow-y: auto;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--surface-2);
+}
+
+.media-picker .status {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 13px;
+}
+
+.media-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-soft);
+    font: 12px var(--font-body);
+    text-align: left;
+    cursor: pointer;
+}
+
+.media-pick .media-thumb {
+    width: 100%;
+}
+
+.media-pick span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.media-pick:hover,
+.media-pick.is-selected {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+}
+
+.media-catalog {
+    padding: 20px 0 90px;
+}
+
+.media-catalog h1 {
+    font-size: clamp(40px, 5vw, 64px);
+    line-height: 1;
+}
+
+.media-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 18px;
+    margin: 30px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.media-card {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+}
+
+.media-card > .media-thumb {
+    width: 100%;
+    border-radius: 0;
+}
+
+.media-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px 14px;
+    font-family: var(--font-body);
+}
+
+.media-card h3 {
+    margin: 0;
+    overflow: hidden;
+    font-size: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.media-meta {
+    margin: 0;
+    color: var(--faint);
+    font-size: 12px;
+}
+
+.media-card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.media-card-actions .icon-button {
+    width: 30px;
+    height: 30px;
+}
+
+.media-card .token-confirm p,
+.media-card .error-message {
+    margin: 0;
+    font-size: 12px;
+}

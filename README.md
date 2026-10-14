@@ -25,7 +25,7 @@ Work packages as defined in `ograf-platform-requirements.md`, section 13.
 - **OPS-1** Docker Compose with the app (including the renderer), MySQL, persistent storage and a separate seed volume.
 - **OPS-4** Example nginx configuration for the main host and the renderer host (see [Proxy and sessions](#proxy-and-sessions)).
 
-Beyond the work packages: rundowns (several prepared events per account), the private catalog, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafanaut website design.
+Beyond the work packages: rundowns (several prepared events per account), the private catalog, a media library for image and file properties with hotlink protection, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafanaut website design.
 
 **Partly done**
 
@@ -75,6 +75,8 @@ The container runs in production mode and uses `Secure`, `HttpOnly`, `SameSite=L
 ```nginx
 location / {
 	proxy_pass http://127.0.0.1:3000;
+	# Uploads: nginx allows 1 MB by default. At least UPLOAD_MAX_ZIP_BYTES and MEDIA_MAX_BYTES (20 MB).
+	client_max_body_size 25m;
 	proxy_set_header Host $host;
 	proxy_set_header X-Forwarded-Proto $scheme;
 	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -99,9 +101,9 @@ This location belongs in your existing HTTPS server configuration. Without `X-Fo
 
 #### Renderer host
 
-The renderer should run on its own host name (see [Renderer](#renderer)), e.g. `render.example.com` next to `grafanaut.example.com`. Both host names point to the same container; set `RENDERER_HOST=render.example.com` in `.env`.
+The renderer should run on its own host name (see [Renderer](#renderer)), e.g. `render.example.com` next to `grafanaut.example.com`. Both host names point to the same container; set `RENDERER_HOST=render.example.com` and `APP_HOST=grafanaut.example.com` in `.env` (the latter for the [referer check](#media-library)).
 
-Everything the renderer needs lives under `/render/`: the renderer page, its WebSocket (`/render/<token>/ws`), the graphic frame page (`/render/frame`) and the package files (`/render/assets/…`). The renderer host only proxies that prefix and redirects everything else to the main host:
+Everything the renderer needs lives under `/render/`: the renderer page, its WebSocket (`/render/<token>/ws`), the graphic frame page (`/render/frame`), the package files (`/render/assets/…`) and the media files (`/render/media/…`). The renderer host only proxies that prefix and redirects everything else to the main host:
 
 ```nginx
 server {
@@ -152,6 +154,20 @@ Every upload is checked before anything is saved (requirements §6):
 - Every `*.ograf.json` manifest must validate against the official OGraf v1 JSON Schema (vendored in `server/schemas/ograf`), and its `main` must be an existing `.mjs`/`.js` file inside the package. The check is lenient where a detail does not affect playback: a property with `"gddType": "select"` but no `gddOptions.labels` uses its `enum` values as labels; the upload succeeds with a note, and the manifest is stored as uploaded. Error messages name the property (e.g. `property "layout" must have required property 'gddOptions'`) and leave out the schema's generic "must match then schema" lines.
 
 Package files are served to graphic frames from `/render/assets/<version>/…`; HTML and SVG only ever in a CSP sandbox. Private versions are addressed by their random version UUID, which only the owner sees.
+
+### Media library
+
+Signed-in users manage their own files on the Media page (sidebar): upload (several at once), rename, replace and delete. Uploads use the same allowed file types as packages (`UPLOAD_ALLOWED_EXTENSIONS`) and are limited to `MEDIA_MAX_BYTES` (20 MB) each. Files are stored under `storage/media/<account>/` and served to graphics from `/render/media/<uuid>.<ext>` on the renderer host, with the same CSP sandbox as package files.
+
+Graphic properties with a `gddType` of `file-path` (e.g. `file-path/image-path`) get a file chooser in the property dialog and in custom-action dialogs: keep the graphic's default, pick a file from the media library or upload a new one. Choices are limited to the property's `gddOptions.extensions` (image types for `image-path`). The property gets the file's absolute URL. Replacing a file keeps its URL, so every graphic that uses it shows the new content; the media page shows how many rundown entries use a file and warns before deleting it.
+
+Hotlink protection: package files (`/render/assets/…`) and media files (`/render/media/…`) are only served when the request's `Referer` names the renderer host, a host in `APP_HOST` or the requested host itself; other sites get `403`. Renderer pages and graphic frames send only their origin as referrer (`Referrer-Policy: strict-origin`), never the token path. `ASSET_REFERER_CHECK` sets the mode:
+
+- `strict` (default with `RENDERER_HOST`): requests without `Referer` are refused as well.
+- `lenient` (default without `RENDERER_HOST`): requests without `Referer` are served, foreign referers are refused. Without an own renderer host, graphics run in an opaque origin, and browsers send no `Referer` for their images and nested pages.
+- `off`: no check.
+
+The check stops other web pages from embedding the files; it is not access control, since anyone can send any `Referer` with a direct request.
 
 ### Rundowns
 

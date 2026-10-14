@@ -54,7 +54,7 @@
     const iframe = document.createElement('iframe');
     iframe.setAttribute('sandbox', config.sandbox);
     iframe.setAttribute('allow', 'autoplay');
-    iframe.setAttribute('referrerpolicy', 'no-referrer');
+    iframe.setAttribute('referrerpolicy', 'strict-origin');
     iframe.title = `Graphic ${entryId}`;
     iframe.src = config.framePath;
     const frame = { iframe, instanceId, entryId, calls: new Map(), nextCall: 0 };

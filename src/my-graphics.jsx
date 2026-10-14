@@ -7,6 +7,7 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { LoginButtons } from './brand.jsx';
+import { MediaPathWidget } from './media.jsx';
 import { canControlGraphic } from './api.js';
 
 export class PropertyFormBoundary extends React.Component {
@@ -97,11 +98,21 @@ export function displaySchema(schema) {
   return result;
 }
 
-export function PropertiesDialog({ entry, onSave, onClose }) {
+// File fields (GDD "file-path", e.g. "file-path/image-path") use the media picker; returns the RJSF uiSchema for them.
+export function fileWidgets(schema) {
+  if (!isObject(schema)) return {};
+  if (schema.type === 'string' && String(schema.gddType ?? '').startsWith('file-path')) return { 'ui:widget': 'mediaPath' };
+  if (!isObject(schema.properties)) return {};
+  return Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, fileWidgets(value)]).filter(([, value]) => Object.keys(value).length));
+}
+const formWidgets = { mediaPath: MediaPathWidget };
+
+export function PropertiesDialog({ entry, media, onSave, onClose }) {
   const dialog = useRef(null);
   const headingId = useId();
   const [data, setData] = useState(entry.schemaData ?? {});
   const schema = useMemo(() => displaySchema(entry.schema), [entry.schema]);
+  const uiSchema = useMemo(() => fileWidgets(entry.schema), [entry.schema]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -127,7 +138,7 @@ export function PropertiesDialog({ entry, onSave, onClose }) {
       <div className="dialog-content properties-form">
         {error && <p role="alert" className="error-message">{error}</p>}
         <PropertyFormBoundary>
-          <Form schema={schema} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
+          <Form schema={schema} uiSchema={uiSchema} widgets={formWidgets} formContext={{ media }} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
             onSubmit={saveProperties} disabled={saving} noHtml5Validate>
             <div className="dialog-actions">
               <button className="text-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
@@ -245,10 +256,11 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
 // Actions with a payload schema ask for the payload first; actions without one run directly.
 const needsPayload = (action) => Boolean(action.schema && action.schema.type === 'object' && Object.keys(action.schema.properties ?? {}).length);
 
-export function CustomActionDialog({ entry, action, onRun, onClose }) {
+export function CustomActionDialog({ entry, action, media, onRun, onClose }) {
   const dialog = useRef(null);
   const headingId = useId();
   const schema = useMemo(() => displaySchema(action.schema), [action.schema]);
+  const uiSchema = useMemo(() => fileWidgets(action.schema), [action.schema]);
   const [data, setData] = useState({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
@@ -276,7 +288,7 @@ export function CustomActionDialog({ entry, action, onRun, onClose }) {
         {action.description && <p className="property-instruction">{action.description}</p>}
         {error && <p role="alert" className="error-message">{error}</p>}
         <PropertyFormBoundary>
-          <Form schema={schema} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
+          <Form schema={schema} uiSchema={uiSchema} widgets={formWidgets} formContext={{ media }} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
             onSubmit={run} disabled={running} noHtml5Validate>
             <div className="dialog-actions">
               <button className="text-button" type="button" onClick={onClose} disabled={running}>Cancel</button>
@@ -370,7 +382,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
   );
 }
 
-export default function MyGraphicsView({ account, rundownName, groupActions, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onDuplicate = async () => {}, onManifest, onReorder }) {
+export default function MyGraphicsView({ account, rundownName, groupActions, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onDuplicate = async () => {}, onManifest, onReorder, media }) {
   const [editing, setEditing] = useState(null);
   const [customAction, setCustomAction] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
@@ -416,8 +428,8 @@ export default function MyGraphicsView({ account, rundownName, groupActions, ent
         </DndContext>}
         </div>
       </div>}
-      {editing && <PropertiesDialog key={editing.entryId} entry={editing} onSave={onSave} onClose={() => setEditing(null)} />}
-      {customAction && <CustomActionDialog key={`${customAction.entry.entryId}-${customAction.action.id}`} {...customAction} onRun={onCustomAction} onClose={() => setCustomAction(null)} />}
+      {editing && <PropertiesDialog key={editing.entryId} entry={editing} media={media} onSave={onSave} onClose={() => setEditing(null)} />}
+      {customAction && <CustomActionDialog key={`${customAction.entry.entryId}-${customAction.action.id}`} {...customAction} media={media} onRun={onCustomAction} onClose={() => setCustomAction(null)} />}
       {entryDialog && <EntryDialog key={`${entryDialog.entry.entryId}-${entryDialog.mode}`} {...entryDialog} onDelete={onDelete} onManifest={onManifest} onClose={() => setEntryDialog(null)} />}
     </section>
   );

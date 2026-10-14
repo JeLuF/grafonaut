@@ -24,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { copyLabel, duplicateMyGraphic, createGroupAction, deleteGroupAction, listGroupActions, updateGroupAction, manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { listMedia, findMedia, updateMedia, deleteMedia, copyLabel, duplicateMyGraphic, createGroupAction, deleteGroupAction, listGroupActions, updateGroupAction, manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -315,4 +315,21 @@ test('the duplicate endpoint answers 201 with the new entry and 404 for unknown 
   assert.deepEqual(await created.json(), { entryId: '12' });
   assert.equal((await requestApi('POST', '/5/duplicate')).status, 404);
   assert.equal((await requestApi('POST', '/abc/duplicate')).status, 400);
+});
+
+test('media are listed per account with their usage and changed only by their owner', async () => {
+  rows = [{ id: 'm1', account_id: 7, name: 'logo.png', extension: 'png', size_bytes: 10, checksum_sha256: 'c'.repeat(64), usage_count: 2 }];
+  assert.deepEqual((await listMedia('account')).map((media) => [media.id, media.accountId, media.size, media.usage]), [['m1', '7', 10, 2]]);
+  assert.match(queries[0].sql, /AS usage_count/);
+  assert.match(queries[0].sql, /LIKE CONCAT\('%', m.id, '%'\)/);
+  assert.deepEqual(queries[0].parameters, ['account']);
+  queries = [];
+  await findMedia('m1', 'account');
+  assert.match(queries[0].sql, /WHERE id = \? AND account_id = \?/);
+  await findMedia('m1');
+  assert.deepEqual(queries[1].parameters, ['m1']);
+  await updateMedia('account', 'm1', { size: 20, checksum: 'd'.repeat(64) });
+  assert.match(queries[2].sql, /SET size_bytes = \?, checksum_sha256 = \?, updated_at = CURRENT_TIMESTAMP WHERE id = \? AND account_id = \?/);
+  await deleteMedia('account', 'm1');
+  assert.deepEqual(queries[3].parameters, ['m1', 'account']);
 });

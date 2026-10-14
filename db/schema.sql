@@ -144,3 +144,19 @@ CREATE TABLE IF NOT EXISTS group_actions (
   CONSTRAINT fk_group_actions_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE,
   CONSTRAINT fk_group_actions_rundown FOREIGN KEY (rundown_id) REFERENCES rundowns (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Media library: files an account uploads for graphic properties (e.g. images). Stored as
+-- storage/media/<account_id>/<id>.<extension> and served to graphics as /render/media/<id>.<extension>.
+CREATE TABLE IF NOT EXISTS media (
+  id CHAR(36) NOT NULL,
+  account_id BIGINT UNSIGNED NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  extension VARCHAR(16) NOT NULL,
+  size_bytes INT UNSIGNED NOT NULL,
+  checksum_sha256 CHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_media_account (account_id, created_at),
+  CONSTRAINT fk_media_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -25,7 +25,9 @@ async function compileModule(file, local = {}) {
 }
 const brandUrl = (await compileModule('./brand.jsx')).url;
 const brand = { './brand.jsx': brandUrl };
-const compiled = await compileModule('./my-graphics.jsx', brand);
+const mediaUrl = (await compileModule('./media.jsx')).url;
+const { default: MediaCatalogView, MediaPathWidget, acceptedExtensions } = await import(mediaUrl);
+const compiled = await compileModule('./my-graphics.jsx', { ...brand, './media.jsx': mediaUrl });
 const myGraphicsUrl = compiled.url;
 const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-graphics.jsx': myGraphicsUrl, ...brand })).url;
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
@@ -45,7 +47,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl, './media.jsx': mediaUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -1030,4 +1032,77 @@ test('the catalog search can be cleared with the x button or Escape', () => {
   assert.ok(screen.getByRole('button', { name: 'Clear search' }));
   fireEvent.keyDown(input, { key: 'Escape' });
   assert.equal(input.value, '');
+});
+
+function fakeMedia(items) {
+  const calls = [];
+  const media = { items: [...items], maxBytes: 20971520, extensions: ['png', 'jpg', 'mp4'], error: '', loading: false, reload: async () => {},
+    upload: async (file) => { calls.push(['upload', file.name]); const item = { id: 'new', name: file.name, extension: 'png', size: 3, usage: 0,
+      url: 'https://render.example.com/render/media/new.png', previewUrl: '/api/media/new/content' }; media.items.unshift(item); return item; },
+    replace: async (item, file) => { calls.push(['replace', item.id, file.name]); },
+    rename: async (item, name) => { calls.push(['rename', item.id, name]); },
+    remove: async (item) => { calls.push(['remove', item.id]); } };
+  return { media, calls };
+}
+const libraryItems = [
+  { id: 'a', name: 'Hannover.jpg', extension: 'jpg', size: 2048, usage: 2, url: 'https://render.example.com/render/media/a.jpg', previewUrl: '/api/media/a/content' },
+  { id: 'b', name: 'Intro.mp4', extension: 'mp4', size: 4096, usage: 0, url: 'https://render.example.com/render/media/b.mp4', previewUrl: '/api/media/b/content' }
+];
+const imageEntry = { ...entry, schemaData: { _image: './lib/images/image_0.jpg' }, schema: { type: 'object', properties: {
+  _image: { type: 'string', label: 'image', default: './lib/images/image_0.jpg', gddType: 'file-path/image-path', gddOptions: { extensions: ['jpg', 'png'] } }
+} } };
+
+test('image properties offer the default, the media library (filtered by extension) and uploading', async () => {
+  const { media, calls } = fakeMedia(libraryItems);
+  const saved = [];
+  render(React.createElement(PropertiesDialog, { entry: imageEntry, media, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const dialog = within(screen.getByRole('dialog'));
+  const current = () => screen.getByRole('dialog').querySelector('.media-field-label').textContent;
+  assert.equal(current(), 'Defaultimage_0.jpg');
+  assert.equal(dialog.getByRole('button', { name: 'Default' }).disabled, true);
+  fireEvent.click(dialog.getByRole('button', { name: 'Media library' }));
+  const options = dialog.getAllByRole('option');
+  assert.deepEqual(options.map((option) => option.textContent), ['Hannover.jpg']);
+  fireEvent.click(options[0]);
+  assert.equal(current(), 'Hannover.jpgMedia library');
+  fireEvent.click(dialog.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved.at(-1), ['1', { schemaData: { _image: 'https://render.example.com/render/media/a.jpg' } }]));
+  cleanup();
+  render(React.createElement(PropertiesDialog, { entry: { ...imageEntry, schemaData: { _image: libraryItems[0].url } }, media, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const second = within(screen.getByRole('dialog'));
+  const input = screen.getByRole('dialog').querySelector('input[type="file"]');
+  assert.equal(input.getAttribute('accept'), '.jpg,.png');
+  fireEvent.change(input, { target: { files: [new dom.window.File(['img'], 'Berlin.png', { type: 'image/png' })] } });
+  await waitFor(() => assert.equal(screen.getByRole('dialog').querySelector('.media-field-label').textContent, 'Berlin.pngMedia library'));
+  assert.deepEqual(calls, [['upload', 'Berlin.png']]);
+  fireEvent.click(second.getByRole('button', { name: 'Default' }));
+  fireEvent.click(second.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved.at(-1), ['1', { schemaData: { _image: './lib/images/image_0.jpg' } }]));
+});
+
+test('file fields accept the listed extensions, images by default for image paths, anything otherwise', () => {
+  assert.deepEqual(acceptedExtensions({ gddOptions: { extensions: ['.PNG', 'jpg'] } }), ['png', 'jpg']);
+  assert.ok(acceptedExtensions({ gddType: 'file-path/image-path' }).includes('webp'));
+  assert.equal(acceptedExtensions({ gddType: 'file-path' }), null);
+});
+
+test('the media catalog lists files and lets the owner rename, replace and delete them', async () => {
+  const { media, calls } = fakeMedia(libraryItems);
+  render(React.createElement(MediaCatalogView, { account: { id: 'account' }, authLoading: false, media }));
+  assert.ok(screen.getByRole('heading', { level: 3, name: 'Hannover.jpg' }));
+  assert.ok(screen.getByText('.jpg · 2.0 KB · used by 2 entries'));
+  assert.ok(screen.getByText('.mp4 · 4.0 KB · not used'));
+  fireEvent.click(screen.getByRole('button', { name: 'Rename Hannover.jpg' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'File name' }), { target: { value: 'City.jpg' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+  await waitFor(() => assert.deepEqual(calls.at(-1), ['rename', 'a', 'City.jpg']));
+  fireEvent.change(screen.getByLabelText('Replacement for Hannover.jpg'), { target: { files: [new dom.window.File(['x'], 'new.jpg')] } });
+  await waitFor(() => assert.deepEqual(calls.at(-1), ['replace', 'a', 'new.jpg']));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Hannover.jpg' }));
+  const confirm = screen.getByRole('group', { name: 'Confirm deleting Hannover.jpg' });
+  assert.match(confirm.textContent, /2 rundown entries use it/);
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Delete' }));
+  await waitFor(() => assert.deepEqual(calls.at(-1), ['remove', 'a']));
+  fireEvent.change(screen.getByLabelText('Choose files to upload'), { target: { files: [new dom.window.File(['1'], 'a.png'), new dom.window.File(['2'], 'b.png')] } });
+  await waitFor(() => assert.deepEqual(calls.slice(-2), [['upload', 'a.png'], ['upload', 'b.png']]));
 });

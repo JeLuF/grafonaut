@@ -5,7 +5,13 @@ import { LoginButtons } from './brand.jsx';
 
 // Uploads one .ograf.zip as the request body; the server validates it and stores every graphic as a private version.
 export async function uploadPackage(file) {
-  return requestJson('/api/private/packages', { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
+  try {
+    return await requestJson('/api/private/packages', { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
+  } catch (failure) {
+    // A 413 without the app's JSON message comes from a proxy in front of the app (nginx allows 1 MB by default).
+    if (failure.status === 413 && !failure.payload?.error) throw Object.assign(new Error("The file was refused by the web server's upload limit (e.g. nginx client_max_body_size)"), { status: 413, payload: {} });
+    throw failure;
+  }
 }
 
 function UploadResult({ result }) {

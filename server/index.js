@@ -11,6 +11,8 @@ import rundownsRouter from './rundowns.js';
 import { createPrivateCatalog } from './private-catalog.js';
 import { createGroupActions } from './group-actions.js';
 import { createAuth } from './auth.js';
+import { createMedia, createMediaFileHandler, mediaFileRoute } from './media.js';
+import { createRefererCheck, parseHosts, refererMode } from './referer.js';
 import { configureSession } from './session.js';
 import { assetRoute, createAssetHandler, frameDocument, framePath, parseRendererHost, rendererDocument, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
 import { createRenderHub } from './render-hub.js';
@@ -24,6 +26,13 @@ const publicDirectory = path.resolve('dist');
 const rendererHost = parseRendererHost(process.env.RENDERER_HOST);
 // Graphics may only share an origin with their package files when the renderer runs on its own host.
 const rendererIsolated = rendererHost !== null;
+// The instance's own host names (APP_HOST may list several, comma separated); used by the asset referer check.
+const instanceHosts = [...parseHosts(process.env.APP_HOST), ...(rendererHost ? parseHosts(rendererHost.origin ?? rendererHost.host) : [])];
+// Strict (Referer required) with an own renderer host. Without one, graphic frames run in an opaque origin and the
+// browser sends no Referer for their images and nested pages, so missing referers are allowed (foreign ones are not).
+const assetRefererCheck = createRefererCheck({ hosts: instanceHosts,
+  mode: refererMode(process.env.ASSET_REFERER_CHECK || (rendererIsolated ? 'strict' : 'lenient')) });
+const rendererOrigin = (request) => rendererHost?.origin ?? `${request.protocol}://${rendererHost?.host ?? request.host}`;
 tokenKey();
 const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic, listGroupActions };
 const renderHub = createRenderHub(renderStore);
@@ -82,6 +91,7 @@ app.use('/api/my-graphics', myGraphicsRouter);
 app.use('/api/rundowns', rundownsRouter);
 app.use('/api/private', createPrivateCatalog());
 app.use('/api/group-actions', createGroupActions());
+app.use('/api/media', createMedia({ storageRoot, rendererOrigin }));
 app.use('/api-docs', createApiDocs({ apiUrlFor: async (request) => request.session?.accountId
   ? apiUrl(request, await findAccountToken(request.session.accountId, 'api')) : undefined }));
 // Account token URLs: GET shows the current one, POST replaces the token (the old URL stops working).
@@ -111,7 +121,8 @@ app.post('/api/tokens/:kind', async (request, response) => {
 // Renderer: the page connects to /render/<token>/ws (see render-hub.js) and hosts each graphic in a frame page.
 const frame = frameDocument(rendererIsolated);
 app.get(framePath, (_request, response) => response.set(frame.headers).type('html').send(frame.html));
-app.get(assetRoute, createAssetHandler({ findVersion: findRenderableVersion, storageRoot, isolated: rendererIsolated }));
+app.get(assetRoute, assetRefererCheck, createAssetHandler({ findVersion: findRenderableVersion, storageRoot, isolated: rendererIsolated }));
+app.get(mediaFileRoute, assetRefererCheck, createMediaFileHandler({ storageRoot, isolated: rendererIsolated }));
 app.get(rendererRoute, async (request, response) => {
   try {
     if (!await findAccountByToken(request.params.token, 'renderer')) {

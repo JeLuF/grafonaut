@@ -31,11 +31,12 @@ export function rendererUrl(request, config, token) {
   return `${origin}/render/${encodeURIComponent(token)}/`;
 }
 
-// Renderer pages carry the account token in their URL: never send it on as a referrer or keep it in caches.
+// Renderer pages carry the account token in their URL: send only the origin as referrer (strict-origin; the asset
+// referer check needs it, the token path never leaves) and keep the page out of caches.
 export const rendererHeaders = {
   'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
   'X-Content-Type-Options': 'nosniff',
-  'Referrer-Policy': 'no-referrer',
+  'Referrer-Policy': 'strict-origin',
   'Cache-Control': 'no-store'
 };
 
@@ -69,7 +70,7 @@ export function rendererDocument(request, token, isolated) {
 export function frameDocument(isolated) {
   return {
     headers: { 'Content-Security-Policy': `sandbox ${graphicSandbox(isolated)}`, 'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer', 'Cache-Control': 'public, max-age=300' },
+      'Referrer-Policy': 'strict-origin', 'Cache-Control': 'public, max-age=300' },
     html: `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>OGraf graphic</title>
 <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}</style>
@@ -77,7 +78,7 @@ export function frameDocument(isolated) {
   };
 }
 
-const assetTypes = {
+export const assetTypes = {
   '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8', '.png': 'image/png', '.apng': 'image/apng', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -116,7 +117,7 @@ export function createAssetHandler({ findVersion, storageRoot, isolated, cacheMs
       response.sendFile(realTarget, { headers: {
         'Content-Type': type, 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin',
         'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': `sandbox ${graphicSandbox(isolated)}`,
-        'Referrer-Policy': 'no-referrer', 'Cache-Control': 'public, max-age=300'
+        'Referrer-Policy': 'strict-origin', 'Cache-Control': 'public, max-age=300'
       } }, (error) => { if (error && !response.headersSent) response.sendStatus(error.statusCode ?? 500); });
     } catch { if (!response.headersSent) response.sendStatus(503); }
   };
