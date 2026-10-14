@@ -2403,6 +2403,38 @@ footer {
     text-decoration: none;
 }
 
+.youtube-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 26px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #ff3b4a, #e3101e);
+    box-shadow: 0 8px 26px rgb(229 16 30 / 35%);
+    color: #fff;
+    font: 600 16px var(--font-body);
+    text-decoration: none;
+    transition: filter .15s, box-shadow .15s;
+}
+
+.youtube-button:hover {
+    filter: brightness(1.08);
+}
+
+.youtube-button.is-compact {
+    padding: 9px 16px;
+    border: 1px solid rgb(255 59 74 / 70%);
+    background: rgb(255 59 74 / 14%);
+    box-shadow: none;
+    font-size: 14px;
+}
+
+.login-buttons {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
 .twitch-button.is-compact {
     padding: 9px 16px;
     border: 1px solid rgb(145 70 255 / 70%);
@@ -2594,4 +2626,9 @@ footer {
 .search-box svg {
     flex-shrink: 0;
     color: var(--faint);
+}
+
+.upload-result .upload-note {
+    margin-top: 8px;
+    color: var(--muted);
 }

@@ -7,7 +7,7 @@ import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
 import { GroupActionsPanel } from './group-actions.jsx';
-import { FeatureRow, HeroArt, TwitchLogin, Wordmark } from './brand.jsx';
+import { FeatureRow, HeroArt, LoginButtons, LoginProvidersContext, Wordmark } from './brand.jsx';
 import { fetchRendererStatus, requestJson, triggerCustomAction, triggerGraphicAction, triggerGroupAction } from './api.js';
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
@@ -144,6 +144,10 @@ function App() {
 
   const { url: apiUrl } = useApiUrl(account);
   const rundownState = useRundowns(account);
+  const [loginProviders, setLoginProviders] = useState({ twitch: true, google: false });
+  useEffect(() => {
+    requestJson('/api/auth/providers').then((response) => setLoginProviders({ twitch: false, google: false, ...response.providers })).catch(() => {});
+  }, []);
   const loadPrivateCatalog = useCallback(async () => {
     if (!account) { setPrivateItems([]); return; }
     setPrivateLoading(true);
@@ -373,6 +377,7 @@ function App() {
   // Signed-out visitors get the website layout (top header, landing page); signed-in users the app with its sidebar.
   const signedOut = !authLoading && !account;
   return (
+    <LoginProvidersContext.Provider value={loginProviders}>
     <div className={signedOut ? 'site-layout' : 'app-layout'}>
     {signedOut ? <header className="site-header">
       <a className="brand-mark" href="#catalog" aria-label="Grafanaut home"><Wordmark /></a>
@@ -381,7 +386,7 @@ function App() {
         <a href="/api-docs/">API docs</a>
         <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf</a>
       </nav>
-      <TwitchLogin compact />
+      <LoginButtons compact />
     </header> : <aside className="sidebar">
       <a className="brand-mark" href="#catalog" aria-label="Grafanaut home"><Wordmark /></a>
       <nav className="view-tabs" aria-label="Graphics views">
@@ -396,7 +401,7 @@ function App() {
         void refreshRendererStatus();
       }} />}
       <div className="sidebar-account">
-        {account && <span className="account-chip">{account.twitch_display_name ?? account.displayName}</span>}
+        {account && <span className="account-chip" title={account.provider === 'google' ? 'Signed in with YouTube' : 'Signed in with Twitch'}>{account.display_name}</span>}
       </div>
     </aside>}
     <main className={`app-shell${signedOut ? ' site-main' : ''}`}>
@@ -427,8 +432,9 @@ function App() {
             <h1>Grafanaut</h1>
             <p className="hero-tagline">Beautiful stream graphics.<br />Ready to use.</p>
             <p className="hero-copy">Discover, customize and play animations based on the EBU OGraf standard. They work with OBS, vMix and any
-              browser source, and you control them from the browser, Bitfocus Companion or a Stream Deck. Log in with your Twitch account and start creating.</p>
-            <TwitchLogin />
+              browser source, and you control them from the browser, Bitfocus Companion or a Stream Deck. Log in with your
+              {loginProviders.google ? ' Twitch or YouTube' : ' Twitch'} account and start creating.</p>
+            <LoginButtons />
           </div>
           <HeroArt />
         </section>
@@ -450,9 +456,9 @@ function App() {
       {signedOut && <section className="cta-band" aria-labelledby="cta-heading">
         <div>
           <h2 id="cta-heading">Ready to launch your next stream?</h2>
-          <p>Log in with Twitch and explore the Grafanaut template library.</p>
+          <p>Log in and explore the Grafanaut template library.</p>
         </div>
-        <TwitchLogin />
+        <LoginButtons />
         <p className="cta-note">Great graphics.<br />Better streams.</p>
       </section>}
       </>}
@@ -460,6 +466,7 @@ function App() {
       {toast && <Toast key={toast.id} toast={toast} onDismiss={setToast} />}
     </main>
     </div>
+    </LoginProvidersContext.Provider>
   );
 }
 

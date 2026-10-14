@@ -2,7 +2,7 @@ import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
 import { deleteRenderInstances, listGroupActions, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findCatalogItem, findRenderableVersion, findVisibleVersion,
-  initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertTwitchAccount } from './db.js';
+  initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertAccount } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
@@ -10,6 +10,7 @@ import myGraphicsRouter from './my-graphics.js';
 import rundownsRouter from './rundowns.js';
 import { createPrivateCatalog } from './private-catalog.js';
 import { createGroupActions } from './group-actions.js';
+import { createAuth } from './auth.js';
 import { configureSession } from './session.js';
 import { assetRoute, createAssetHandler, frameDocument, framePath, parseRendererHost, rendererDocument, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
 import { createRenderHub } from './render-hub.js';
@@ -124,24 +125,7 @@ app.get('/api/auth/me', async (request, response) => {
   const account = request.session?.accountId ? await findAccountById(request.session.accountId) : null;
   response.json({ account });
 });
-app.get('/api/auth/twitch', (_request, response) => {
-  if (!process.env.TWITCH_CLIENT_ID || !process.env.TWITCH_REDIRECT_URI) return response.status(503).send('Twitch OAuth is not configured. Set TWITCH_CLIENT_ID and TWITCH_REDIRECT_URI.');
-  const params = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, redirect_uri: process.env.TWITCH_REDIRECT_URI, response_type: 'code', scope: 'user:read:email' });
-  response.redirect(`https://id.twitch.tv/oauth2/authorize?${params}`);
-});
-app.get('/api/auth/twitch/callback', async (request, response) => {
-  try {
-    const tokenParams = new URLSearchParams({ client_id: process.env.TWITCH_CLIENT_ID, client_secret: process.env.TWITCH_CLIENT_SECRET, code: request.query.code, grant_type: 'authorization_code', redirect_uri: process.env.TWITCH_REDIRECT_URI });
-    const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', { method: 'POST', body: tokenParams });
-    const token = await tokenResponse.json();
-    const profileResponse = await fetch('https://api.twitch.tv/helix/users', { headers: { Authorization: `Bearer ${token.access_token}`, 'Client-Id': process.env.TWITCH_CLIENT_ID } });
-    const profile = (await profileResponse.json()).data?.[0];
-    if (!profile) throw new Error('Twitch profile unavailable');
-    const account = await upsertTwitchAccount(profile);
-    request.session = { accountId: account.id };
-    response.redirect('/');
-  } catch (error) { response.status(502).send(`Twitch sign-in failed: ${error.message}`); }
-});
+app.use('/api/auth', createAuth({ upsertAccount }));
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(publicDirectory));

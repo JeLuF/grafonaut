@@ -37,16 +37,17 @@ export async function initializeDatabase() {
 }
 
 export async function findAccountById(id) {
-  const [rows] = await pool.query('SELECT id, twitch_login, twitch_display_name, is_approver FROM accounts WHERE id = ?', [id]);
+  const [rows] = await pool.query('SELECT id, provider, login, display_name, is_approver FROM accounts WHERE id = ?', [id]);
   return rows[0] ?? null;
 }
 
-export async function upsertTwitchAccount(profile) {
-  await pool.query(`INSERT INTO accounts (twitch_user_id, twitch_login, twitch_display_name)
-    VALUES (?, ?, ?)
-    ON DUPLICATE KEY UPDATE twitch_login = VALUES(twitch_login), twitch_display_name = VALUES(twitch_display_name), updated_at = CURRENT_TIMESTAMP`,
-  [profile.id, profile.login, profile.display_name ?? profile.login]);
-  const [rows] = await pool.query('SELECT id, twitch_login, twitch_display_name, is_approver FROM accounts WHERE twitch_user_id = ?', [profile.id]);
+// Creates or updates the account of one login identity ({ provider, providerUserId, login, displayName }).
+export async function upsertAccount({ provider, providerUserId, login = null, displayName }) {
+  await pool.query(`INSERT INTO accounts (provider, provider_user_id, login, display_name)
+    VALUES (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE login = VALUES(login), display_name = VALUES(display_name), updated_at = CURRENT_TIMESTAMP`,
+  [provider, providerUserId, login, displayName]);
+  const [rows] = await pool.query('SELECT id, provider, login, display_name, is_approver FROM accounts WHERE provider = ? AND provider_user_id = ?', [provider, providerUserId]);
   for (const kind of tokenKinds) await ensureAccountToken(rows[0].id, kind);
   await ensureCurrentRundown(rows[0].id);
   return rows[0];
@@ -192,7 +193,7 @@ export async function rotateAccountToken(accountId, kind = 'renderer') {
 export async function findAccountByToken(token, kind = 'renderer') {
   const table = tokenTable(kind);
   if (typeof token !== 'string' || !tokenPattern.test(token)) return null;
-  const [rows] = await pool.query(`SELECT a.id, a.twitch_login, a.twitch_display_name FROM ${table} t
+  const [rows] = await pool.query(`SELECT a.id, a.login, a.display_name FROM ${table} t
     JOIN accounts a ON a.id = t.account_id WHERE t.token_hash = ?`, [hashToken(token)]);
   return rows[0] ?? null;
 }
@@ -257,7 +258,10 @@ export function catalogDetails(manifest) {
     renderRequirements: (Array.isArray(manifest?.renderRequirements) ? manifest.renderRequirements : []).filter(isObject).map((requirement) => ({
       width: constraint(requirement.resolution?.width), height: constraint(requirement.resolution?.height), frameRate: constraint(requirement.frameRate)
     })),
-    properties: Object.entries(properties).filter(([, property]) => isObject(property) && property.hidden !== true).map(([key, property]) => ({
+    // GDD `order`: lower values first; properties without an order follow in manifest order.
+    properties: Object.entries(properties).map((entry, index) => ({ entry, index }))
+      .sort((a, b) => ((typeof a.entry[1]?.order === 'number' ? a.entry[1].order : Infinity) - (typeof b.entry[1]?.order === 'number' ? b.entry[1].order : Infinity)) || (a.index - b.index))
+      .map(({ entry }) => entry).filter(([, property]) => isObject(property) && property.hidden !== true).map(([key, property]) => ({
       key, title: text(property.title) ?? text(property.label) ?? key, description: text(property.description),
       type: property.v_spx?.ftype === 'filelist' && typeof property.v_spx.extension === 'string' ? `file (${property.v_spx.extension})`
         : typeof property.type === 'string' ? property.type : null

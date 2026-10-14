@@ -13,7 +13,7 @@ mock.module('mysql2/promise', { defaultExport: {
   } })
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { ensureAccountToken, findAccountByToken, findAccountToken, rotateAccountToken, upsertTwitchAccount } = await import('./db.js');
+const { ensureAccountToken, findAccountByToken, findAccountToken, rotateAccountToken, upsertAccount } = await import('./db.js');
 beforeEach(() => { rows = []; queries = []; });
 
 test('tokens are unpredictable 32-byte values', () => {
@@ -49,8 +49,8 @@ test('the encryption key must be 32 bytes and is required in production', () => 
 });
 
 test('new accounts get a token without replacing an existing one', async () => {
-  rows = [[{ id: 7, twitch_login: 'host' }]];
-  await upsertTwitchAccount({ id: 'twitch-7', login: 'host', display_name: 'Host' });
+  rows = [[{ id: 7, login: 'host' }]];
+  await upsertAccount({ provider: 'twitch', providerUserId: 'twitch-7', login: 'host', displayName: 'Host' });
   const insert = queries.find(({ sql }) => sql.startsWith('INSERT IGNORE INTO account_tokens'));
   assert.equal(insert.parameters[0], 7);
   assert.match(insert.parameters[1], /^[0-9a-f]{64}$/);
@@ -83,8 +83,8 @@ test('rotating replaces the token so the old one no longer resolves', async () =
 });
 
 test('API tokens live in their own table so renderer tokens cannot unlock the API', async () => {
-  rows = [[{ id: 7, twitch_login: 'host' }]];
-  await upsertTwitchAccount({ id: 'twitch-7', login: 'host', display_name: 'Host' });
+  rows = [[{ id: 7, login: 'host' }]];
+  await upsertAccount({ provider: 'twitch', providerUserId: 'twitch-7', login: 'host', displayName: 'Host' });
   const inserts = queries.filter(({ sql }) => sql.startsWith('INSERT IGNORE'));
   assert.deepEqual(inserts.map(({ sql }) => sql.match(/INTO (\w+)/)[1]), ['account_tokens', 'api_tokens']);
   assert.notEqual(inserts[0].parameters[1], inserts[1].parameters[1]);

@@ -23,21 +23,22 @@ async function compileModule(file, local = {}) {
     } } })] });
   return { code: result.code, url: `data:text/javascript,${encodeURIComponent(result.code)}` };
 }
-const compiled = await compileModule('./my-graphics.jsx');
+const brandUrl = (await compileModule('./brand.jsx')).url;
+const brand = { './brand.jsx': brandUrl };
+const compiled = await compileModule('./my-graphics.jsx', brand);
 const myGraphicsUrl = compiled.url;
-const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-graphics.jsx': myGraphicsUrl })).url;
+const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-graphics.jsx': myGraphicsUrl, ...brand })).url;
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
 const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
-const rendererViewUrl = (await compileModule('./renderer-view.jsx')).url;
+const rendererViewUrl = (await compileModule('./renderer-view.jsx', brand)).url;
 const { default: RendererView } = await import(rendererViewUrl);
 const rundownsUrl = (await compileModule('./rundowns.jsx')).url;
 const { RundownPanel, useRundowns } = await import(rundownsUrl);
-const privateCatalogUrl = (await compileModule('./private-catalog.jsx')).url;
+const privateCatalogUrl = (await compileModule('./private-catalog.jsx', brand)).url;
 const { default: PrivateCatalogView } = await import(privateCatalogUrl);
 const groupActionsUrl = (await compileModule('./group-actions.jsx', { './my-graphics.jsx': myGraphicsUrl })).url;
 const { GroupActionsPanel } = await import(groupActionsUrl);
-const brandUrl = (await compileModule('./brand.jsx')).url;
-const { FeatureRow, HeroArt, Logo, TwitchLogin } = await import(brandUrl);
+const { FeatureRow, HeroArt, LoginButtons, LoginProvidersContext, Logo, TwitchLogin } = await import(brandUrl);
 const mainUrl = new URL('./main.jsx', import.meta.url);
 const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
   filename: mainUrl.pathname, configFile: false, babelrc: false, plugins: [jsx, () => ({ visitor: {
@@ -247,7 +248,7 @@ test('property save failures stay visible and keep the dialog open', async () =>
 });
 test('signed-out and error states offer the appropriate next action', () => {
   showView({ account: null });
-  assert.ok(screen.getByRole('link', { name: 'Sign in with Twitch' }));
+  assert.ok(screen.getByRole('link', { name: 'Login with Twitch' }));
   cleanup();
   showView({ error: 'Unable to load entries' });
   assert.ok(screen.getByRole('alert').textContent.includes('Unable to load entries'));
@@ -446,7 +447,7 @@ test('the detail page reports unknown graphics and requires sign-in to add', asy
   render(React.createElement(GraphicDetail, { versionId: 'missing', summary: { versionId: 'missing', display_name: 'Old', versionLabel: '1' }, account: null,
     Preview: () => null, AddButton: AddGraphicButton, onAdd: async () => {} }));
   assert.equal(screen.getByRole('button', { name: 'Add to rundown' }).disabled, true);
-  assert.ok(screen.getByRole('link', { name: 'Sign in to add' }));
+  assert.equal(screen.getByRole('link', { name: 'Login with Twitch' }).getAttribute('href'), '/api/auth/twitch');
 });
 
 test('the details menu item is offered for catalog and uploaded graphics but not disabled packages', () => {
@@ -580,7 +581,7 @@ test('the renderer page asks signed-out users to sign in and reports lookup fail
   const fetchMock = mock.method(globalThis, 'fetch', async () => Response.json({ error: 'Sign-in required' }, { status: 401 }));
   render(React.createElement(RendererView, { account: null, authLoading: false }));
   assert.ok(screen.getByText('Sign in to get your renderer URL.'));
-  assert.equal(screen.getByRole('link', { name: 'Sign in with Twitch' }).getAttribute('href'), '/api/auth/twitch');
+  assert.equal(screen.getByRole('link', { name: 'Login with Twitch' }).getAttribute('href'), '/api/auth/twitch');
   assertAbsent(screen.queryByRole('button', { name: 'New renderer token' }));
   assert.equal(fetchMock.mock.callCount(), 0);
   cleanup();
@@ -968,7 +969,7 @@ test('the landing page elements render: logo, Twitch login, hero art and the fea
   render(React.createElement('div', null, React.createElement(Logo), React.createElement(TwitchLogin), React.createElement(HeroArt), React.createElement(FeatureRow)));
   assert.equal(screen.getByRole('link', { name: 'Login with Twitch' }).getAttribute('href'), '/api/auth/twitch');
   assert.deepEqual(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent),
-    ['Works with OBS & vMix', 'Controller ready', 'Customizable & extensible', 'Built on an open standard', 'Log in with Twitch']);
+    ['Works with OBS & vMix', 'Controller ready', 'Customizable & extensible', 'Built on an open standard', 'Log in and go']);
   const hero = screen.getByRole('img', { name: /astronaut on a moon/ });
   assert.equal(hero.getAttribute('src'), '/brand/hero-astronaut-1536.webp');
   assert.match(hero.getAttribute('srcset'), /hero-astronaut-768\.webp 768w/);
@@ -981,4 +982,34 @@ test('the entry menu duplicates only the selected entry', async () => {
   fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
   await waitFor(() => assert.deepEqual(duplicated, ['2']));
   assertAbsent(screen.queryByRole('menu'));
+});
+
+test('properties are shown in GDD order: lower values first, unordered ones after in manifest order', async () => {
+  const { displaySchema } = await import(myGraphicsUrl);
+  const wheel = { ...entry, schemaData: {}, schema: { type: 'object', properties: {
+    line1: { type: 'string', title: 'Line 1', order: 5 },
+    notes: { type: 'string', title: 'Notes' },
+    position: { type: 'string', title: 'Position', order: 2 },
+    extra: { type: 'string', title: 'Extra' },
+    title: { type: 'string', title: 'Title', order: 1 },
+    nested: { type: 'object', title: 'Nested', order: 3, properties: { b: { type: 'string', title: 'B', order: 2 }, a: { type: 'string', title: 'A', order: 1 } } }
+  } } };
+  assert.deepEqual(Object.keys(displaySchema(wheel.schema).properties), ['title', 'position', 'nested', 'line1', 'notes', 'extra']);
+  render(React.createElement(PropertiesDialog, { entry: wheel, onSave: async () => {}, onClose: () => {} }));
+  const labels = [...screen.getByRole('dialog').querySelectorAll('input[type="text"], input:not([type])')].map((input) =>
+    screen.getByRole('dialog').querySelector(`label[for="${input.id}"]`)?.textContent.replace(/\\*$/, ''));
+  assert.deepEqual(labels, ['Title', 'Position', 'A', 'B', 'Line 1', 'Notes', 'Extra']);
+});
+
+test('the YouTube login is only offered when the server has Google configured', () => {
+  const buttons = (providers) => render(React.createElement(LoginProvidersContext.Provider, { value: providers }, React.createElement(LoginButtons)));
+  buttons({ twitch: true, google: false });
+  assert.ok(screen.getByRole('link', { name: 'Login with Twitch' }));
+  assertAbsent(screen.queryByRole('link', { name: 'Login with YouTube' }));
+  cleanup();
+  buttons({ twitch: true, google: true });
+  assert.equal(screen.getByRole('link', { name: 'Login with YouTube' }).getAttribute('href'), '/api/auth/google');
+  cleanup();
+  buttons({ twitch: false, google: true });
+  assertAbsent(screen.queryByRole('link', { name: 'Login with Twitch' }));
 });

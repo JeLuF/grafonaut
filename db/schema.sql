@@ -1,15 +1,16 @@
 CREATE TABLE IF NOT EXISTS accounts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  twitch_user_id VARCHAR(64) NOT NULL,
-  twitch_login VARCHAR(64) NOT NULL,
-  twitch_display_name VARCHAR(64) NOT NULL,
+  -- Each login provider has its own accounts; the same person signing in with Twitch and Google gets two accounts.
+  provider ENUM('twitch','google') NOT NULL,
+  provider_user_id VARCHAR(255) NOT NULL,
+  login VARCHAR(255) NULL,
+  display_name VARCHAR(255) NOT NULL,
   is_approver BOOLEAN NOT NULL DEFAULT FALSE,
   current_rundown_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_accounts_twitch_user_id (twitch_user_id),
-  UNIQUE KEY uq_accounts_twitch_login (twitch_login)
+  UNIQUE KEY uq_accounts_provider_user (provider, provider_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- A rundown groups My Graphics entries for one event. The account's current rundown is what the renderer shows.

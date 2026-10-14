@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, FileJson, Mail, Play, RefreshCw, Square, User, Zap } from 'lucide-react';
 import { requestJson } from './api.js';
 import { ActionMenu, EntryDialog } from './my-graphics.jsx';
+import { LoginButtons } from './brand.jsx';
 
 const sourceLabels = { seed_builtin: 'Built-in library', seed_volume: 'Imported library', user_upload: 'Community upload' };
 const standardActions = {
@@ -111,7 +112,7 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
             <ActionMenu label={`More options for ${graphic.display_name}`} items={[
               { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => setShowManifest(true) }
             ]} />
-            {!account && <a className="login-link" href="/api/auth/twitch">Sign in to add</a>}
+            {!account && <LoginButtons compact />}
           </div>
           <dl className="detail-facts">
             <div><dt>Creator</dt><dd>{author?.name ?? 'Unknown'}</dd></div>

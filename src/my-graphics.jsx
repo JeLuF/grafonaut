@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, Copy, FileJson, Info, GripVertical, MoreHorizontal,
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { LoginButtons } from './brand.jsx';
 import { canControlGraphic } from './api.js';
 
 export class PropertyFormBoundary extends React.Component {
@@ -72,13 +73,20 @@ export const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFiel
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
+// GDD `order`: lower values are displayed first; properties without an order follow in manifest order (stable).
+export function orderedEntries(properties) {
+  const rank = (value) => (isObject(value) && typeof value.order === 'number' && Number.isFinite(value.order) ? value.order : Infinity);
+  return Object.entries(properties).map((entry, index) => ({ entry, index }))
+    .sort((a, b) => (rank(a.entry[1]) - rank(b.entry[1])) || (a.index - b.index)).map(({ entry }) => entry);
+}
+
 // Maps GDD/SPX display hints that RJSF does not understand onto JSON Schema: `label` becomes the field title,
-// and `gddOptions.labels` names the values of an enum.
+// `gddOptions.labels` names the values of an enum, and `order` sorts the properties (RJSF shows them in key order).
 export function displaySchema(schema) {
   if (Array.isArray(schema)) return schema.map(displaySchema);
   if (!isObject(schema)) return schema;
   const result = { ...schema };
-  if (isObject(schema.properties)) result.properties = Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, displaySchema(value)]));
+  if (isObject(schema.properties)) result.properties = Object.fromEntries(orderedEntries(schema.properties).map(([key, value]) => [key, displaySchema(value)]));
   if (schema.items) result.items = displaySchema(schema.items);
   if (typeof schema.title !== 'string' && typeof schema.label === 'string' && schema.label.trim()) result.title = schema.label;
   const labels = schema.gddOptions?.labels;
@@ -388,7 +396,7 @@ export default function MyGraphicsView({ account, rundownName, groupActions, ent
         {' · '}<span className={rendererStatus.connections ? 'renderer-connected' : 'renderer-disconnected'}>{rendererStatus.connections
           ? `${rendererStatus.connections} renderer${rendererStatus.connections === 1 ? '' : 's'} connected` : 'No renderer connected'}</span></>}</span>}</div>
       {account && groupActions}
-      {!account ? <div className="empty-state"><strong>Sign in to prepare your rundowns.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div> : <div className="my-graphics-layout">
+      {!account ? <div className="empty-state"><strong>Sign in to prepare your rundowns.</strong><LoginButtons compact /></div> : <div className="my-graphics-layout">
         {rendererPreview}
         <div className="my-graphics-entries">
         {loading && <p role="status" className="status">Loading rundown...</p>}

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { CircleAlert, CircleCheck, Upload } from 'lucide-react';
 import { requestJson } from './api.js';
+import { LoginButtons } from './brand.jsx';
 
 // Uploads one .ograf.zip as the request body; the server validates it and stores every graphic as a private version.
 export async function uploadPackage(file) {
@@ -18,6 +19,10 @@ function UploadResult({ result }) {
   return <div className="upload-result" role="status">
     {result.saved.length > 0 && <p><CircleCheck size={18} />Uploaded {names(result.saved)}.</p>}
     {result.skipped.length > 0 && <p><CircleCheck size={18} />Already uploaded: {names(result.skipped)}.</p>}
+    {result.warnings?.length > 0 && <>
+      <p className="upload-note">The manifest is not strictly valid; these assumptions were made:</p>
+      <ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+    </>}
   </div>;
 }
 
@@ -51,7 +56,7 @@ export default function PrivateCatalogView({ account, authLoading, count, maxZip
       <p className="renderer-lead">Graphics you upload are only visible to you. Add them to a rundown like any catalog graphic.
         Uploading a graphic with the same manifest id again adds a new version; rundown entries keep the version they were added with.</p>
       {authLoading ? <p className="status" role="status">Loading account...</p>
-        : !account ? <div className="empty-state"><strong>Sign in to upload your own graphics.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div>
+        : !account ? <div className="empty-state"><strong>Sign in to upload your own graphics.</strong><LoginButtons compact /></div>
           : <>
             <div className={`upload-zone${dragging ? ' is-dragging' : ''}`}
               onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}

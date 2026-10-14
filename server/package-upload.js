@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import unzipper from 'unzipper';
-import { validateManifest } from './manifest-validation.js';
+import { checkManifest } from './manifest-validation.js';
 import { archiveDirectory } from './thumbnails.js';
 
 // Hardened ingestion of user-uploaded .ograf.zip packages (requirements §6). Everything is checked before any
@@ -100,19 +100,22 @@ async function findManifests(root) {
   return found;
 }
 
-// Validates every manifest and its main file; returns one record per graphic or throws with all problems.
+// Validates every manifest and its main file; returns one record per graphic (with the lenient-validation notes in
+// `graphics.warnings`) or throws with all problems.
 async function readGraphics(root) {
   const manifestPaths = await findManifests(root);
   if (!manifestPaths.length) throw new UploadError('No OGraf manifest (*.ograf.json) found in the package.');
   const problems = [];
+  const warnings = [];
   const graphics = [];
   for (const manifestPath of manifestPaths) {
     const relative = path.relative(root, manifestPath).split(path.sep).join('/');
     let manifest;
     try { manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8')); }
     catch { problems.push(`${relative}: not valid JSON`); continue; }
-    const schemaProblems = validateManifest(manifest);
-    if (schemaProblems.length) { problems.push(...schemaProblems.map((problem) => `${relative}: ${problem}`)); continue; }
+    const checked = checkManifest(manifest);
+    warnings.push(...checked.warnings.map((warning) => `${relative}: ${warning}`));
+    if (checked.problems.length) { problems.push(...checked.problems.map((problem) => `${relative}: ${problem}`)); continue; }
     const mainPath = path.resolve(path.dirname(manifestPath), manifest.main);
     const mainFile = path.relative(root, mainPath).split(path.sep).join('/');
     if (!mainPath.startsWith(`${root}${path.sep}`) || !/\.m?js$/i.test(mainPath)) { problems.push(`${relative}: main must be a .mjs or .js file inside the package`); continue; }
@@ -123,6 +126,7 @@ async function readGraphics(root) {
     graphics.push({ manifest, manifestFile: relative, mainFile });
   }
   if (problems.length) throw new UploadError('The package is not a valid OGraf package.', problems.slice(0, 20));
+  graphics.warnings = warnings;
   return graphics;
 }
 
@@ -143,6 +147,7 @@ export async function ingestUpload(buffer, { storageRoot, limits = uploadLimits(
     inspectEntries(directory.files, limits);
     const uncompressedSize = await extract(directory.files, root, limits);
     const graphics = await readGraphics(root);
+    const { warnings } = graphics;
     const digest = crypto.createHash('sha256').update(buffer).digest('hex');
     const upload = {
       archiveId: crypto.randomUUID(), zipSize: buffer.length, uncompressedSize,
@@ -160,7 +165,7 @@ export async function ingestUpload(buffer, { storageRoot, limits = uploadLimits(
       throw error;
     }
     if (!result.saved.length) await fs.rm(destination, { recursive: true, force: true });
-    return result;
+    return { ...result, warnings };
   } finally {
     await fs.rm(staging, { recursive: true, force: true });
   }

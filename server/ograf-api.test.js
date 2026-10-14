@@ -32,7 +32,7 @@ const hub = {
   },
   broadcastState: async () => { commands.push({ message: { action: 'state' } }); }
 };
-const account = { id: 7, twitch_login: 'host', twitch_display_name: 'Host' };
+const account = { id: 7, login: 'host', display_name: 'Host' };
 const app = express();
 app.use(apiMountPath, createOgrafApi({ hub, store, findAccountByToken: async (value, kind) => (kind === 'api' && value === token ? account : null) }));
 const server = app.listen(0, '127.0.0.1');

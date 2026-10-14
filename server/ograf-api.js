@@ -102,7 +102,7 @@ export function createOgrafApi({ hub, store, findAccountByToken }) {
   router.get('/', (request, response) => {
     response.json({
       name: 'Grafanaut',
-      description: `Grafanaut OGraf Server API for ${request.apiAccount.twitch_display_name ?? request.apiAccount.twitch_login}`,
+      description: `Grafanaut OGraf Server API for ${request.apiAccount.display_name ?? request.apiAccount.login}`,
       author: { name: 'Grafanaut' },
       version
     });

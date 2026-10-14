@@ -1,5 +1,5 @@
-import React from 'react';
-import { BadgeCheck, CodeXml, Gamepad2, MonitorPlay, Twitch, UserRound } from 'lucide-react';
+import React, { createContext, useContext } from 'react';
+import { BadgeCheck, CodeXml, Gamepad2, MonitorPlay, Twitch, UserRound, Youtube } from 'lucide-react';
 
 // Grafanaut brand elements. The logo is drawn in code until the final logo artwork exists.
 
@@ -21,8 +21,25 @@ export function Wordmark() {
   return <span className="wordmark"><Logo /><span>Grafanaut</span></span>;
 }
 
+// Which logins the server has configured (GET /api/auth/providers); provided by the app, Twitch only by default.
+export const LoginProvidersContext = createContext({ twitch: true, google: false });
+
 export function TwitchLogin({ compact = false, label = 'Login with Twitch' }) {
   return <a className={`twitch-button${compact ? ' is-compact' : ''}`} href="/api/auth/twitch"><Twitch size={compact ? 16 : 20} aria-hidden="true" />{label}</a>;
+}
+
+// Google sign-in, labelled as YouTube login.
+export function YouTubeLogin({ compact = false, label = 'Login with YouTube' }) {
+  return <a className={`youtube-button${compact ? ' is-compact' : ''}`} href="/api/auth/google"><Youtube size={compact ? 16 : 20} aria-hidden="true" />{label}</a>;
+}
+
+// The login buttons of all configured providers.
+export function LoginButtons({ compact = false }) {
+  const providers = useContext(LoginProvidersContext);
+  return <span className="login-buttons">
+    {providers.twitch && <TwitchLogin compact={compact} />}
+    {providers.google && <YouTubeLogin compact={compact} />}
+  </span>;
 }
 
 // Hero illustration (public/brand): an astronaut with a graphics tablet on a moon. Its dark background is faded into
@@ -40,7 +57,7 @@ const features = [
   { icon: Gamepad2, title: 'Controller ready', text: 'Trigger graphics and group actions from Bitfocus Companion or a Stream Deck via the OGraf Server API.' },
   { icon: CodeXml, title: 'Customizable & extensible', text: 'HTML-based animations. Adjust their properties or upload your own.' },
   { icon: BadgeCheck, title: 'Built on an open standard', text: 'Based on the EBU OGraf specification, so graphics are not locked in.' },
-  { icon: UserRound, title: 'Log in with Twitch', text: 'Use your Twitch account and get started right away.' }
+  { icon: UserRound, title: 'Log in and go', text: 'Use your Twitch or YouTube account and get started right away.' }
 ];
 
 export function FeatureRow() {

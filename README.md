@@ -27,6 +27,14 @@ docker compose up --build
 
 Open the public HTTPS hostname served by your reverse proxy. The app exposes `GET /health` and `GET /api/catalog`; these also work on `http://localhost:3000`, but production sign-in requires HTTPS.
 
+### Sign-in
+
+Users sign in with Twitch or with Google, labelled "Login with YouTube". Each login has its own account: signing in with Twitch and with Google gives two separate accounts (no linking). The YouTube button only appears when `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` are set; Twitch likewise needs its three `TWITCH_*` values.
+
+For Google, create a project in the Google Cloud console (free, no billing needed), configure the OAuth consent screen (external, scopes `openid` and `userinfo.profile`, privacy policy URL) and an OAuth client of type *Web application* with the authorised redirect URI `https://<your host>/api/auth/google/callback`.
+
+Every login attempt carries a random `state` that is kept in the signed session cookie and checked on the callback (valid for 10 minutes, usable once), which protects against login CSRF; the Google login additionally uses PKCE (S256). Cancelled or failed logins show an explanation page.
+
 ### Proxy and sessions
 
 The container runs in production mode and uses `Secure`, `HttpOnly`, `SameSite=Lax` signed session cookies. When nginx terminates HTTPS and forwards HTTP to the container, Express must trust the proxy to recognize the original connection as HTTPS. `TRUST_PROXY` defaults to loopback and private-network addresses; restrict it to your proxy's IP address or CIDR ranges in deployments where other clients can reach the backend. Keep the backend reachable only through trusted infrastructure, and configure nginx to overwrite forwarded headers:
@@ -65,7 +73,7 @@ Every upload is checked before anything is saved (requirements §6):
 - At most `UPLOAD_MAX_ZIP_BYTES` (10 MB), `UPLOAD_MAX_FILES` (5,000) entries and `UPLOAD_MAX_UNCOMPRESSED_BYTES` (50 MB) unpacked. The unpacked size is counted while extracting, so forged size headers cannot get around it; extraction also has a time limit.
 - No absolute paths, `..` segments, backslashes or symbolic links.
 - Only allowed file types: by default `.json .mjs .js .jpg .jpeg .png .apng .webp .gif .svg .mp3 .mp4` (the requirements list) plus `.css .html .htm .ttf .otf .woff .woff2 .md .txt`, which real graphics need (stylesheets, HTML templates, fonts, read-me files). Set `UPLOAD_ALLOWED_EXTENSIONS` to change the list, e.g. to the strict requirements list.
-- Every `*.ograf.json` manifest must validate against the official OGraf v1 JSON Schema (vendored in `server/schemas/ograf`), and its `main` must be an existing `.mjs`/`.js` file inside the package.
+- Every `*.ograf.json` manifest must validate against the official OGraf v1 JSON Schema (vendored in `server/schemas/ograf`), and its `main` must be an existing `.mjs`/`.js` file inside the package. The check is lenient where a detail does not affect playback: a property with `"gddType": "select"` but no `gddOptions.labels` uses its `enum` values as labels; the upload succeeds with a note, and the manifest is stored as uploaded. Error messages name the property (e.g. `property "layout" must have required property 'gddOptions'`) and leave out the schema's generic "must match then schema" lines.
 
 Package files are served to graphic frames from `/render/assets/<version>/…`; HTML and SVG only ever in a CSP sandbox. Private versions are addressed by their random version UUID, which only the owner sees.
 
@@ -129,7 +137,7 @@ A successful addition briefly lights the add button green and displays a dismiss
 
 Reorder entries with the drag handle or the up/down arrows. The handle also supports keyboard sorting: focus it, press Space to pick up, use the arrow keys to move, and press Space to drop or Escape to cancel. The order is saved per rundown, survives reloads and defines the stacking in the renderer (first entry in front); failed saves leave the displayed order unchanged.
 
-The property dialog is generated from the selected version's JSON `schema`. Fields marked `hidden` remain editable. Saving validates the complete state in both the form and the backend; cancelling changes nothing. Property edits only save configuration; press Update to send them to a graphic on air.
+The property dialog is generated from the selected version's JSON `schema`. Fields follow the GDD `order` attribute (lower values first; fields without an order follow in manifest order). Fields marked `hidden` remain editable. Saving validates the complete state in both the form and the backend; cancelling changes nothing. Property edits only save configuration; press Update to send them to a graphic on air.
 
 Authenticated endpoints for the current rundown's entries (the paths keep their original name):
 

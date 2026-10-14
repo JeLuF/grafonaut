@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Copy, ExternalLink, KeyRound, RefreshCw } from 'lucide-react';
 import { requestJson } from './api.js';
+import { LoginButtons } from './brand.jsx';
 
 const RENDER_WIDTH = 1920;
 const RENDER_HEIGHT = 1080;
@@ -131,7 +132,7 @@ export default function RendererView({ account, authLoading }) {
       <p className="renderer-lead">The renderer is the page that displays your graphics on air. Add its URL to OBS, vMix or any
         browser-based production tool; graphics you control in your current rundown appear on every renderer opened with your URL.</p>
       {authLoading ? <p className="status" role="status">Loading account...</p>
-        : !account ? <div className="empty-state"><strong>Sign in to get your renderer URL.</strong><a className="login-link" href="/api/auth/twitch">Sign in with Twitch</a></div>
+        : !account ? <div className="empty-state"><strong>Sign in to get your renderer URL.</strong><LoginButtons compact /></div>
           : <>
             <TokenCard account={account} kind="renderer" />
             <div className="renderer-info">

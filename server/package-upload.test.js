@@ -34,7 +34,7 @@ async function rejects(buffer, pattern, overrides) {
 test('a valid package is validated, unpacked and handed over with its checksum', async () => {
   const zip = makeZip(graphicFiles());
   const { result, saved, upload } = await ingest(zip);
-  assert.deepEqual(result, { saved: [{ versionId: 'lower-third' }], skipped: [] });
+  assert.deepEqual(result, { saved: [{ versionId: 'lower-third' }], skipped: [], warnings: [] });
   assert.equal(upload.fileCount, 3);
   assert.equal(upload.zipSize, zip.length);
   assert.deepEqual(upload.files.sort(), ['graphic.mjs', 'lower-third.ograf.json', 'style.css']);
@@ -101,7 +101,7 @@ test('manifests are validated against the OGraf schema and must point at an exis
   await rejects(makeZip([{ name: 'graphic.mjs', data: 'x' }]), /No OGraf manifest/);
   await rejects(makeZip([{ name: 'a.ograf.json', data: '{nope' }, { name: 'graphic.mjs', data: 'x' }]), /a\.ograf\.json: not valid JSON/);
   await rejects(makeZip([{ name: 'a.ograf.json', data: JSON.stringify({ id: 'a', name: 'A', main: 'graphic.mjs' }) }, { name: 'graphic.mjs', data: 'x' }]),
-    /a\.ograf\.json: \(manifest\) must have required property 'supportsRealTime'/);
+    /a\.ograf\.json: manifest must have required property 'supportsRealTime'/);
   await rejects(makeZip([{ name: 'a.ograf.json', data: manifest('a', { main: 'missing.mjs' }) }]), /main file missing\.mjs is missing/);
   await rejects(makeZip([{ name: 'a.ograf.json', data: manifest('a', { main: 'style.css' }) }, { name: 'style.css', data: 'x' }]), /main must be a \.mjs or \.js file/);
   await rejects(makeZip([{ name: 'sub/a.ograf.json', data: manifest('a', { main: '../../outside.mjs' }) }, { name: 'graphic.mjs', data: 'x' }]), /main must be a \.mjs or \.js file inside the package/);
@@ -127,4 +127,13 @@ test('upload limits come from the environment with the documented defaults', () 
   assert.deepEqual([...strict.allowedExtensions], ['.json', '.mjs', '.png']);
   assert.equal(strict.maxFiles, 10);
   assert.equal(strict.maxZipBytes, 10 * 1024 * 1024);
+});
+
+test('a select without labels is accepted with a note; the stored manifest stays as uploaded', async () => {
+  const layout = { type: 'string', title: 'Layout', gddType: 'select', enum: ['proportional', 'distributed'] };
+  const { result, saved } = await ingest(makeZip([{ name: 'wheel.ograf.json', data: manifest('wheel', { schema: { type: 'object', properties: { layout } } }) },
+    { name: 'graphic.mjs', data: 'x' }]));
+  assert.equal(saved.length, 1);
+  assert.deepEqual(result.warnings, ['wheel.ograf.json: property "layout": gddType "select" without gddOptions.labels; the enum values are used as labels']);
+  assert.deepEqual(saved[0].manifest.schema.properties.layout, layout);
 });
