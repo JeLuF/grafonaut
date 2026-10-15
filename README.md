@@ -1,278 +1,34 @@
 # Grafonaut
 
-Grafonaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a public and a private catalog, rundowns with properties and group actions, a browser renderer for OBS/vMix, and an implementation of the OGraf Server API to control it all. Planned home: `grafonaut.mov`.
+Grafonaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a public and a private catalog, rundowns with properties and group actions, a browser renderer that can be easily used in OBS, vMix, or any other software that can use a web browser overlay, and an implementation of the OGraf Server API to control it all. Planned home: `grafonaut.mov`.
 
 **Naming:** *Grafonaut* is this application. *OGraf* is the EBU specification it implements (graphics packages with `*.ograf.json` manifests, the OGraf Server API under `/ograf/v1`). Code and documentation keep the OGraf name wherever they refer to the specification, e.g. "OGraf graphic", "OGraf Server API" or `ograf-api.js`.
 
-## Status of the work packages
+## Features
 
-Work packages as defined in `ograf-platform-requirements.md`, section 13.
+- **Catalogs:** a public catalog of published graphics with search and detail pages, and a private catalog for each account's own uploads (`.ograf.zip`, checked before anything is stored).
+- **Rundowns:** several prepared events per account. Entries keep their own label and properties, edited in a dialog generated from the graphic's schema (colour pickers, media file choosers, SPX file lists).
+- **Group actions:** several play, stop, update and custom-action steps, with pauses, triggered with one click.
+- **Media library:** images and other files for graphic properties, with hotlink protection.
+- **Renderer:** one browser page per account for OBS/vMix, with every graphic in its own sandboxed frame.
+- **OGraf Server API** per account, with interactive documentation at `/api-docs/`, for controllers such as Bitfocus Companion.
+- Sign-in with Twitch or YouTube (Google).
 
-**Done**
+## Documentation
 
-- **BE-2** Sign-in with Twitch, and with Google (shown as "YouTube login"); separate accounts per provider, OAuth `state` checks, PKCE for Google; new accounts get the User role.
-- **BE-3** Renderer and API tokens: 32 random bytes, stored AES-256-GCM encrypted, shown on demand, replaceable (the old URL stops working).
-- **BE-5** Storage of the original archive and the unpacked files (once per archive, shared by all its graphics), SHA-256 checksums, UUID-based paths.
-- **BE-7** OGraf Server API per account under `/<api-token>/ograf/v1`: server info, graphics, renderers, render targets, load/play/stop/update/custom actions, clear; plus the `x-actions` extension for group actions.
-- **BE-8** WebSocket protocol between server and renderer pages: any number of connections per account kept in sync, on-air state stored in the database, reconnects catch up.
-- **RN-1** Renderer page with CSP, own hosts for the renderer page (`RENDERER_HOST`) and for graphics (`GRAPHICS_HOST`), one sandboxed iframe per graphic, stacked in rundown order.
-- **FE-1** Public catalog: search, pagination, detail pages, adding graphics to the current rundown.
-- **FE-2** Rundown view: entries with labels, enable/disable, reordering, duplicating, properties, play/stop/update and live status.
-- **FE-4** Private uploads wired to the ingestion pipeline and storage.
-- **FE-5** Property dialog generated from the manifest schema, including GDD `order`, `label` and select labels, colour pickers (`color-rrggbb`, `color-rrggbbaa` with opacity; the last 8 colours picked in the browser are offered as quick choices), file choosers with the media library (`file-path`), SPX file lists and instructions.
-- **FE-7** Group actions per rundown: steps across entries, mixed action types and sleep steps, one click to run.
-- **FE-9** Renderer page: renderer and API URLs, copy, new token.
-- **OPS-1** Docker Compose with the app (including the renderer), MySQL, persistent storage and a separate seed volume.
-- **OPS-4** Example nginx configuration for the main, renderer and graphics hosts (see [Proxy and sessions](#proxy-and-sessions)).
+| Document | Contents |
+| --- | --- |
+| [INSTALLATION.md](INSTALLATION.md) | Running with Docker, configuration reference, sign-in providers, reverse proxy, renderer and graphics hosts, security settings |
+| [USER-GUIDE.md](USER-GUIDE.md) | Catalogs, uploads, media library, rundowns, properties, group actions, renderer and tokens |
+| [API.md](API.md) | The OGraf Server API (and its `x-actions` extension) and the app's own API |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Local development, tests, seed packages |
+| [STATUS.md](STATUS.md) | Status of the work packages from `ograf-platform-requirements.md` |
 
-Beyond the work packages: rundowns (several prepared events per account), the private catalog, a media library for image and file properties with hotlink protection, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafonaut website design.
-
-**Partly done**
-
-- **BE-1** Schema for accounts, packages, versions, tokens, rundowns, entries and render state. Missing: the reviewer note; `review_state` and the approver flag exist but are not used yet.
-- **BE-4** Upload checks (size, file count, real unpacked size, extensions, unsafe paths, symlinks, OGraf schema, `main` file, time limit). Missing: blocking re-uploads of rejected files (needs BE-9), removing scripts from SVGs (they are only served in a CSP sandbox), extraction in an isolated worker.
-- **BE-6** Startup import of seed packages. Missing: seeds do not go through the hardened upload checks yet.
-- **FE-3** Upload and list of private graphics. Missing: deleting packages, version history.
-- **FE-6** Play/stop/update/custom actions through the public API, renderer connection count, on-air status. Missing: explicit step controls (previous step, go to step) for multi-step graphics; Play advances to the next step.
-- **OPS-2** Hosts, upload limits and keys are configured by environment variables. Missing: a configurable CSP policy.
-- **XC-1** Hardening and tests for uploads, tokens, sandboxing and OAuth. Missing: a formal security review.
-- **XC-3** Deployment and operations notes in this README, interactive API documentation. Missing: a guide for graphic authors.
-
-**Not started**
-
-- **BE-9** Publication workflow (draft, pending, published, rejected; approver actions, reviewer notes, in-app notifications).
-- **BE-10** Roles and permissions (User vs. Approver).
-- **FE-8** Publication management view.
-- **OPS-3** CI/CD pipeline.
-- **OPS-5** Access logs with redacted tokens, error tracking, monitoring.
-- **XC-2** Moderation: reporting/flagging, terms of service.
-
-## Run with Docker
-
-1. Copy `.env.example` to `.env` and set `SESSION_SECRET` (at least 32 characters, e.g. `openssl rand -base64 48`; the app refuses to start in production without it), `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
-2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafonaut.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
-3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/`.
-4. Start the stack:
+## Quick start
 
 ```sh
+cp .env.example .env    # set SESSION_SECRET, TOKEN_ENCRYPTION_KEY and a sign-in provider first
 docker compose up --build
 ```
 
-Open the public HTTPS hostname served by your reverse proxy. The app exposes `GET /health` and `GET /api/catalog`; these also work on `http://localhost:3000`, but production sign-in requires HTTPS.
-
-### Sign-in
-
-Users sign in with Twitch or with Google, labelled "Login with YouTube". Each login has its own account: signing in with Twitch and with Google gives two separate accounts (no linking). The YouTube button only appears when `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` are set; Twitch likewise needs its three `TWITCH_*` values.
-
-For Google, create a project in the Google Cloud console (free, no billing needed), configure the OAuth consent screen (external, scopes `openid` and `userinfo.profile`, privacy policy URL) and an OAuth client of type *Web application* with the authorised redirect URI `https://<your host>/api/auth/google/callback`.
-
-Every login attempt carries a random `state` that is kept in the signed session cookie and checked on the callback (valid for 10 minutes, usable once), which protects against login CSRF; the Google login additionally uses PKCE (S256). Cancelled or failed logins show an explanation page.
-
-### Proxy and sessions
-
-The container runs in production mode and uses `Secure`, `HttpOnly`, `SameSite=Lax` signed session cookies. When nginx terminates HTTPS and forwards HTTP to the container, Express must trust the proxy to recognize the original connection as HTTPS. `TRUST_PROXY` defaults to loopback and private-network addresses; restrict it to your proxy's IP address or CIDR ranges in deployments where other clients can reach the backend. Keep the backend reachable only through trusted infrastructure, and configure nginx to overwrite forwarded headers:
-
-```nginx
-location / {
-	proxy_pass http://127.0.0.1:3000;
-	# Uploads: nginx allows 1 MB by default. At least UPLOAD_MAX_ZIP_BYTES and MEDIA_MAX_BYTES (20 MB).
-	client_max_body_size 25m;
-	proxy_set_header Host $host;
-	proxy_set_header X-Forwarded-Proto $scheme;
-	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-	# Renderer pages keep a WebSocket open to /render/<token>/ws
-	proxy_http_version 1.1;
-	proxy_set_header Upgrade $http_upgrade;
-	proxy_set_header Connection $connection_upgrade;
-	proxy_read_timeout 1h;
-}
-```
-
-`$connection_upgrade` needs this map once in the `http` block:
-
-```nginx
-map $http_upgrade $connection_upgrade {
-	default upgrade;
-	''      close;
-}
-```
-
-This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie. Keep `SESSION_SECRET` stable across restarts and identical across app replicas; changing it invalidates existing sessions.
-
-#### Renderer and graphics hosts
-
-Grafonaut uses up to three host names, all pointing to the same container (see [Renderer](#renderer)):
-
-| Host | Example | Serves | Setting |
-| --- | --- | --- | --- |
-| Main host | `grafonaut.example.com` | the app, its API and the OGraf Server API | `APP_HOST` |
-| Renderer host | `render.example.com` | the renderer page `/render/<token>/` and its WebSocket | `RENDERER_HOST` (optional) |
-| Graphics host | `graphics.example.com` | graphic frames `/render/frame`, package files `/render/assets/…`, media files `/render/media/…` | `GRAPHICS_HOST` |
-
-Set all three in `.env`. The app answers `404` when a path is requested on the wrong host, and the graphics host serves nothing but graphics paths. `APP_HOST` is also used by the [referer check](#media-library).
-
-The renderer and graphics hosts only proxy `/render/` and redirect everything else to the main host:
-
-```nginx
-server {
-	listen 443 ssl;
-	server_name render.example.com;
-	# ssl_certificate / ssl_certificate_key …
-
-	# Renderer page and its WebSocket
-	location /render/ {
-		proxy_pass http://127.0.0.1:3000;          # no trailing slash, see below
-		proxy_set_header Host $host;
-		proxy_set_header X-Forwarded-Proto $scheme;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_http_version 1.1;
-		proxy_set_header Upgrade $http_upgrade;
-		proxy_set_header Connection $connection_upgrade;
-		proxy_read_timeout 1h;
-	}
-
-	# Everything else belongs to the app
-	location / {
-		return 301 https://grafonaut.example.com$request_uri;
-	}
-}
-
-server {
-	listen 443 ssl;
-	server_name graphics.example.com;
-	# ssl_certificate / ssl_certificate_key …
-
-	# Graphic frames, package files and media files
-	location /render/ {
-		proxy_pass http://127.0.0.1:3000;          # no trailing slash, see below
-		proxy_set_header Host $host;
-		proxy_set_header X-Forwarded-Proto $scheme;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-	}
-
-	location / {
-		return 301 https://grafonaut.example.com$request_uri;
-	}
-}
-```
-
-`proxy_pass` must not end with a slash here: inside `location /render/`, a trailing slash would make nginx replace `/render/` with `/`, and every renderer request would reach the wrong path.
-
-**Why a graphics host.** Graphics are uploaded code. Graphics that script their own HTML pages (for example SPX templates) must share an origin with their package files, so their frames cannot run in an opaque origin. On the graphics host, that origin belongs to graphics alone: package code can neither use the signed-in user's session (main host) nor read the renderer page, whose URL carries the renderer token (renderer host). The renderer page talks to the graphic frames with `postMessage` only. Without `GRAPHICS_HOST`, every graphic runs in an opaque origin; such graphics then cannot fill their content. Graphics on the same renderer still share the graphics origin with each other.
-
-As a second line of defence, add this to the main host's `server` block (nothing on the main host needs `/render/` once `RENDERER_HOST` and `GRAPHICS_HOST` are set; the renderer URL and the preview in the rundown view point to the renderer host):
-
-```nginx
-	location /render/ {
-		return 404;
-	}
-```
-
-The session cookie is bound to the main host, so it is never sent to the renderer or graphics host. Changing API requests must come from the main host's own origin (`Origin`/`Sec-Fetch-Site` check), so pages on the other hosts cannot use a signed-in user's session even though they are same-site.
-
-### Private catalog
-
-Signed-in users upload `.ograf.zip` packages on the Private catalog page. The graphics are only visible to their owner and can be added to rundowns like catalog graphics. Uploading a graphic whose manifest `id` already exists in the account adds a new version of that package; rundown entries keep the version they were added with. Re-uploading an identical file is skipped.
-
-Every upload is checked before anything is saved (requirements §6):
-
-- At most `UPLOAD_MAX_ZIP_BYTES` (10 MB), `UPLOAD_MAX_FILES` (5,000) entries and `UPLOAD_MAX_UNCOMPRESSED_BYTES` (50 MB) unpacked. The unpacked size is counted while extracting, so forged size headers cannot get around it; extraction also has a time limit.
-- No absolute paths, `..` segments, backslashes or symbolic links.
-- Only allowed file types: by default `.json .mjs .js .jpg .jpeg .png .apng .webp .gif .svg .mp3 .mp4` (the requirements list) plus `.css .html .htm .ttf .otf .woff .woff2 .md .txt`, which real graphics need (stylesheets, HTML templates, fonts, read-me files). Set `UPLOAD_ALLOWED_EXTENSIONS` to change the list, e.g. to the strict requirements list.
-- Every `*.ograf.json` manifest must validate against the official OGraf v1 JSON Schema (vendored in `server/schemas/ograf`), and its `main` must be an existing `.mjs`/`.js` file inside the package. The check is lenient where a detail does not affect playback: a property with `"gddType": "select"` but no `gddOptions.labels` uses its `enum` values as labels; the upload succeeds with a note, and the manifest is stored as uploaded. Error messages name the property (e.g. `property "layout" must have required property 'gddOptions'`) and leave out the schema's generic "must match then schema" lines.
-
-Package files are served to graphic frames from `/render/assets/<version>/…`; HTML and SVG only ever in a CSP sandbox. Private versions are addressed by their random version UUID, which only the owner sees.
-
-### Media library
-
-Signed-in users manage their own files on the Media page (sidebar): upload (several at once), rename, replace and delete. Uploads use the same allowed file types as packages (`UPLOAD_ALLOWED_EXTENSIONS`) and are limited to `MEDIA_MAX_BYTES` (20 MB) each. Files are stored under `storage/media/<account>/` and served to graphics from `/render/media/<uuid>.<ext>` on the graphics host (else the renderer host), with the same CSP sandbox as package files.
-
-Graphic properties with a `gddType` of `file-path` (e.g. `file-path/image-path`) get a file chooser in the property dialog and in custom-action dialogs: keep the graphic's default, pick a file from the media library or upload a new one. Choices are limited to the property's `gddOptions.extensions` (image types for `image-path`). The property gets the file's absolute URL. Replacing a file keeps its URL, so every graphic that uses it shows the new content; the media page shows how many rundown entries use a file and warns before deleting it.
-
-Hotlink protection: package files (`/render/assets/…`) and media files (`/render/media/…`) are not served when the request's `Referer` names another site than the renderer or graphics host, a host in `APP_HOST` or the requested host itself; such requests get `403`. Media files are always served to requests without `Referer` (direct downloads). Renderer pages and graphic frames send only their origin as referrer (`Referrer-Policy: strict-origin`), never the token path. `ASSET_REFERER_CHECK` sets the mode for package files (for media files, only `off` applies):
-
-- `strict` (default with `GRAPHICS_HOST`): requests without `Referer` are refused as well.
-- `lenient` (default without `GRAPHICS_HOST`): requests without `Referer` are served, foreign referers are refused. Without a graphics host, graphics run in an opaque origin, and browsers send no `Referer` for their images and nested pages.
-- `off`: no check.
-
-The check stops other web pages from embedding the files; it is not access control, since anyone can send any `Referer` with a direct request.
-
-### Rundowns
-
-Graphics are prepared in rundowns, so several events can be prepared from one account; clicking a rundown in the sidebar opens it (and makes it current). New accounts start with a "Default rundown". The sidebar lists the rundowns; users create, rename, switch and delete them there. Deleting a rundown removes its graphics; the current rundown cannot be deleted (switch to another one first), so every account keeps at least one. The current rundown is stored per account (not per browser): added graphics go to it, and the rundown view, the renderer and the OGraf Server API only work with it. Switching takes the previous rundown's graphics off air; if any are loaded, the app asks for confirmation first.
-
-### Renderer
-
-Every account has one renderer: the page at `/render/<renderer-token>/`, used as an OBS/vMix browser source. Any number of renderer pages may be open for an account (OBS, a test tab, the preview in the rundown view); they all show the same graphics. Each page holds a WebSocket to `/render/<renderer-token>/ws`, authenticated by the token in its path, and receives the on-air state and the actions from it. The state is stored in the database, so renderers that connect later or reconnect after a restart show the same graphics.
-
-Each graphic runs in its own sandboxed iframe. To be forgiving with graphics whose `load()` resolves before the pages they create in nested frames have loaded (e.g. SPX-style templates that define `play()` there), the renderer waits up to 5 seconds for such frames before it reports the graphic as loaded, so an action sent right after loading finds them ready. The frames are stacked in rundown order: the first entry is in front. Frames, package files (`/render/assets/<version>/...`) and media files come from the graphics host; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin.
-
-**Use separate renderer and graphics hosts.** Set `RENDERER_HOST` and `GRAPHICS_HOST` to host names that differ from the main page and from each other (e.g. `render.example.com` and `graphics.example.com` next to `grafonaut.example.com`, optionally with a port, or full origins such as `https://graphics.example.com`) and route them to the same container (see [Renderer and graphics hosts](#renderer-and-graphics-hosts)). Only with `GRAPHICS_HOST` do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When it is empty, every graphic runs in an opaque origin to keep package code away from the app's session and the renderer page; such graphics then cannot fill their content. When `RENDERER_HOST` is empty, the renderer page uses the main page's host.
-
-The Renderer page (sidebar link) shows the renderer URL and the API URL and lets users create new tokens.
-
-### OGraf Server API
-
-Grafonaut implements the OGraf Server API for every account. The account's API lives at `https://<main host>/<api-token>/ograf/v1/`. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors.
-
-- The renderer ID is `main`; its RenderTargets are the entries of the current rundown, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
-- Implemented: `GET /`, `GET /graphics`, `GET /graphics/{id}`, `GET /renderers`, `GET /renderers/main`, `GET /renderers/main/target`, `POST …/graphicInstance/load`, `…/playAction`, `…/stopAction`, `…/updateAction`, `…/customActions/{id}` and `PUT …/graphicInstance/clear`. `graphicId` is the package version ID. Other endpoints answer `501 Not Implemented`.
-- Instances follow the OGraf step model: a graphic with `stepCount: 0` is played once and animates out by itself, so after a successful play it is *ended* (shown as "Played"), not on air. A graphic that reported a step before and returns no `currentStep` from a play has reached its end as well. Graphics that never report a step stay on air until stopped. Ended graphics are not replayed when a renderer reconnects.
-- Vendor extension: `GET /x-actions` lists the group actions of the current rundown with their steps; `POST /x-actions/{id}` runs one and answers when its steps are done, listing failed steps (`409` while it is already running, `503` without a connected renderer). Stream Deck/Companion buttons can trigger a whole group with one call.
-- Custom actions (`…/graphicInstance/customActions/{id}`) must be declared in the graphic's manifest (`customActions`), otherwise `404`. If the action declares a `schema`, the payload is validated against it (`400` with `errors`).
-- Actions answer `503` when no renderer page is connected, `550` when the graphic's method threw, and otherwise the first renderer's result.
-- Interactive documentation (Swagger UI) is served at `/api-docs/` and linked from the Renderer page. Its OpenAPI document (`/api-docs/openapi.json`) is built from `server/ograf-openapi.js`; a test checks it against the routes the API registers. For signed-in users the document's server is their own API URL, so "Try it out" works directly.
-- The Play, Stop and Update buttons in the rundown view use this API: Play loads the graphic with the saved properties (if not loaded, or if it has ended) and plays it, pressing it again while on air advances to the next step; Stop animates out and clears the instance; Update sends the saved properties to the loaded graphic.
-
-### Tokens
-
-The renderer and API URLs each contain a token: 32 random bytes created with the account, permanent so the URLs can stay in browser sources and controllers. Users can create a new renderer or API token on the Renderer page if a URL leaked; every URL with the old token stops working and open renderer pages are disconnected. Tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones.
-
-## Local development
-
-Requires Node.js 22 and a reachable MySQL 8 instance. Set the database variables from `.env.example`, install dependencies, and run:
-
-```sh
-npm install
-npm run dev
-```
-
-The React development server runs on `http://localhost:5173`; API requests are proxied to Node on port 3000. `npm run build` creates the production frontend bundle.
-
-For local development without HTTPS, leave `NODE_ENV` unset (or set it to `development`) and register `http://localhost:3000/api/auth/twitch/callback` as the Twitch callback URL. Development sessions do not require secure cookies.
-
-## Seed package expectations
-
-A seed archive can contain multiple animation manifests, either alongside each other or in nested folders. Each JSON manifest with `main` (or `mainFile`) is imported as a separate animation; entry points are resolved relative to the manifest's folder. Other JSON assets without an entry point are ignored. The importer stores the original archive and unpacks it once under `storage/archives/<archive-uuid>/`; every animation from that archive references the same files (uploads to the private catalog are stored the same way). Repeat scans skip animations already imported, and the reported import count is the number of new animations. Seed packages are marked published for the MVP catalog.
-
-The ingestion pipeline is intentionally not part of this MVP. Upload validation, moderation, API tokens, and rendering remain follow-up work packages.
-
-Catalog previews use the first available image in the manifest's `thumbnails` array, resolving each `file` relative to the manifest. PNG, JPEG, WebP, GIF, APNG, and SVG are supported, including animated images. Missing or unusable thumbnails retain the initials preview. Thumbnails are addressed by graphic version (`/api/catalog/<version>/thumbnail`, also in rundowns) and served for published versions, or private versions to their owner, of enabled packages. Startup automatically adds manifest-location storage to existing databases; previously imported packages do not need to be reimported.
-
-## Rundown view
-
-Click a rundown in the sidebar after signing in. Each addition from the public or private catalog creates a new entry in the current rundown, pinned to that exact version, with an independent label, enabled flag and property state (starting with the manifest defaults). Disabled packages stay listed but cannot be enabled or controlled.
-
-A successful addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show details**, **Show manifest** for its pinned version, **Duplicate** (a copy with the same version, properties and enabled state, labelled "… (copy)", placed directly below) and **Delete**, with confirmation. Deletion removes only that entry; the package and other copies remain unchanged.
-
-Reorder entries with the drag handle or the up/down arrows. The handle also supports keyboard sorting: focus it, press Space to pick up, use the arrow keys to move, and press Space to drop or Escape to cancel. The order is saved per rundown, survives reloads and defines the stacking in the renderer (first entry in front); failed saves leave the displayed order unchanged.
-
-The property dialog is generated from the selected version's JSON `schema`. Fields follow the GDD `order` attribute (lower values first; fields without an order follow in manifest order). Fields marked `hidden` remain editable. Saving validates the complete state in both the form and the backend; cancelling changes nothing. Property edits only save configuration; press Update to send them to a graphic on air.
-
-Authenticated endpoints for the current rundown's entries (the paths keep their original name):
-
-- `GET /api/my-graphics`: list the current rundown's entries.
-- `POST /api/my-graphics`: add a published or account-owned enabled version to the current rundown with `{ "versionId": "<uuid>" }`; returns the new `entryId` and permits duplicate additions.
-- `PUT /api/my-graphics/order`: atomically save the complete ordered list with `{ "entryIds": ["<entry-id>", "<entry-id>"] }`. Duplicate or invalid IDs are rejected; missing, foreign, or stale entries return a conflict and require refreshing the list.
-- `PATCH /api/my-graphics/:entryId`: save `label` (nullable, at most 100 characters), `enabled` (boolean), and/or `schemaData` (validated against the pinned version's schema). The package version cannot be changed here.
-- `POST /api/my-graphics/:entryId/duplicate`: copy an entry of the current rundown directly below the original; returns the new `entryId`.
-- `DELETE /api/my-graphics/:entryId`: delete one entry owned by the current account.
-- `GET /api/my-graphics/:entryId/manifest`: return the pinned version's original manifest, only to the entry owner.
-
-**Group actions (FE-7).** Each rundown has a list of group actions shown above its entries: a run button and a pencil (edit) per group, plus *New group action*. A group has a name and up to 50 steps: Play, Stop, Update or a custom action (with a payload form when the action has a schema) on an entry of the rundown, or Sleep (seconds). Sleep steps split a group into phases that run one after the other; within a phase all steps start together, so e.g. "stop lower third, play coming next" happen at the same moment, and only steps on the same entry keep their order. A failing step does not stop the others; the result is shown as a toast. Groups run on the server and are triggered through Grafonaut's extension of the OGraf Server API, `POST /x-actions/{id}` (the run button uses it too); the sleep steps of a group may add up to at most 10 minutes. Groups are stored per rundown (`GET/POST /api/group-actions`, `PATCH`/`DELETE /api/group-actions/:id`); steps must reference entries of the current rundown.
-
-Rundowns themselves are managed with `GET/POST /api/rundowns`, `PATCH`/`DELETE /api/rundowns/:id` and `PUT /api/rundowns/current`; private uploads with `GET`/`POST /api/private/packages`.
-
-Play, stop, update and custom actions use the **public OGraf Server API** (see above), not a separate internal endpoint. Entries whose graphic declares custom actions get a ⚡ menu listing them; actions with a payload schema open a form generated from it, the others run directly. Like Play, a custom action first loads the graphic with the saved properties when it is not loaded or has ended (the OGraf spec allows any action once `load()` has resolved, so graphics can offer alternative ways to start). Update sends the entire saved property state. Each entry shows whether it is on air, loaded or ready, and the heading shows how many renderers are connected.
-
-Run `npm test` for persistence, authenticated API, action-client, and React interaction tests. The UI tests compile JSX with Babel and use a DOM harness, so they do not require MySQL or native esbuild subprocesses.
+See [INSTALLATION.md](INSTALLATION.md) for the settings, the reverse proxy and the host names a production setup needs.
