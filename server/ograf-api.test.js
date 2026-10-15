@@ -66,9 +66,9 @@ const load = (entryId = '1', graphicId = 'v1', data = { name: 'Host' }) =>
 test('the entry point returns server information and rejects unknown tokens', async () => {
   const info = await call('GET', '/');
   assert.equal(info.status, 200);
-  assert.equal(info.body.name, 'Grafanaut');
-  assert.equal(info.body.description, 'Grafanaut OGraf Server API for Host');
-  assert.deepEqual(info.body.author, { name: 'Grafanaut' });
+  assert.equal(info.body.name, 'Grafonaut');
+  assert.equal(info.body.description, 'Grafonaut OGraf Server API for Host');
+  assert.deepEqual(info.body.author, { name: 'Grafonaut' });
   assert.equal(info.headers.get('access-control-allow-origin'), '*');
   const unknown = await fetch(`${base.replace(token, 'B'.repeat(43))}/`);
   assert.equal(unknown.status, 401);

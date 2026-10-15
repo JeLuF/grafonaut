@@ -1,4 +1,4 @@
-/* Grafanaut theme: deep space background, violet-to-blue primary, cyan accents. */
+/* Grafonaut theme: deep space background, violet-to-blue primary, cyan accents. */
 :root {
     --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --font-heading: 'Outfit', 'Inter', system-ui, sans-serif;
@@ -2111,7 +2111,7 @@ footer a {
 }
 
 /* ===================================================================================================
-   Grafanaut design layer: typography, controls, cards, app chrome and the public website (landing page).
+   Grafonaut design layer: typography, controls, cards, app chrome and the public website (landing page).
    Later rules override the base styles above.
    =================================================================================================== */
 

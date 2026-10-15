@@ -48,7 +48,7 @@ test('production refuses missing, short and published session secrets', () => {
 
 const run = (middleware, request) => {
   let result = 'next';
-  middleware({ method: 'POST', host: 'grafanaut.example.com', path: '/', get: (name) => request.headers?.[name], ...request },
+  middleware({ method: 'POST', host: 'grafonaut.example.com', path: '/', get: (name) => request.headers?.[name], ...request },
     { sendStatus: (code) => { result = code; }, status: (code) => ({ json: () => { result = code; } }) }, () => {});
   return result;
 };
@@ -56,7 +56,7 @@ const run = (middleware, request) => {
 test('changing API requests must come from the app\'s own origin', () => {
   assert.equal(run(sameOriginWrites, { method: 'GET', headers: { 'sec-fetch-site': 'same-site' } }), 'next');
   assert.equal(run(sameOriginWrites, { headers: { 'sec-fetch-site': 'same-origin' } }), 'next');
-  assert.equal(run(sameOriginWrites, { headers: { origin: 'https://grafanaut.example.com' } }), 'next');
+  assert.equal(run(sameOriginWrites, { headers: { origin: 'https://grafonaut.example.com' } }), 'next');
   assert.equal(run(sameOriginWrites, { headers: {} }), 'next');
   assert.equal(run(sameOriginWrites, { headers: { 'sec-fetch-site': 'same-site', origin: 'https://render.example.com' } }), 403);
   assert.equal(run(sameOriginWrites, { headers: { origin: 'https://render.example.com' } }), 403);
@@ -65,41 +65,41 @@ test('changing API requests must come from the app\'s own origin', () => {
 });
 
 test('graphics files are only served on the graphics host, which serves nothing else', () => {
-  const hosts = createHosts({ appHosts: ['grafanaut.example.com'], rendererHost: { host: 'render.example.com' }, graphicsHost: { host: 'graphics.example.com' } });
+  const hosts = createHosts({ appHosts: ['grafonaut.example.com'], rendererHost: { host: 'render.example.com' }, graphicsHost: { host: 'graphics.example.com' } });
   assert.equal(hosts.isolated, true);
-  assert.deepEqual(hosts.hosts, ['grafanaut.example.com', 'render.example.com', 'graphics.example.com']);
+  assert.deepEqual(hosts.hosts, ['grafonaut.example.com', 'render.example.com', 'graphics.example.com']);
   const answer = (host, path) => run(hosts.routing, { method: 'GET', host, path });
   for (const path of ['/render/frame', '/render/assets/v/index.html', '/render/media/x.png']) {
     assert.equal(answer('graphics.example.com', path), 'next', path);
-    assert.equal(answer('grafanaut.example.com', path), 404, path);
+    assert.equal(answer('grafonaut.example.com', path), 404, path);
     assert.equal(answer('render.example.com', path), 404, path);
   }
   assert.equal(answer('graphics.example.com', '/health'), 'next');
   for (const path of ['/', '/api/auth/me', '/render/token/', '/AAAA/ograf/v1/']) assert.equal(answer('graphics.example.com', path), 404, path);
   assert.equal(answer('render.example.com', '/render/token/'), 'next');
-  assert.equal(answer('grafanaut.example.com', '/render/token/'), 404);
-  assert.equal(answer('grafanaut.example.com', '/api/auth/me'), 'next');
+  assert.equal(answer('grafonaut.example.com', '/render/token/'), 404);
+  assert.equal(answer('grafonaut.example.com', '/api/auth/me'), 'next');
   const upgrade = (host, url) => hosts.allowsUpgrade({ headers: { host }, url });
   assert.equal(upgrade('render.example.com', '/render/token/ws'), true);
   assert.equal(upgrade('graphics.example.com', '/render/token/ws'), false);
-  assert.equal(upgrade('grafanaut.example.com', '/render/token/ws'), false);
+  assert.equal(upgrade('grafonaut.example.com', '/render/token/ws'), false);
   assert.equal(hosts.graphicsOrigin({ protocol: 'https', host: 'render.example.com' }), 'https://graphics.example.com');
 });
 
 test('without a graphics host, graphics run opaque and are served on the renderer (or any) host', () => {
   const shared = createHosts({});
   assert.equal(shared.isolated, false);
-  assert.equal(run(shared.routing, { method: 'GET', host: 'grafanaut.example.com', path: '/render/token/' }), 'next');
+  assert.equal(run(shared.routing, { method: 'GET', host: 'grafonaut.example.com', path: '/render/token/' }), 'next');
   const renderer = createHosts({ rendererHost: { origin: 'https://render.example.com:8443' } });
-  assert.equal(renderer.graphicsOrigin({ protocol: 'https', host: 'grafanaut.example.com' }), 'https://render.example.com:8443');
-  assert.equal(run(renderer.routing, { method: 'GET', host: 'grafanaut.example.com', path: '/render/token/' }), 404);
+  assert.equal(renderer.graphicsOrigin({ protocol: 'https', host: 'grafonaut.example.com' }), 'https://render.example.com:8443');
+  assert.equal(run(renderer.routing, { method: 'GET', host: 'grafonaut.example.com', path: '/render/token/' }), 404);
   assert.equal(run(renderer.routing, { method: 'GET', host: 'render.example.com:8443', path: '/render/token/' }), 'next');
-  assert.equal(run(renderer.routing, { method: 'GET', host: 'grafanaut.example.com', path: '/render/assets/v/a.png' }), 'next');
+  assert.equal(run(renderer.routing, { method: 'GET', host: 'grafonaut.example.com', path: '/render/assets/v/a.png' }), 'next');
 });
 
 test('the graphics host must be a host of its own', () => {
   assert.throws(() => createHosts({ rendererHost: { host: 'render.example.com' }, graphicsHost: { origin: 'https://render.example.com' } }), /GRAPHICS_HOST/);
-  assert.throws(() => createHosts({ appHosts: ['grafanaut.example.com'], graphicsHost: { host: 'grafanaut.example.com' } }), /GRAPHICS_HOST/);
+  assert.throws(() => createHosts({ appHosts: ['grafonaut.example.com'], graphicsHost: { host: 'grafonaut.example.com' } }), /GRAPHICS_HOST/);
   assert.throws(() => parseHostSetting('graphics.example.com/x', 'GRAPHICS_HOST'), /Invalid GRAPHICS_HOST/);
 });
 

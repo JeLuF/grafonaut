@@ -31,7 +31,8 @@ export async function initializeDatabase() {
     try {
       await pool.query(statement);
     } catch (error) {
-      if (error.code !== 'ER_DUP_KEYNAME' && error.code !== 'ER_FK_DUP_NAME' && error.code !== 'ER_DUP_FIELDNAME') throw error;
+      // The schema runs at every start: its ALTER TABLE foreign keys (circular references) already exist after the first.
+      if (error.code !== 'ER_DUP_KEYNAME' && error.code !== 'ER_FK_DUP_NAME') throw error;
     }
   }
 }
@@ -151,15 +152,14 @@ export async function switchRundown(accountId, rundownId, { force = false } = {}
 }
 
 // Each token kind has its own table, so a token only ever unlocks the purpose it was issued for.
-// (account_tokens predates the API token and holds renderer tokens.)
-const tokenTables = { renderer: 'account_tokens', api: 'api_tokens' };
+const tokenTables = { renderer: 'renderer_tokens', api: 'api_tokens' };
 export const tokenKinds = Object.keys(tokenTables);
 function tokenTable(kind) {
   if (!Object.hasOwn(tokenTables, kind)) throw new Error(`Unknown token kind: ${kind}`);
   return tokenTables[kind];
 }
 
-// Gives the account a random token unless it already has one (new accounts, and accounts created before the token kind existed).
+// Gives the account a random token unless it already has one; runs at every sign-in, so new accounts always get theirs.
 export async function ensureAccountToken(accountId, kind = 'renderer') {
   const token = generateToken();
   await pool.query(`INSERT IGNORE INTO ${tokenTable(kind)} (account_id, token_hash, token_ciphertext) VALUES (?, ?, ?)`,

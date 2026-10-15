@@ -50,10 +50,10 @@ export function configuredProviders(env = process.env) {
 }
 
 const failurePage = (response, status, message) => response.status(status).type('html').set('Cache-Control', 'no-store')
-  .send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign-in failed · Grafanaut</title></head>
+  .send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign-in failed · Grafonaut</title></head>
 <body style="font:16px system-ui,sans-serif;background:#070b1e;color:#eef1ff;display:grid;place-items:center;min-height:100vh;margin:0">
 <main style="max-width:480px;text-align:center"><h1 style="font-size:24px">Sign-in failed</h1><p>${message}</p>
-<p><a href="/" style="color:#4cc9ff">Back to Grafanaut</a></p></main></body></html>`);
+<p><a href="/" style="color:#4cc9ff">Back to Grafonaut</a></p></main></body></html>`);
 
 export function createAuth({ upsertAccount, env = process.env, fetchImpl = fetch, now = () => Date.now() }) {
   const router = express.Router();

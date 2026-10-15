@@ -1,8 +1,8 @@
-# Grafanaut
+# Grafonaut
 
-Grafanaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a public and a private catalog, rundowns with properties and group actions, a browser renderer for OBS/vMix, and an implementation of the OGraf Server API to control it all. Planned home: `grafanaut.mov`.
+Grafonaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a public and a private catalog, rundowns with properties and group actions, a browser renderer for OBS/vMix, and an implementation of the OGraf Server API to control it all. Planned home: `grafonaut.mov`.
 
-**Naming:** *Grafanaut* is this application. *OGraf* is the EBU specification it implements (graphics packages with `*.ograf.json` manifests, the OGraf Server API under `/ograf/v1`). Code and documentation keep the OGraf name wherever they refer to the specification, e.g. "OGraf graphic", "OGraf Server API" or `ograf-api.js`.
+**Naming:** *Grafonaut* is this application. *OGraf* is the EBU specification it implements (graphics packages with `*.ograf.json` manifests, the OGraf Server API under `/ograf/v1`). Code and documentation keep the OGraf name wherever they refer to the specification, e.g. "OGraf graphic", "OGraf Server API" or `ograf-api.js`.
 
 ## Status of the work packages
 
@@ -25,7 +25,7 @@ Work packages as defined in `ograf-platform-requirements.md`, section 13.
 - **OPS-1** Docker Compose with the app (including the renderer), MySQL, persistent storage and a separate seed volume.
 - **OPS-4** Example nginx configuration for the main, renderer and graphics hosts (see [Proxy and sessions](#proxy-and-sessions)).
 
-Beyond the work packages: rundowns (several prepared events per account), the private catalog, a media library for image and file properties with hotlink protection, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafanaut website design.
+Beyond the work packages: rundowns (several prepared events per account), the private catalog, a media library for image and file properties with hotlink protection, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafonaut website design.
 
 **Partly done**
 
@@ -50,7 +50,7 @@ Beyond the work packages: rundowns (several prepared events per account), the pr
 ## Run with Docker
 
 1. Copy `.env.example` to `.env` and set `SESSION_SECRET` (at least 32 characters, e.g. `openssl rand -base64 48`; the app refuses to start in production without it), `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
-2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafanaut.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
+2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafonaut.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
 3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/`.
 4. Start the stack:
 
@@ -101,11 +101,11 @@ This location belongs in your existing HTTPS server configuration. Without `X-Fo
 
 #### Renderer and graphics hosts
 
-Grafanaut uses up to three host names, all pointing to the same container (see [Renderer](#renderer)):
+Grafonaut uses up to three host names, all pointing to the same container (see [Renderer](#renderer)):
 
 | Host | Example | Serves | Setting |
 | --- | --- | --- | --- |
-| Main host | `grafanaut.example.com` | the app, its API and the OGraf Server API | `APP_HOST` |
+| Main host | `grafonaut.example.com` | the app, its API and the OGraf Server API | `APP_HOST` |
 | Renderer host | `render.example.com` | the renderer page `/render/<token>/` and its WebSocket | `RENDERER_HOST` (optional) |
 | Graphics host | `graphics.example.com` | graphic frames `/render/frame`, package files `/render/assets/…`, media files `/render/media/…` | `GRAPHICS_HOST` |
 
@@ -133,7 +133,7 @@ server {
 
 	# Everything else belongs to the app
 	location / {
-		return 301 https://grafanaut.example.com$request_uri;
+		return 301 https://grafonaut.example.com$request_uri;
 	}
 }
 
@@ -151,7 +151,7 @@ server {
 	}
 
 	location / {
-		return 301 https://grafanaut.example.com$request_uri;
+		return 301 https://grafonaut.example.com$request_uri;
 	}
 }
 ```
@@ -207,13 +207,13 @@ Every account has one renderer: the page at `/render/<renderer-token>/`, used as
 
 Each graphic runs in its own sandboxed iframe. To be forgiving with graphics whose `load()` resolves before the pages they create in nested frames have loaded (e.g. SPX-style templates that define `play()` there), the renderer waits up to 5 seconds for such frames before it reports the graphic as loaded, so an action sent right after loading finds them ready. The frames are stacked in rundown order: the first entry is in front. Frames, package files (`/render/assets/<version>/...`) and media files come from the graphics host; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin.
 
-**Use separate renderer and graphics hosts.** Set `RENDERER_HOST` and `GRAPHICS_HOST` to host names that differ from the main page and from each other (e.g. `render.example.com` and `graphics.example.com` next to `grafanaut.example.com`, optionally with a port, or full origins such as `https://graphics.example.com`) and route them to the same container (see [Renderer and graphics hosts](#renderer-and-graphics-hosts)). Only with `GRAPHICS_HOST` do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When it is empty, every graphic runs in an opaque origin to keep package code away from the app's session and the renderer page; such graphics then cannot fill their content. When `RENDERER_HOST` is empty, the renderer page uses the main page's host.
+**Use separate renderer and graphics hosts.** Set `RENDERER_HOST` and `GRAPHICS_HOST` to host names that differ from the main page and from each other (e.g. `render.example.com` and `graphics.example.com` next to `grafonaut.example.com`, optionally with a port, or full origins such as `https://graphics.example.com`) and route them to the same container (see [Renderer and graphics hosts](#renderer-and-graphics-hosts)). Only with `GRAPHICS_HOST` do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When it is empty, every graphic runs in an opaque origin to keep package code away from the app's session and the renderer page; such graphics then cannot fill their content. When `RENDERER_HOST` is empty, the renderer page uses the main page's host.
 
 The Renderer page (sidebar link) shows the renderer URL and the API URL and lets users create new tokens.
 
 ### OGraf Server API
 
-Grafanaut implements the OGraf Server API for every account. The account's API lives at `https://<main host>/<api-token>/ograf/v1/`. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors.
+Grafonaut implements the OGraf Server API for every account. The account's API lives at `https://<main host>/<api-token>/ograf/v1/`. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors.
 
 - The renderer ID is `main`; its RenderTargets are the entries of the current rundown, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
 - Implemented: `GET /`, `GET /graphics`, `GET /graphics/{id}`, `GET /renderers`, `GET /renderers/main`, `GET /renderers/main/target`, `POST …/graphicInstance/load`, `…/playAction`, `…/stopAction`, `…/updateAction`, `…/customActions/{id}` and `PUT …/graphicInstance/clear`. `graphicId` is the package version ID. Other endpoints answer `501 Not Implemented`.
@@ -269,7 +269,7 @@ Authenticated endpoints for the current rundown's entries (the paths keep their 
 - `DELETE /api/my-graphics/:entryId`: delete one entry owned by the current account.
 - `GET /api/my-graphics/:entryId/manifest`: return the pinned version's original manifest, only to the entry owner.
 
-**Group actions (FE-7).** Each rundown has a list of group actions shown above its entries: a run button and a pencil (edit) per group, plus *New group action*. A group has a name and up to 50 steps: Play, Stop, Update or a custom action (with a payload form when the action has a schema) on an entry of the rundown, or Sleep (seconds). Sleep steps split a group into phases that run one after the other; within a phase all steps start together, so e.g. "stop lower third, play coming next" happen at the same moment, and only steps on the same entry keep their order. A failing step does not stop the others; the result is shown as a toast. Groups run on the server and are triggered through Grafanaut's extension of the OGraf Server API, `POST /x-actions/{id}` (the run button uses it too); the sleep steps of a group may add up to at most 10 minutes. Groups are stored per rundown (`GET/POST /api/group-actions`, `PATCH`/`DELETE /api/group-actions/:id`); steps must reference entries of the current rundown.
+**Group actions (FE-7).** Each rundown has a list of group actions shown above its entries: a run button and a pencil (edit) per group, plus *New group action*. A group has a name and up to 50 steps: Play, Stop, Update or a custom action (with a payload form when the action has a schema) on an entry of the rundown, or Sleep (seconds). Sleep steps split a group into phases that run one after the other; within a phase all steps start together, so e.g. "stop lower third, play coming next" happen at the same moment, and only steps on the same entry keep their order. A failing step does not stop the others; the result is shown as a toast. Groups run on the server and are triggered through Grafonaut's extension of the OGraf Server API, `POST /x-actions/{id}` (the run button uses it too); the sleep steps of a group may add up to at most 10 minutes. Groups are stored per rundown (`GET/POST /api/group-actions`, `PATCH`/`DELETE /api/group-actions/:id`); steps must reference entries of the current rundown.
 
 Rundowns themselves are managed with `GET/POST /api/rundowns`, `PATCH`/`DELETE /api/rundowns/:id` and `PUT /api/rundowns/current`; private uploads with `GET`/`POST /api/private/packages`.
 

@@ -157,5 +157,5 @@ for (const [directory, source] of seedDirectories) {
   try { console.log(`Seed scan ${directory}: imported ${await importSeedDirectory(directory, source)} package(s)`); }
   catch (error) { console.error(`Seed scan failed for ${directory}:`, error.message); }
 }
-const server = app.listen(port, () => console.log(`Grafanaut listening on http://localhost:${port}`));
+const server = app.listen(port, () => console.log(`Grafonaut listening on http://localhost:${port}`));
 renderHub.attachServer(server, findAccountByToken, { allowsUpgrade: hosts.allowsUpgrade });

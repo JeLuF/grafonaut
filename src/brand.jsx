@@ -1,7 +1,7 @@
 import React, { createContext, useContext } from 'react';
 import { BadgeCheck, CodeXml, Gamepad2, MonitorPlay, Twitch, UserRound, Youtube } from 'lucide-react';
 
-// Grafanaut brand elements. The logo is drawn in code until the final logo artwork exists.
+// Grafonaut brand elements. The logo is drawn in code until the final logo artwork exists.
 
 export function Logo({ size = 34 }) {
   return <svg className="logo-mark" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
@@ -18,7 +18,7 @@ export function Logo({ size = 34 }) {
 }
 
 export function Wordmark() {
-  return <span className="wordmark"><Logo /><span>Grafanaut</span></span>;
+  return <span className="wordmark"><Logo /><span>Grafonaut</span></span>;
 }
 
 // Which logins the server has configured (GET /api/auth/providers); provided by the app, Twitch only by default.

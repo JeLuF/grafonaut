@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalSto
 import { RotateCcw } from 'lucide-react';
 
 // Colour fields: GDD "color-rrggbb" (#rrggbb) and "color-rrggbbaa" (#rrggbbaa, with an opacity slider).
-const recentKey = 'grafanaut.recentColors';
+const recentKey = 'grafonaut.recentColors';
 const recentLimit = 8;
 const listeners = new Set();
 let recent = readRecent();

@@ -1,6 +1,6 @@
 {
-  "name": "grafanaut",
-  "description": "Grafanaut: catalog, rundowns and rendering for OGraf graphics",
+  "name": "grafonaut",
+  "description": "Grafonaut: catalog, rundowns and rendering for OGraf graphics",
   "version": "0.1.0",
   "private": true,
   "type": "module",

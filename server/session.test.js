@@ -25,8 +25,8 @@ test('HTTPS terminated by a trusted proxy sets secure session cookies on the cal
     assert.equal(response.headers.get('location'), '/');
     const cookies = response.headers.getSetCookie();
     assert.equal(cookies.length, 2);
-    assert.ok(cookies.some((cookie) => cookie.startsWith('grafanaut_session=')));
-    assert.ok(cookies.some((cookie) => cookie.startsWith('grafanaut_session.sig=')));
+    assert.ok(cookies.some((cookie) => cookie.startsWith('grafonaut_session=')));
+    assert.ok(cookies.some((cookie) => cookie.startsWith('grafonaut_session.sig=')));
     for (const cookie of cookies) {
       assert.match(cookie, /; secure/i);
       assert.match(cookie, /; httponly/i);
@@ -67,8 +67,8 @@ test('tampered session cookies do not authenticate an account', async () => {
   await withSessionServer({}, async (url) => {
     const response = await fetch(`${url}/api/auth/twitch/callback`, { redirect: 'manual', headers: { 'X-Forwarded-Proto': 'https' } });
     const cookies = response.headers.getSetCookie();
-    const signature = cookies.find((cookie) => cookie.startsWith('grafanaut_session.sig=')).split(';')[0];
-    const cookie = `grafanaut_session=${Buffer.from(JSON.stringify({ accountId: '99' })).toString('base64')}; ${signature}`;
+    const signature = cookies.find((cookie) => cookie.startsWith('grafonaut_session.sig=')).split(';')[0];
+    const cookie = `grafonaut_session=${Buffer.from(JSON.stringify({ accountId: '99' })).toString('base64')}; ${signature}`;
     const account = await fetch(`${url}/api/auth/me`, { headers: { Cookie: cookie, 'X-Forwarded-Proto': 'https' } });
     assert.equal((await account.json()).accountId, null);
   });

@@ -399,7 +399,7 @@ function App() {
     <LoginProvidersContext.Provider value={loginProviders}>
     <div className={signedOut ? 'site-layout' : 'app-layout'}>
     {signedOut ? <header className="site-header">
-      <a className="brand-mark" href="#catalog" aria-label="Grafanaut home"><Wordmark /></a>
+      <a className="brand-mark" href="#catalog" aria-label="Grafonaut home"><Wordmark /></a>
       <nav className="site-nav" aria-label="Site">
         <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}>Templates</a>
         <a href="/api-docs/">API docs</a>
@@ -407,7 +407,7 @@ function App() {
       </nav>
       <LoginButtons compact />
     </header> : <aside className="sidebar">
-      <a className="brand-mark" href="#catalog" aria-label="Grafanaut home"><Wordmark /></a>
+      <a className="brand-mark" href="#catalog" aria-label="Grafonaut home"><Wordmark /></a>
       <nav className="view-tabs" aria-label="Graphics views">
         <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#private" aria-current={view === 'private' ? 'page' : undefined}><Lock size={17} />Private catalog</a>
@@ -451,7 +451,7 @@ function App() {
         <section className="hero">
           <div className="hero-text">
             <p className="eyebrow">OPEN GRAPHICS FOR LIVE CREATORS</p>
-            <h1>Grafanaut</h1>
+            <h1>Grafonaut</h1>
             <p className="hero-tagline">Beautiful stream graphics.<br />Ready to use.</p>
             <p className="hero-copy">Discover, customize and play animations based on the EBU OGraf standard. They work with OBS, vMix and any
               browser source, and you control them from the browser, Bitfocus Companion or a Stream Deck. Log in with your
@@ -478,13 +478,13 @@ function App() {
       {signedOut && <section className="cta-band" aria-labelledby="cta-heading">
         <div>
           <h2 id="cta-heading">Ready to launch your next stream?</h2>
-          <p>Log in and explore the Grafanaut template library.</p>
+          <p>Log in and explore the Grafonaut template library.</p>
         </div>
         <LoginButtons />
         <p className="cta-note">Great graphics.<br />Better streams.</p>
       </section>}
       </>}
-      <footer><span>GRAFANAUT</span><span>Catalog, rundowns and rendering for <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf</a> graphics · {new Date().getFullYear()}</span></footer>
+      <footer><span>GRAFONAUT</span><span>Catalog, rundowns and rendering for <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf</a> graphics · {new Date().getFullYear()}</span></footer>
       {toast && <Toast key={toast.id} toast={toast} onDismiss={setToast} />}
     </main>
     </div>

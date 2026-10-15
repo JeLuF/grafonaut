@@ -4,7 +4,7 @@ import { runGroupAction } from './group-run.js';
 import { RENDERER_ID, RendererError } from './render-hub.js';
 import { ControlError, createRenderControl, customActionError } from './render-control.js';
 
-// Grafanaut's implementation of the OGraf Server API (https://ograf.ebu.io), scoped to one account by the API token in the path:
+// Grafonaut's implementation of the OGraf Server API (https://ograf.ebu.io), scoped to one account by the API token in the path:
 // /<api-token>/ograf/v1/... The token is the only credential, so no cookies are involved and any origin may call it.
 // The account has one renderer ("main"); its RenderTargets are the My Graphics entries ({ entryId }), each holding
 // at most one GraphicInstance of the entry's pinned graphic version.
@@ -101,9 +101,9 @@ export function createOgrafApi({ hub, store, findAccountByToken }) {
 
   router.get('/', (request, response) => {
     response.json({
-      name: 'Grafanaut',
-      description: `Grafanaut OGraf Server API for ${request.apiAccount.display_name ?? request.apiAccount.login}`,
-      author: { name: 'Grafanaut' },
+      name: 'Grafonaut',
+      description: `Grafonaut OGraf Server API for ${request.apiAccount.display_name ?? request.apiAccount.login}`,
+      author: { name: 'Grafonaut' },
       version
     });
   });

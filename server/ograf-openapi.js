@@ -1,4 +1,4 @@
-// OpenAPI description of Grafanaut's implementation of the OGraf Server API (see ograf-api.js), based on the official
+// OpenAPI description of Grafonaut's implementation of the OGraf Server API (see ograf-api.js), based on the official
 // OGraf Server API v1 specification. ograf-openapi.test.js checks it against the routes the router registers.
 const ref = (name) => ({ $ref: `#/components/schemas/${name}` });
 const json = (schema, description) => ({ description, content: { 'application/json': { schema } } });
@@ -25,10 +25,10 @@ export function ografOpenApi({ serverUrl } = {}) {
   return {
     openapi: '3.0.3',
     info: {
-      title: 'Grafanaut · OGraf Server API',
+      title: 'Grafonaut · OGraf Server API',
       version: '1.0.0',
       description: [
-        'Grafanaut\'s implementation of the [OGraf Server API](https://ograf.ebu.io), the EBU specification for controlling OGraf graphics. It controls the graphics of your Grafanaut account. Every request is scoped to one account by the API token in the base URL; no other credentials are needed.',
+        'Grafonaut\'s implementation of the [OGraf Server API](https://ograf.ebu.io), the EBU specification for controlling OGraf graphics. It controls the graphics of your Grafonaut account. Every request is scoped to one account by the API token in the base URL; no other credentials are needed.',
         '',
         '**Renderer.** Each account has one renderer, `main`: every renderer page opened with your renderer URL (OBS, browser tabs, the My Graphics preview) shows the same graphics.',
         '',

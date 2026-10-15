@@ -20,6 +20,6 @@ export function configureSession(app, {
   trustProxy = process.env.TRUST_PROXY ?? 'loopback, linklocal, uniquelocal'
 } = {}) {
   app.set('trust proxy', trustProxy);
-  app.use(cookieSession({ name: 'grafanaut_session', keys: [secret], httpOnly: true,
+  app.use(cookieSession({ name: 'grafonaut_session', keys: [secret], httpOnly: true,
     sameSite: 'lax', secure: production }));
 }

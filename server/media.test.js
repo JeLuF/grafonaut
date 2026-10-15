@@ -112,21 +112,21 @@ test('media files are served without a referer or with an own one, never to fore
 });
 
 test('the referer check knows strict, lenient and off and parses host lists', async () => {
-  assert.deepEqual(parseHosts('grafanaut.example.com, https://render.example.com:8443/'), ['grafanaut.example.com', 'render.example.com:8443']);
+  assert.deepEqual(parseHosts('grafonaut.example.com, https://render.example.com:8443/'), ['grafonaut.example.com', 'render.example.com:8443']);
   assert.deepEqual(parseHosts(''), []);
   assert.equal(refererMode(undefined), 'strict');
   assert.equal(refererMode(' Lenient '), 'lenient');
   assert.throws(() => refererMode('maybe'), /ASSET_REFERER_CHECK/);
   const run = (mode, referer) => {
     let status = 'next';
-    createRefererCheck({ hosts: ['grafanaut.example.com'], mode })({ host: 'render.example.com', get: () => referer },
+    createRefererCheck({ hosts: ['grafonaut.example.com'], mode })({ host: 'render.example.com', get: () => referer },
       { sendStatus: (code) => { status = code; } }, () => {});
     return status;
   };
   assert.equal(run('strict', undefined), 403);
   assert.equal(run('lenient', undefined), 'next');
   assert.equal(run('lenient', 'https://evil.example/'), 403);
-  assert.equal(run('strict', 'https://grafanaut.example.com/x'), 'next');
+  assert.equal(run('strict', 'https://grafonaut.example.com/x'), 'next');
   assert.equal(run('strict', 'https://render.example.com/render/t/'), 'next');
   assert.equal(run('strict', 'not a url'), 403);
   assert.equal(run('off', 'https://evil.example/'), 'next');

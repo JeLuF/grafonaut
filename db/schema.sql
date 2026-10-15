@@ -93,14 +93,14 @@ CREATE TABLE IF NOT EXISTS my_graphics_entries (
   CONSTRAINT fk_mvp_entries_version FOREIGN KEY (package_version_id) REFERENCES package_versions (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS account_tokens (
+CREATE TABLE IF NOT EXISTS renderer_tokens (
   account_id BIGINT UNSIGNED NOT NULL,
   token_hash CHAR(64) NOT NULL,
   token_ciphertext VARCHAR(255) NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (account_id),
-  UNIQUE KEY uq_account_tokens_hash (token_hash),
-  CONSTRAINT fk_account_tokens_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+  UNIQUE KEY uq_renderer_tokens_hash (token_hash),
+  CONSTRAINT fk_renderer_tokens_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS api_tokens (

@@ -49,7 +49,7 @@ export function rendererDocument(request, token, { isolated = false, graphicsOri
       `connect-src ${origin.replace(/^http/, 'ws')}`, `frame-src ${frameOrigin}`
     ].join('; ') },
     html: `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Grafanaut renderer</title>
+<html lang="en"><head><meta charset="utf-8"><title>Grafonaut renderer</title>
 <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}
 #stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
 #status{position:absolute;inset:0;display:grid;place-items:center;margin:0;font:14px Arial,sans-serif;color:#87948a}
@@ -117,6 +117,6 @@ export function createAssetHandler({ findVersion, storageRoot, isolated, cacheMs
 }
 
 export const rendererPage = (message) => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Grafanaut renderer</title>
+<html lang="en"><head><meta charset="utf-8"><title>Grafonaut renderer</title>
 <style>html,body{margin:0;height:100%;background:transparent}body{display:grid;place-items:center;font:14px Arial,sans-serif;color:#87948a}</style>
 </head><body><p>${message}</p></body></html>`;
