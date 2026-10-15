@@ -293,3 +293,19 @@ test('x-actions report invalid custom payloads per step and refuse unknown, runn
   connected = 0;
   assert.equal((await call('POST', '/x-actions/6')).status, 503);
 });
+
+test('a graphic disabled while loaded can only be stopped, not played, updated or sent custom actions', async () => {
+  const { graphicInstanceId } = (await load()).body;
+  const target = { renderTarget: { entryId: '1' }, graphicInstanceId };
+  const action = (name, params) => call('POST', `/renderers/main/target/graphicInstance/${name}`, { ...target, params });
+  for (const disable of [{ enabled: false }, { packageDisabled: true }]) {
+    Object.assign(entries[0], { enabled: true, packageDisabled: false }, disable);
+    const sent = commands.length;
+    assert.equal((await action('playAction', {})).status, 409);
+    assert.equal((await action('updateAction', { data: { name: 'X' } })).status, 409);
+    assert.equal((await action('customActions/highlight', { payload: {} })).status, 409);
+    assert.equal(commands.length, sent);
+  }
+  assert.equal((await action('stopAction', {})).status, 200);
+  assert.equal(commands.at(-1).message.action, 'stopAction');
+});

@@ -1,12 +1,9 @@
 import express from 'express';
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
 import { addMyGraphic, deleteMyGraphic, duplicateMyGraphic, findMyGraphic, listMyGraphics, reorderMyGraphics, updateMyGraphic } from './db.js';
 import { storageRoot } from './storage.js';
 import { resolvePropertySchema } from './asset-files.js';
+import { SchemaTimeoutError, untrustedSchemas } from './untrusted-schema.js';
 
-const validator = new Ajv({ allErrors: true, strict: false });
-addFormats(validator);
 const router = express.Router();
 
 router.use((request, response, next) => {
@@ -76,11 +73,14 @@ router.patch('/:entryId', async (request, response) => {
     }
     if (Object.hasOwn(changes, 'schemaData')) {
       const schema = await resolvePropertySchema(entry, storageRoot);
-      let validate;
-      try { validate = validator.compile(schema); }
-      catch { return response.status(422).json({ error: 'This graphic has an unsupported property schema' }); }
-      finally { validator.removeSchema(schema); }
-      if (!validate(changes.schemaData)) return response.status(422).json({ error: 'Properties do not match this graphic\'s schema', details: validate.errors });
+      let check;
+      try { check = await untrustedSchemas.run('validate', schema, changes.schemaData); }
+      catch (error) {
+        if (error instanceof SchemaTimeoutError) return response.status(422).json({ error: 'Checking the properties took too long: this graphic\'s property schema is too complex' });
+        throw error;
+      }
+      if (check.invalidSchema) return response.status(422).json({ error: 'This graphic has an unsupported property schema' });
+      if (!check.valid) return response.status(422).json({ error: 'Properties do not match this graphic\'s schema', details: check.errors });
     }
     await updateMyGraphic(request.session.accountId, request.params.entryId, changes);
     if (Object.hasOwn(changes, 'enabled')) entriesChanged(request);

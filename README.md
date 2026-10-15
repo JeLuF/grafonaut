@@ -15,7 +15,7 @@ Work packages as defined in `ograf-platform-requirements.md`, section 13.
 - **BE-5** Storage of the original archive and the unpacked files (once per archive, shared by all its graphics), SHA-256 checksums, UUID-based paths.
 - **BE-7** OGraf Server API per account under `/<api-token>/ograf/v1`: server info, graphics, renderers, render targets, load/play/stop/update/custom actions, clear; plus the `x-actions` extension for group actions.
 - **BE-8** WebSocket protocol between server and renderer pages: any number of connections per account kept in sync, on-air state stored in the database, reconnects catch up.
-- **RN-1** Renderer page with CSP, an own host via `RENDERER_HOST`, one sandboxed iframe per graphic, stacked in rundown order.
+- **RN-1** Renderer page with CSP, own hosts for the renderer page (`RENDERER_HOST`) and for graphics (`GRAPHICS_HOST`), one sandboxed iframe per graphic, stacked in rundown order.
 - **FE-1** Public catalog: search, pagination, detail pages, adding graphics to the current rundown.
 - **FE-2** Rundown view: entries with labels, enable/disable, reordering, duplicating, properties, play/stop/update and live status.
 - **FE-4** Private uploads wired to the ingestion pipeline and storage.
@@ -23,7 +23,7 @@ Work packages as defined in `ograf-platform-requirements.md`, section 13.
 - **FE-7** Group actions per rundown: steps across entries, mixed action types and sleep steps, one click to run.
 - **FE-9** Renderer page: renderer and API URLs, copy, new token.
 - **OPS-1** Docker Compose with the app (including the renderer), MySQL, persistent storage and a separate seed volume.
-- **OPS-4** Example nginx configuration for the main host and the renderer host (see [Proxy and sessions](#proxy-and-sessions)).
+- **OPS-4** Example nginx configuration for the main, renderer and graphics hosts (see [Proxy and sessions](#proxy-and-sessions)).
 
 Beyond the work packages: rundowns (several prepared events per account), the private catalog, a media library for image and file properties with hotlink protection, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafanaut website design.
 
@@ -49,7 +49,7 @@ Beyond the work packages: rundowns (several prepared events per account), the pr
 
 ## Run with Docker
 
-1. Copy `.env.example` to `.env` and set `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
+1. Copy `.env.example` to `.env` and set `SESSION_SECRET` (at least 32 characters, e.g. `openssl rand -base64 48`; the app refuses to start in production without it), `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
 2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafanaut.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
 3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/`.
 4. Start the stack:
@@ -99,11 +99,19 @@ map $http_upgrade $connection_upgrade {
 
 This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie. Keep `SESSION_SECRET` stable across restarts and identical across app replicas; changing it invalidates existing sessions.
 
-#### Renderer host
+#### Renderer and graphics hosts
 
-The renderer should run on its own host name (see [Renderer](#renderer)), e.g. `render.example.com` next to `grafanaut.example.com`. Both host names point to the same container; set `RENDERER_HOST=render.example.com` and `APP_HOST=grafanaut.example.com` in `.env` (the latter for the [referer check](#media-library)).
+Grafanaut uses up to three host names, all pointing to the same container (see [Renderer](#renderer)):
 
-Everything the renderer needs lives under `/render/`: the renderer page, its WebSocket (`/render/<token>/ws`), the graphic frame page (`/render/frame`), the package files (`/render/assets/…`) and the media files (`/render/media/…`). The renderer host only proxies that prefix and redirects everything else to the main host:
+| Host | Example | Serves | Setting |
+| --- | --- | --- | --- |
+| Main host | `grafanaut.example.com` | the app, its API and the OGraf Server API | `APP_HOST` |
+| Renderer host | `render.example.com` | the renderer page `/render/<token>/` and its WebSocket | `RENDERER_HOST` (optional) |
+| Graphics host | `graphics.example.com` | graphic frames `/render/frame`, package files `/render/assets/…`, media files `/render/media/…` | `GRAPHICS_HOST` |
+
+Set all three in `.env`. The app answers `404` when a path is requested on the wrong host, and the graphics host serves nothing but graphics paths. `APP_HOST` is also used by the [referer check](#media-library).
+
+The renderer and graphics hosts only proxy `/render/` and redirect everything else to the main host:
 
 ```nginx
 server {
@@ -111,7 +119,7 @@ server {
 	server_name render.example.com;
 	# ssl_certificate / ssl_certificate_key …
 
-	# Renderer page, its WebSocket, graphic frames and package files
+	# Renderer page and its WebSocket
 	location /render/ {
 		proxy_pass http://127.0.0.1:3000;          # no trailing slash, see below
 		proxy_set_header Host $host;
@@ -128,11 +136,31 @@ server {
 		return 301 https://grafanaut.example.com$request_uri;
 	}
 }
+
+server {
+	listen 443 ssl;
+	server_name graphics.example.com;
+	# ssl_certificate / ssl_certificate_key …
+
+	# Graphic frames, package files and media files
+	location /render/ {
+		proxy_pass http://127.0.0.1:3000;          # no trailing slash, see below
+		proxy_set_header Host $host;
+		proxy_set_header X-Forwarded-Proto $scheme;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+	}
+
+	location / {
+		return 301 https://grafanaut.example.com$request_uri;
+	}
+}
 ```
 
 `proxy_pass` must not end with a slash here: inside `location /render/`, a trailing slash would make nginx replace `/render/` with `/`, and every renderer request would reach the wrong path.
 
-**Block `/render/` on the main host.** With `RENDERER_HOST` set, graphic frames and package HTML files are served so that they keep the origin of the host they are loaded from, which SPX-style graphics need. That is only safe on the renderer host: a package's HTML file opened through the main host would run its scripts in the app's own origin, with access to the signed-in user's session. Add this to the main host's `server` block (nothing on the main host needs `/render/` once `RENDERER_HOST` is set; the renderer URL and the preview in the rundown view point to the renderer host):
+**Why a graphics host.** Graphics are uploaded code. Graphics that script their own HTML pages (for example SPX templates) must share an origin with their package files, so their frames cannot run in an opaque origin. On the graphics host, that origin belongs to graphics alone: package code can neither use the signed-in user's session (main host) nor read the renderer page, whose URL carries the renderer token (renderer host). The renderer page talks to the graphic frames with `postMessage` only. Without `GRAPHICS_HOST`, every graphic runs in an opaque origin; such graphics then cannot fill their content. Graphics on the same renderer still share the graphics origin with each other.
+
+As a second line of defence, add this to the main host's `server` block (nothing on the main host needs `/render/` once `RENDERER_HOST` and `GRAPHICS_HOST` are set; the renderer URL and the preview in the rundown view point to the renderer host):
 
 ```nginx
 	location /render/ {
@@ -140,7 +168,7 @@ server {
 	}
 ```
 
-The session cookie is bound to the main host, so it is never sent to the renderer host.
+The session cookie is bound to the main host, so it is never sent to the renderer or graphics host. Changing API requests must come from the main host's own origin (`Origin`/`Sec-Fetch-Site` check), so pages on the other hosts cannot use a signed-in user's session even though they are same-site.
 
 ### Private catalog
 
@@ -157,14 +185,14 @@ Package files are served to graphic frames from `/render/assets/<version>/…`; 
 
 ### Media library
 
-Signed-in users manage their own files on the Media page (sidebar): upload (several at once), rename, replace and delete. Uploads use the same allowed file types as packages (`UPLOAD_ALLOWED_EXTENSIONS`) and are limited to `MEDIA_MAX_BYTES` (20 MB) each. Files are stored under `storage/media/<account>/` and served to graphics from `/render/media/<uuid>.<ext>` on the renderer host, with the same CSP sandbox as package files.
+Signed-in users manage their own files on the Media page (sidebar): upload (several at once), rename, replace and delete. Uploads use the same allowed file types as packages (`UPLOAD_ALLOWED_EXTENSIONS`) and are limited to `MEDIA_MAX_BYTES` (20 MB) each. Files are stored under `storage/media/<account>/` and served to graphics from `/render/media/<uuid>.<ext>` on the graphics host (else the renderer host), with the same CSP sandbox as package files.
 
 Graphic properties with a `gddType` of `file-path` (e.g. `file-path/image-path`) get a file chooser in the property dialog and in custom-action dialogs: keep the graphic's default, pick a file from the media library or upload a new one. Choices are limited to the property's `gddOptions.extensions` (image types for `image-path`). The property gets the file's absolute URL. Replacing a file keeps its URL, so every graphic that uses it shows the new content; the media page shows how many rundown entries use a file and warns before deleting it.
 
-Hotlink protection: package files (`/render/assets/…`) and media files (`/render/media/…`) are not served when the request's `Referer` names another site than the renderer host, a host in `APP_HOST` or the requested host itself; such requests get `403`. Media files are always served to requests without `Referer` (direct downloads). Renderer pages and graphic frames send only their origin as referrer (`Referrer-Policy: strict-origin`), never the token path. `ASSET_REFERER_CHECK` sets the mode for package files (for media files, only `off` applies):
+Hotlink protection: package files (`/render/assets/…`) and media files (`/render/media/…`) are not served when the request's `Referer` names another site than the renderer or graphics host, a host in `APP_HOST` or the requested host itself; such requests get `403`. Media files are always served to requests without `Referer` (direct downloads). Renderer pages and graphic frames send only their origin as referrer (`Referrer-Policy: strict-origin`), never the token path. `ASSET_REFERER_CHECK` sets the mode for package files (for media files, only `off` applies):
 
-- `strict` (default with `RENDERER_HOST`): requests without `Referer` are refused as well.
-- `lenient` (default without `RENDERER_HOST`): requests without `Referer` are served, foreign referers are refused. Without an own renderer host, graphics run in an opaque origin, and browsers send no `Referer` for their images and nested pages.
+- `strict` (default with `GRAPHICS_HOST`): requests without `Referer` are refused as well.
+- `lenient` (default without `GRAPHICS_HOST`): requests without `Referer` are served, foreign referers are refused. Without a graphics host, graphics run in an opaque origin, and browsers send no `Referer` for their images and nested pages.
 - `off`: no check.
 
 The check stops other web pages from embedding the files; it is not access control, since anyone can send any `Referer` with a direct request.
@@ -177,9 +205,9 @@ Graphics are prepared in rundowns, so several events can be prepared from one ac
 
 Every account has one renderer: the page at `/render/<renderer-token>/`, used as an OBS/vMix browser source. Any number of renderer pages may be open for an account (OBS, a test tab, the preview in the rundown view); they all show the same graphics. Each page holds a WebSocket to `/render/<renderer-token>/ws`, authenticated by the token in its path, and receives the on-air state and the actions from it. The state is stored in the database, so renderers that connect later or reconnect after a restart show the same graphics.
 
-Each graphic runs in its own sandboxed iframe. To be forgiving with graphics whose `load()` resolves before the pages they create in nested frames have loaded (e.g. SPX-style templates that define `play()` there), the renderer waits up to 5 seconds for such frames before it reports the graphic as loaded, so an action sent right after loading finds them ready. The frames are stacked in rundown order: the first entry is in front. Package files are served from `/render/assets/<version>/...` to the frames; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin.
+Each graphic runs in its own sandboxed iframe. To be forgiving with graphics whose `load()` resolves before the pages they create in nested frames have loaded (e.g. SPX-style templates that define `play()` there), the renderer waits up to 5 seconds for such frames before it reports the graphic as loaded, so an action sent right after loading finds them ready. The frames are stacked in rundown order: the first entry is in front. Frames, package files (`/render/assets/<version>/...`) and media files come from the graphics host; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin.
 
-**Use a separate renderer host.** Set `RENDERER_HOST` to a host name that is different from the main page (e.g. `render.example.com` next to `grafanaut.example.com`, optionally with a port, or a full origin such as `https://render.example.com`) and route it to the same container. Only then do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When `RENDERER_HOST` is empty, the renderer uses the main page's host and every graphic runs in an opaque origin to keep package code away from the app's session; such graphics then cannot fill their content.
+**Use separate renderer and graphics hosts.** Set `RENDERER_HOST` and `GRAPHICS_HOST` to host names that differ from the main page and from each other (e.g. `render.example.com` and `graphics.example.com` next to `grafanaut.example.com`, optionally with a port, or full origins such as `https://graphics.example.com`) and route them to the same container (see [Renderer and graphics hosts](#renderer-and-graphics-hosts)). Only with `GRAPHICS_HOST` do graphics keep the origin of their package files, which graphics that script their own HTML pages (for example SPX templates) need. When it is empty, every graphic runs in an opaque origin to keep package code away from the app's session and the renderer page; such graphics then cannot fill their content. When `RENDERER_HOST` is empty, the renderer page uses the main page's host.
 
 The Renderer page (sidebar link) shows the renderer URL and the API URL and lets users create new tokens.
 

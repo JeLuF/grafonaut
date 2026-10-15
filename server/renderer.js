@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { parseHostSetting } from './hosts.js';
 import { extractedRoot } from './thumbnails.js';
 
 export const rendererRoute = '/render/:token';
@@ -12,19 +13,7 @@ const frameScript = fs.readFileSync(new URL('./renderer-client/frame.js', import
 
 // RENDERER_HOST accepts a host ("render.example.com", "render.example.com:8443") or an origin
 // ("https://render.example.com"). Empty means: the same host as the request.
-export function parseRendererHost(value) {
-  const setting = value?.trim();
-  if (!setting) return null;
-  const hasScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(setting);
-  let url;
-  try { url = new URL(hasScheme ? setting : `http://${setting}`); }
-  catch { throw new Error(`Invalid RENDERER_HOST: ${setting}`); }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash ||
-    url.pathname !== '/' || (!hasScheme && url.host !== setting.toLowerCase())) {
-    throw new Error(`Invalid RENDERER_HOST: ${setting} (use a host name or an http(s) origin without a path)`);
-  }
-  return hasScheme ? { origin: url.origin } : { host: url.host };
-}
+export const parseRendererHost = (value) => parseHostSetting(value, 'RENDERER_HOST');
 
 export function rendererUrl(request, config, token) {
   const origin = config?.origin ?? `${request.protocol}://${config?.host ?? request.host}`;
@@ -40,20 +29,24 @@ export const rendererHeaders = {
   'Cache-Control': 'no-store'
 };
 
-// Graphic frames run in an opaque origin unless the renderer has its own host (RENDERER_HOST): only then may
-// graphics share an origin with their package files (needed by graphics that script their own nested HTML pages).
+// Graphic frames run in an opaque origin unless graphics have their own host (GRAPHICS_HOST, see hosts.js): only then
+// may graphics share an origin with their package files (needed by graphics that script their own nested HTML pages).
 export const graphicSandbox = (isolated) => isolated ? 'allow-scripts allow-same-origin' : 'allow-scripts';
 
 const escapeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 
-export function rendererDocument(request, token, isolated) {
+// The renderer page. With a graphics host (`isolated`), its frames and their module come from `graphicsOrigin`, a
+// different origin than the page itself; otherwise from the page's own host, in an opaque origin.
+export function rendererDocument(request, token, { isolated = false, graphicsOrigin = null } = {}) {
   const nonce = crypto.randomBytes(16).toString('base64');
   const origin = `${request.protocol}://${request.host}`;
-  const config = { socketPath: `/render/${encodeURIComponent(token)}/ws`, framePath, sandbox: graphicSandbox(isolated) };
+  const frameOrigin = isolated ? graphicsOrigin : origin;
+  const config = { socketPath: `/render/${encodeURIComponent(token)}/ws`, framePath: `${frameOrigin}${framePath}`, assetOrigin: frameOrigin,
+    messageOrigin: isolated ? graphicsOrigin : '*', sandbox: graphicSandbox(isolated) };
   return {
     headers: { ...rendererHeaders, 'Content-Security-Policy': [
       "default-src 'none'", `script-src 'nonce-${nonce}'`, "style-src 'unsafe-inline'",
-      `connect-src ${origin.replace(/^http/, 'ws')}`, `frame-src ${origin}`
+      `connect-src ${origin.replace(/^http/, 'ws')}`, `frame-src ${frameOrigin}`
     ].join('; ') },
     html: `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Grafanaut renderer</title>

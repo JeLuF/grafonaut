@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
-import Ajv from 'ajv';
-import addFormats from 'ajv-formats';
 import { moduleUrl, RendererError } from './render-hub.js';
+import { SchemaTimeoutError, untrustedSchemas } from './untrusted-schema.js';
 
 // Loading graphics and running actions on the account's renderer, shared by the OGraf API endpoints and by group
 // actions. Errors that should become an API answer are ControlErrors (status, title, detail, extra fields).
@@ -13,25 +12,25 @@ export class ControlError extends Error {
 }
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
-const payloadValidator = new Ajv({ allErrors: true, strict: false });
-addFormats(payloadValidator);
-
-// Validates a custom action payload against the action's schema from the manifest; returns readable problems.
-export function payloadProblems(schema, payload) {
+// Validates a custom action payload against the action's schema from the manifest (in the schema worker: the schema
+// comes from an uploaded manifest); returns readable problems.
+export async function payloadProblems(schema, payload, runner = untrustedSchemas) {
   if (!isObject(schema)) return [];
-  let validate;
-  try { validate = payloadValidator.compile(schema); }
-  catch { return ['The custom action declares an invalid payload schema.']; }
-  finally { payloadValidator.removeSchema(schema); }
-  if (validate(payload)) return [];
-  return validate.errors.slice(0, 10).map((error) => `${error.instancePath || 'payload'} ${error.message}`);
+  let check;
+  try { check = await runner.run('validate', schema, payload); }
+  catch (error) {
+    if (error instanceof SchemaTimeoutError) return ['Checking the payload took too long: the custom action\'s payload schema is too complex.'];
+    throw error;
+  }
+  if (check.invalidSchema) return ['The custom action declares an invalid payload schema.'];
+  return check.errors.slice(0, 10).map((error) => `${error.instancePath || 'payload'} ${error.message}`);
 }
 
 // Only actions the graphic declares in its manifest, with a payload matching the action's schema.
-export function customActionError(entry, actionId, payload) {
+export async function customActionError(entry, actionId, payload) {
   const declared = (entry.customActions ?? []).find((candidate) => candidate.id === actionId);
   if (!declared) return new ControlError(404, 'Not Found', `The graphic has no custom action "${actionId}".`);
-  const problems = payloadProblems(declared.schema, payload);
+  const problems = await payloadProblems(declared.schema, payload);
   return problems.length ? new ControlError(400, 'Bad Request', 'The payload does not match the custom action\'s schema.', { errors: problems }) : null;
 }
 
@@ -74,8 +73,10 @@ export function createRenderControl({ hub, store }) {
     }
   }
 
-  // Runs playAction/stopAction/updateAction/customAction on a loaded instance and keeps its state.
+  // Runs playAction/stopAction/updateAction/customAction on a loaded instance and keeps its state. A graphic that was
+  // disabled while loaded can still be stopped (and cleared), but no longer played, updated or sent custom actions.
   async function act(accountId, entry, instance, action, params) {
+    if (action !== 'stopAction' && (!entry.enabled || entry.packageDisabled)) throw new ControlError(409, 'Conflict', 'This rundown entry is disabled.');
     const result = await hub.command(accountId, { action, instanceId: instance.instanceId, entryId: entry.entryId, params });
     await store.saveRenderInstance(accountId, entry.entryId, { ...instance, ...nextStates[action](instance, result, entry, params) });
     return { graphicInstanceId: instance.instanceId, ...result };
@@ -97,7 +98,7 @@ export function createRenderControl({ hub, store }) {
     if (step.type === 'play') return act(accountId, entry, await ready(), 'playAction', {});
     if (step.type === 'custom') {
       const payload = step.payload ?? {};
-      const problem = customActionError(entry, step.actionId, payload);
+      const problem = await customActionError(entry, step.actionId, payload);
       if (problem) throw problem;
       return act(accountId, entry, await ready(), 'customAction', { id: step.actionId, payload });
     }

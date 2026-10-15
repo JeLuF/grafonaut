@@ -120,11 +120,12 @@ export function createRenderHub(store, { commandTimeout = 10000, heartbeatInterv
     for (const socket of sockets.get(key(accountId)) ?? []) socket.close(code, reason);
   }
 
-  function attachServer(server, findAccountByToken) {
+  // allowsUpgrade(request): whether this host may serve renderer WebSockets (see hosts.js).
+  function attachServer(server, findAccountByToken, { allowsUpgrade = () => true } = {}) {
     const webSockets = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
     server.on('upgrade', (request, socket, head) => {
       const match = socketPathPattern.exec(request.url ?? '');
-      if (!match) { socket.destroy(); return; }
+      if (!match || !allowsUpgrade(request)) { socket.destroy(); return; }
       webSockets.handleUpgrade(request, socket, head, async (connection) => {
         let account = null;
         try { account = await findAccountByToken(decodeURIComponent(match[1]), 'renderer'); } catch { /* treated as unknown */ }

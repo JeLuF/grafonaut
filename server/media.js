@@ -8,7 +8,7 @@ import { assetTypes, graphicSandbox } from './renderer.js';
 import { storageRoot as defaultStorageRoot } from './storage.js';
 
 // Media library: files an account uploads for graphic properties (images, videos, ...). Graphics reference a file by
-// its absolute URL on the renderer host, /render/media/<id>.<extension>; the ID is a random UUID. Replacing a file
+// its absolute URL on the graphics host (else the renderer host), /render/media/<id>.<extension>; the ID is a random UUID. Replacing a file
 // keeps its URL, so every graphic using it shows the new content.
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const mediaFileRoute = '/render/media/:file';
@@ -23,12 +23,13 @@ function cleanName(value) {
   return name && [...name].length <= 255 ? name : null;
 }
 
-export function createMedia({ store = db, storageRoot = defaultStorageRoot, limits = mediaLimits(), rendererOrigin }) {
+// `fileOrigin(request)`: the origin media files are served from to graphics (the graphics host, if set).
+export function createMedia({ store = db, storageRoot = defaultStorageRoot, limits = mediaLimits(), fileOrigin }) {
   const router = express.Router();
   const filePath = (accountId, media) => path.join(storageRoot, 'media', String(accountId), `${media.id}.${media.extension}`);
   const describe = (request, media) => ({ id: media.id, name: media.name, extension: media.extension, size: media.size,
     updatedAt: media.updatedAt, usage: media.usage ?? 0,
-    url: `${rendererOrigin(request)}/render/media/${media.id}.${media.extension}`,
+    url: `${fileOrigin(request)}/render/media/${media.id}.${media.extension}`,
     previewUrl: `/api/media/${media.id}/content?v=${media.checksum.slice(0, 12)}` });
 
   async function writeFile(target, buffer) {

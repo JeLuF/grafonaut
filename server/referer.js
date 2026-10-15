@@ -1,8 +1,8 @@
 // Hotlink protection for files served to graphics (package assets, media): only requests whose Referer host is one
 // of this instance's hosts are served. Renderer pages send their origin as referrer (Referrer-Policy: strict-origin),
 // never the path with the token.
-//   strict  the Referer header is required (default with an own renderer host, RENDERER_HOST)
-//   lenient requests without Referer are allowed, foreign referers are blocked (default without an own renderer host:
+//   strict  the Referer header is required (default with a graphics host, GRAPHICS_HOST)
+//   lenient requests without Referer are allowed, foreign referers are blocked (default without a graphics host:
 //           graphic frames then run in an opaque origin, and browsers send no Referer for their images and nested pages)
 //   off     no check
 export const refererModes = ['strict', 'lenient', 'off'];

@@ -26,8 +26,9 @@ export const useRendererUrl = (account) => useTokenUrl(account, 'renderer');
 export const useApiUrl = (account) => useTokenUrl(account, 'api');
 
 // Renders the renderer page at full 1920x1080 and scales it down to the frame width (640x360 by default).
-// The sandbox keeps renderer code in an opaque origin, away from the app's cookies and storage. Only a renderer on
-// its own host (RENDERER_HOST) may keep its origin, which graphics with nested same-origin pages need.
+// The sandbox keeps renderer code in an opaque origin, away from the app's cookies and storage. Only with a graphics
+// host (GRAPHICS_HOST) may it keep its origin: the sandbox is inherited by the graphic frames, and graphics with nested
+// same-origin pages need theirs (on the graphics host, never the app's or the renderer page's origin).
 export function RendererPreview({ account }) {
   const { url, isolated, error } = useRendererUrl(account);
   const [reloads, setReloads] = useState(0);

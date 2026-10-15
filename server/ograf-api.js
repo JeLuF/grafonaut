@@ -182,7 +182,7 @@ export function createOgrafApi({ hub, store, findAccountByToken }) {
     const entryId = parseTarget(body.renderTarget);
     const { entry, instance } = entryId ? await targetState(accountId, entryId) : {};
     if (!entry) return problem(request, response, 404, 'Not Found', 'No RenderTarget found.');
-    const rejection = check(entry);
+    const rejection = await check(entry);
     if (rejection) throw rejection;
     if (!instance || instance.instanceId !== body.graphicInstanceId) return problem(request, response, 404, 'Not Found', 'No GraphicInstance found.');
     response.json(await control.act(accountId, entry, instance, action, params));

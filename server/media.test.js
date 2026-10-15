@@ -30,7 +30,7 @@ const app = express();
 app.use(express.json());
 app.use((request, _response, next) => { request.session = request.headers['x-account'] ? { accountId: request.headers['x-account'] } : null; next(); });
 app.use('/api/media', createMedia({ store, storageRoot, limits: { maxBytes: 2000, allowedExtensions: new Set(['.png', '.jpg', '.svg', '.html']) },
-  rendererOrigin: () => 'https://render.example.com' }));
+  fileOrigin: () => 'https://render.example.com' }));
 app.get(mediaFileRoute, createRefererCheck({ hosts: ['render.example.com'], mode: 'lenient' }), createMediaFileHandler({ store, storageRoot, isolated: true }));
 const server = app.listen(0, '127.0.0.1');
 await once(server, 'listening');

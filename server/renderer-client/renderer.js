@@ -73,7 +73,8 @@
         reject(Object.assign(new Error(`The graphic did not finish ${method} in time`), { graphic: true }));
       }, CALL_TIMEOUT);
       frame.calls.set(callId, { resolve, reject, timer });
-      frame.iframe.contentWindow.postMessage({ ograf: 'call', callId, method, params }, '*');
+      // Opaque-origin frames (no graphics host) can only be addressed with '*'.
+      frame.iframe.contentWindow.postMessage({ ograf: 'call', callId, method, params }, config.messageOrigin);
     }));
   }
 
@@ -84,6 +85,7 @@
   }
 
   window.addEventListener('message', (event) => {
+    if (config.messageOrigin !== '*' && event.origin !== config.messageOrigin) return;
     const frame = [...frames.values()].find((candidate) => candidate.iframe.contentWindow === event.source);
     const message = event.data;
     if (!frame || !message || typeof message !== 'object') return;
@@ -100,7 +102,7 @@
     for (const frame of [...frames.values()]) if (frame.entryId === entryId && frame.instanceId !== instanceId) removeFrame(frame);
     const frame = frames.get(instanceId) ?? createFrame(instanceId, entryId);
     return call(frame, 'load', {
-      module: new URL(module, location.href).href,
+      module: new URL(module, config.assetOrigin).href,
       params: { data, renderType: 'realtime', renderCharacteristics: { resolution: { width: innerWidth, height: innerHeight } } }
     });
   }

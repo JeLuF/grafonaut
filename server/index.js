@@ -14,6 +14,8 @@ import { createAuth } from './auth.js';
 import { createMedia, createMediaFileHandler, mediaFileRoute } from './media.js';
 import { createRefererCheck, parseHosts, refererMode } from './referer.js';
 import { configureSession } from './session.js';
+import { sameOriginWrites } from './request-guards.js';
+import { createHosts, parseHostSetting } from './hosts.js';
 import { assetRoute, createAssetHandler, frameDocument, framePath, parseRendererHost, rendererDocument, rendererHeaders, rendererPage, rendererRoute, rendererUrl } from './renderer.js';
 import { createRenderHub } from './render-hub.js';
 import { tokenKey } from './tokens.js';
@@ -24,27 +26,27 @@ const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const publicDirectory = path.resolve('dist');
 const rendererHost = parseRendererHost(process.env.RENDERER_HOST);
-// Graphics may only share an origin with their package files when the renderer runs on its own host.
-const rendererIsolated = rendererHost !== null;
-// The instance's own host names (APP_HOST may list several, comma separated); used by the asset referer check.
-const instanceHosts = [...parseHosts(process.env.APP_HOST), ...(rendererHost ? parseHosts(rendererHost.origin ?? rendererHost.host) : [])];
-// Strict (Referer required) with an own renderer host. Without one, graphic frames run in an opaque origin and the
+// Main, renderer and graphics hosts and what each serves (see hosts.js). APP_HOST may list several, comma separated.
+const hosts = createHosts({ appHosts: parseHosts(process.env.APP_HOST), rendererHost,
+  graphicsHost: parseHostSetting(process.env.GRAPHICS_HOST, 'GRAPHICS_HOST') });
+// Strict (Referer required) with a graphics host. Without one, graphic frames run in an opaque origin and the
 // browser sends no Referer for their images and nested pages, so missing referers are allowed (foreign ones are not).
-const assetRefererCheck = createRefererCheck({ hosts: instanceHosts,
-  mode: refererMode(process.env.ASSET_REFERER_CHECK || (rendererIsolated ? 'strict' : 'lenient')) });
+const assetRefererCheck = createRefererCheck({ hosts: hosts.hosts,
+  mode: refererMode(process.env.ASSET_REFERER_CHECK || (hosts.isolated ? 'strict' : 'lenient')) });
 // Media files may also be fetched without a Referer (direct downloads, players that strip it); foreign referers are refused.
-const mediaRefererCheck = createRefererCheck({ hosts: instanceHosts,
+const mediaRefererCheck = createRefererCheck({ hosts: hosts.hosts,
   mode: refererMode(process.env.ASSET_REFERER_CHECK) === 'off' ? 'off' : 'lenient' });
-const rendererOrigin = (request) => rendererHost?.origin ?? `${request.protocol}://${rendererHost?.host ?? request.host}`;
 tokenKey();
 const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic, listGroupActions };
 const renderHub = createRenderHub(renderStore);
 app.locals.onEntriesChanged = (accountId) => renderHub.syncEntries(accountId)
   .catch((error) => console.error('Renderer sync failed:', error.message));
+app.use(hosts.routing);
 // Mounted before the app's JSON parser so the API answers malformed bodies with its own problem details.
 app.use(apiMountPath, createOgrafApi({ hub: renderHub, store: renderStore, findAccountByToken }));
 app.use(express.json());
 configureSession(app);
+app.use('/api', sameOriginWrites);
 
 app.get('/health', (_request, response) => response.json({ ok: true }));
 app.get('/api/catalog', async (_request, response) => {
@@ -94,7 +96,7 @@ app.use('/api/my-graphics', myGraphicsRouter);
 app.use('/api/rundowns', rundownsRouter);
 app.use('/api/private', createPrivateCatalog());
 app.use('/api/group-actions', createGroupActions());
-app.use('/api/media', createMedia({ storageRoot, rendererOrigin }));
+app.use('/api/media', createMedia({ storageRoot, fileOrigin: hosts.graphicsOrigin }));
 app.use('/api-docs', createApiDocs({ apiUrlFor: async (request) => request.session?.accountId
   ? apiUrl(request, await findAccountToken(request.session.accountId, 'api')) : undefined }));
 // Account token URLs: GET shows the current one, POST replaces the token (the old URL stops working).
@@ -105,7 +107,7 @@ app.get('/api/tokens/:kind', async (request, response) => {
   try {
     const token = await findAccountToken(request.session.accountId, request.params.kind);
     response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token),
-      ...(request.params.kind === 'renderer' ? { isolated: rendererIsolated } : {}) });
+      ...(request.params.kind === 'renderer' ? { isolated: hosts.isolated } : {}) });
   } catch (error) {
     if (error.code === 'TOKEN_UNREADABLE') return response.status(409).json({ error: error.message });
     response.status(503).json({ error: 'URL unavailable' });
@@ -118,20 +120,20 @@ app.post('/api/tokens/:kind', async (request, response) => {
     const token = await rotateAccountToken(request.session.accountId, request.params.kind);
     if (request.params.kind === 'renderer') renderHub.disconnect(request.session.accountId);
     response.set('Cache-Control', 'private, no-store').json({ url: tokenUrls[request.params.kind](request, token),
-      ...(request.params.kind === 'renderer' ? { isolated: rendererIsolated } : {}) });
+      ...(request.params.kind === 'renderer' ? { isolated: hosts.isolated } : {}) });
   } catch { response.status(503).json({ error: 'Unable to create a new token' }); }
 });
 // Renderer: the page connects to /render/<token>/ws (see render-hub.js) and hosts each graphic in a frame page.
-const frame = frameDocument(rendererIsolated);
+const frame = frameDocument(hosts.isolated);
 app.get(framePath, (_request, response) => response.set(frame.headers).type('html').send(frame.html));
-app.get(assetRoute, assetRefererCheck, createAssetHandler({ findVersion: findRenderableVersion, storageRoot, isolated: rendererIsolated }));
-app.get(mediaFileRoute, mediaRefererCheck, createMediaFileHandler({ storageRoot, isolated: rendererIsolated }));
+app.get(assetRoute, assetRefererCheck, createAssetHandler({ findVersion: findRenderableVersion, storageRoot, isolated: hosts.isolated }));
+app.get(mediaFileRoute, mediaRefererCheck, createMediaFileHandler({ storageRoot, isolated: hosts.isolated }));
 app.get(rendererRoute, async (request, response) => {
   try {
     if (!await findAccountByToken(request.params.token, 'renderer')) {
       return response.status(404).set(rendererHeaders).type('html').send(rendererPage('Unknown renderer URL.'));
     }
-    const page = rendererDocument(request, request.params.token, rendererIsolated);
+    const page = rendererDocument(request, request.params.token, { isolated: hosts.isolated, graphicsOrigin: hosts.graphicsOrigin(request) });
     response.set(page.headers).type('html').send(page.html);
   } catch { response.status(503).set(rendererHeaders).type('html').send(rendererPage('Renderer unavailable.')); }
 });
@@ -156,4 +158,4 @@ for (const [directory, source] of seedDirectories) {
   catch (error) { console.error(`Seed scan failed for ${directory}:`, error.message); }
 }
 const server = app.listen(port, () => console.log(`Grafanaut listening on http://localhost:${port}`));
-renderHub.attachServer(server, findAccountByToken);
+renderHub.attachServer(server, findAccountByToken, { allowsUpgrade: hosts.allowsUpgrade });

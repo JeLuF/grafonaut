@@ -387,7 +387,7 @@ export async function addMyGraphic(accountId, versionId) {
   if (!versions.length) throw new Error('Available graphic version not found');
   const rundownId = await ensureCurrentRundown(accountId);
   const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, rundown_id, package_version_id, schema_data)
-    SELECT ?, ?, pv.id, ? ${addableVersion}`, [accountId, rundownId, JSON.stringify(propertyDefaults(versions[0].manifest?.schema)), versionId, accountId]);
+    SELECT ?, ?, pv.id, ? ${addableVersion}`, [accountId, rundownId, JSON.stringify(await propertyDefaults(versions[0].manifest?.schema)), versionId, accountId]);
   if (result.affectedRows !== 1) throw new Error('Available graphic version not found');
   return String(result.insertId);
 }
