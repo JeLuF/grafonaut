@@ -99,8 +99,22 @@ input {
 }
 
 .sidebar-account {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     margin-top: auto;
     overflow-wrap: anywhere;
+}
+
+.sidebar-account .account-chip {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.sidebar-account .error-message {
+    flex-basis: 100%;
+    margin: 0;
 }
 
 
@@ -568,8 +582,25 @@ footer {
 }
 
 .entry-original-name {
-    margin-bottom: 7px;
+    margin-bottom: 4px;
     overflow-wrap: anywhere;
+}
+
+.entry-summary {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 0 0 10px;
+    color: var(--text-soft);
+    font: 13px/1.45 var(--font-body);
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+.entry-summary.is-one-line {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
 }
 
 .entry-label {

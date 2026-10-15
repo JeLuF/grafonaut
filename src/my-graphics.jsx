@@ -82,6 +82,31 @@ export function orderedEntries(properties) {
     .sort((a, b) => (rank(a.entry[1]) - rank(b.entry[1])) || (a.index - b.index)).map(({ entry }) => entry);
 }
 
+// The entry's property values as one short text for the rundown, in GDD order. Properties marked `hidden` are left out,
+// as the OGraf specification asks for labels; so are values that do not read well in a label (colours, file paths,
+// SPX file lists and instructions, booleans). Selects show their label.
+export function propertySummary(schema, data) {
+  const parts = [];
+  const visit = (property, value) => {
+    if (!isObject(property) || property.hidden === true) return;
+    if (['instruction', 'filelist'].includes(property.v_spx?.ftype)) return;
+    if (isObject(property.properties)) {
+      if (isObject(value)) for (const [key, child] of orderedEntries(property.properties)) visit(child, value[key]);
+      return;
+    }
+    const gddType = String(property.gddType ?? '');
+    if (gddType.startsWith('color-') || gddType.startsWith('file-path') || value === undefined || value === null) return;
+    const labels = property.gddOptions?.labels;
+    const option = Array.isArray(property.oneOf) ? property.oneOf.find((candidate) => isObject(candidate) && candidate.const === value) : null;
+    if (isObject(labels) && typeof labels[String(value)] === 'string') parts.push(labels[String(value)]);
+    else if (typeof option?.title === 'string') parts.push(option.title);
+    else if (typeof value === 'string' && value.trim()) parts.push(value.trim().replace(/\s+/g, ' '));
+    else if (typeof value === 'number' && Number.isFinite(value)) parts.push(String(value));
+  };
+  visit(schema, data);
+  return parts.join(' · ');
+}
+
 // Maps GDD/SPX display hints that RJSF does not understand onto JSON Schema: `label` becomes the field title,
 // `gddOptions.labels` names the values of an enum, and `order` sorts the properties (RJSF shows them in key order).
 export function displaySchema(schema) {
@@ -319,6 +344,8 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
     if (editingLabel) { labelInput.current?.focus(); labelInput.current?.select(); }
   }, [editingLabel]);
   const actionable = entry.enabled && !entry.packageDisabled && canControlGraphic(entry.control);
+  const renamed = Boolean(entry.label && entry.label !== entry.display_name);
+  const summary = propertySummary(entry.schema, entry.schemaData);
   const unavailableReason = entry.packageDisabled ? 'Package disabled' : !entry.enabled ? 'Enable this entry to play or update' : 'Renderer controls are not available';
   async function save(changes) {
     setError('');
@@ -359,11 +386,12 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
           <button className="icon-button" type="submit" disabled={busy || savingLabel} title="Save label" aria-label="Save label"><Save size={16} /></button>
           <button className="icon-button" type="button" onClick={cancelLabel} disabled={busy || savingLabel} title="Cancel label edit" aria-label="Cancel label edit"><X size={16} /></button>
         </form> : <div className="entry-title">
-          <h3>{entry.label || entry.display_name}</h3>
+          <h3 title={`${entry.display_name} v${entry.versionLabel} · ${entry.origin === 'upload' ? 'Upload' : 'Catalog'}`}>{entry.label || entry.display_name}</h3>
           <button className="icon-button edit-label-button" type="button" onClick={() => { setError(''); setEditingLabel(true); }} disabled={busy} title="Edit label" aria-label={`Edit label for ${entry.label || entry.display_name}`}><Pencil size={15} /></button>
         </div>}
-        {entry.label && entry.label !== entry.display_name && <p className="entry-meta entry-original-name">{entry.display_name}</p>}
-        <p className="entry-meta">v{entry.versionLabel} <span>{entry.origin === 'upload' ? 'Upload' : 'Catalog'}</span> <span>Entry {entry.entryId}</span></p>
+        {renamed && <p className="entry-meta entry-original-name">{entry.display_name}</p>}
+        {/* The current property values: two lines, one when the original name takes the other (renamed entries). */}
+        {summary && <p className={`entry-summary${renamed ? ' is-one-line' : ''}`} title={summary}>{summary}</p>}
         {error && <p className="error-message" role="alert">{error}</p>}
       </div>
       <div className="entry-controls">

@@ -58,6 +58,11 @@ const failurePage = (response, status, message) => response.status(status).type(
 export function createAuth({ upsertAccount, env = process.env, fetchImpl = fetch, now = () => Date.now() }) {
   const router = express.Router();
   router.get('/providers', (_request, response) => response.json({ providers: configuredProviders(env) }));
+  // Sign-out: drops the session cookie. POST, so the app's same-origin check applies (no sign-out by cross-site links).
+  router.post('/logout', (request, response) => {
+    request.session = null;
+    response.sendStatus(204);
+  });
 
   for (const [name, provider] of Object.entries(providers)) {
     router.get(`/${name}`, (request, response) => {

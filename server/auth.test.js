@@ -41,8 +41,8 @@ beforeEach(() => { accounts = []; calls = []; clock = 1_000_000; tokenStatus = 2
 // A tiny browser: keeps the session cookie between requests.
 function browser() {
   let cookie = '';
-  return async (path) => {
-    const response = await fetch(`${base}${path}`, { redirect: 'manual', headers: cookie ? { cookie } : {} });
+  return async (path, method = 'GET') => {
+    const response = await fetch(`${base}${path}`, { method, redirect: 'manual', headers: cookie ? { cookie } : {} });
     const cookies = response.headers.getSetCookie().map((value) => value.split(';')[0]);
     if (cookies.length) cookie = cookies.join('; ');
     return response;
@@ -124,5 +124,14 @@ test('cancelled logins and failed token exchanges show an explanation and sign n
   const failed = await visit(`/api/auth/google/callback?code=bad&state=${state}`);
   assert.equal(failed.status, 502);
   assert.equal(accounts.length, 0);
+  assert.deepEqual(await (await visit('/whoami')).json(), { accountId: null });
+});
+
+test('signing out drops the session', async () => {
+  const visit = browser();
+  const state = (await startLogin(visit, 'twitch')).searchParams.get('state');
+  await visit(`/api/auth/twitch/callback?code=abc&state=${state}`);
+  assert.deepEqual(await (await visit('/whoami')).json(), { accountId: 1 });
+  assert.equal((await visit('/api/auth/logout', 'POST')).status, 204);
   assert.deepEqual(await (await visit('/whoami')).json(), { accountId: null });
 });

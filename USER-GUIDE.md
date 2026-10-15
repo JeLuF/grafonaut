@@ -33,6 +33,8 @@ Graphics are prepared in rundowns, so several events can be prepared from one ac
 
 Each addition from the public or private catalog creates a new entry in the current rundown, pinned to that exact version, with an independent label, enabled flag and property state (starting with the manifest defaults). Disabled packages stay listed but cannot be enabled or controlled.
 
+Each entry shows its label (the graphic's name until it is renamed) and, below it, its current property values in GDD order, e.g. "Jane Doe · Host". Properties marked `hidden` are left out, as the OGraf specification asks for labels and display names, and so are colours, file paths, SPX file lists and instructions, and on/off values. Select fields show their label. The values take up to two lines, or one line for renamed entries, which show the graphic's name above them. The version and source (catalog or upload) are shown in the tooltip of the label.
+
 A successful addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show details**, **Show manifest** for its pinned version, **Duplicate** (a copy with the same version, properties and enabled state, labelled "… (copy)", placed directly below) and **Delete**, with confirmation. Deletion removes only that entry; the package and other copies remain unchanged.
 
 Reorder entries with the drag handle or the up/down arrows. The handle also supports keyboard sorting: focus it, press Space to pick up, use the arrow keys to move, and press Space to drop or Escape to cancel. The order is saved per rundown, survives reloads and defines the stacking in the renderer (first entry in front); failed saves leave the displayed order unchanged.
@@ -75,6 +77,10 @@ Every account has one renderer: the page at `/render/<renderer-token>/`, used as
 Each graphic runs in its own sandboxed iframe. To be forgiving with graphics whose `load()` resolves before the pages they create in nested frames have loaded (e.g. SPX-style templates that define `play()` there), the renderer waits up to 5 seconds for such frames before it reports the graphic as loaded, so an action sent right after loading finds them ready. The frames are stacked in rundown order: the first entry is in front. Frames, package files and media files come from the graphics host; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin. SPX-style graphics need the graphics host (see [Host names](INSTALLATION.md#host-names)).
 
 The Renderer page (sidebar link) shows the renderer URL, a 640×360 preview, the API URL and a link to the API documentation.
+
+## Signing out
+
+The button next to the account name at the bottom of the sidebar signs out.
 
 ## Tokens
 

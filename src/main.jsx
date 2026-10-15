@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, MonitorPlay, Plus, Search, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, LogOut, MonitorPlay, Plus, Search, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
@@ -57,6 +57,24 @@ export function Pagination({ page, pageCount, total, onChange }) {
 }
 
 // Catalog search; the ✕ button (or Escape) clears the filter and keeps the focus in the field.
+// The signed-in account and the sign-out button. Signing out reloads the app, so no state of the account remains.
+export function AccountBar({ account, onSignedOut }) {
+  const [state, setState] = useState('idle');
+  async function signOut() {
+    setState('busy');
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!response.ok) throw new Error();
+      onSignedOut();
+    } catch { setState('failed'); }
+  }
+  return <div className="sidebar-account">
+    <span className="account-chip" title={account.provider === 'google' ? 'Signed in with YouTube' : 'Signed in with Twitch'}>{account.display_name}</span>
+    <button className="icon-button sign-out-button" type="button" onClick={signOut} disabled={state === 'busy'} title="Sign out" aria-label="Sign out"><LogOut size={16} /></button>
+    {state === 'failed' && <p className="error-message" role="alert">Sign-out failed. Please try again.</p>}
+  </div>;
+}
+
 export function SearchBox({ value, onChange, label = 'Search graphics' }) {
   const input = useRef(null);
   function clear() {
@@ -420,9 +438,7 @@ function App() {
         void refreshMyGraphics();
         void refreshRendererStatus();
       }} />}
-      <div className="sidebar-account">
-        {account && <span className="account-chip" title={account.provider === 'google' ? 'Signed in with YouTube' : 'Signed in with Twitch'}>{account.display_name}</span>}
-      </div>
+      {account && <AccountBar account={account} onSignedOut={() => window.location.assign('/')} />}
     </aside>}
     <main className={`app-shell${signedOut ? ' site-main' : ''}`}>
       {notice && <p className="notice" role="status">{notice}</p>}

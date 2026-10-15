@@ -60,7 +60,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     }
   } })]
 });
-const { AddGraphicButton, Pagination, SearchBox, Toast, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
+const { AccountBar, AddGraphicButton, Pagination, SearchBox, Toast, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
 // Never hand DOM nodes to assert.equal/deepEqual: a failing comparison makes Node inspect and diff the whole jsdom
 // object graph, which exhausts memory instead of failing (and inside waitFor's first, expected miss, it stalls the run).
 const describeNode = (node) => node?.outerHTML?.slice(0, 160) ?? String(node);
@@ -117,12 +117,39 @@ test('saving a label and toggling enabled only target the selected entry', async
   assert.ok(screen.getByRole('heading', { name: 'Right' }));
 });
 
-test('unchanged labels show the graphic name once and keep metadata below it', () => {
+test('unchanged labels show the graphic name once, with version and source in its tooltip', () => {
   showView({ entries: [{ ...entry, label: null }, { ...entry, entryId: '2', label: entry.display_name }] });
   for (const row of screen.getAllByRole('listitem')) {
-    assert.ok(within(row).getByRole('heading', { name: 'Lower third' }));
+    const heading = within(row).getByRole('heading', { name: 'Lower third' });
+    assert.equal(heading.title, 'Lower third v1.0.0 · Catalog');
     assertAbsent(row.querySelector('.entry-original-name'));
-    assert.ok(row.querySelector('.entry-meta').textContent.includes('v1.0.0'));
+  }
+});
+
+const summaryEntry = { ...entry, label: null, schema: { type: 'object', properties: {
+  title: { type: 'string', order: 2 },
+  name: { type: 'string', order: 1 },
+  note: { type: 'string', hidden: true },
+  color: { type: 'string', gddType: 'color-rrggbb' },
+  image: { type: 'string', gddType: 'file-path/image-path' },
+  weather: { type: 'integer', gddType: 'select', enum: [0, 1], gddOptions: { labels: { 0: 'Sun', 1: 'Rain' } } },
+  score: { type: 'object', properties: { home: { type: 'integer' }, away: { type: 'integer' } } },
+  theme: { type: 'string', v_spx: { ftype: 'filelist' } },
+  live: { type: 'boolean' }
+} }, schemaData: { title: 'Host', name: '  Jane   Doe ', note: 'internal', color: '#005ca9', image: './a.jpg', weather: 1, score: { home: 2, away: 0 }, theme: './x.css', live: true } };
+
+test('entries show their property values instead of version, source and position, leaving out hidden ones', () => {
+  showView({ entries: [summaryEntry, { ...summaryEntry, entryId: '2', label: 'Opening' }, { ...entry, entryId: '3', label: null, schemaData: {} }] });
+  const [plain, renamed, empty] = screen.getAllByRole('listitem');
+  const summary = (row) => row.querySelector('.entry-summary');
+  assert.equal(summary(plain).textContent, 'Jane Doe · Host · Rain · 2 · 0');
+  assert.equal(summary(plain).title, 'Jane Doe · Host · Rain · 2 · 0');
+  assert.equal(summary(plain).classList.contains('is-one-line'), false);
+  assert.equal(renamed.querySelector('.entry-original-name').textContent, 'Lower third');
+  assert.equal(summary(renamed).classList.contains('is-one-line'), true);
+  assertAbsent(summary(empty));
+  for (const row of [plain, renamed, empty]) {
+    assert.doesNotMatch(row.textContent, /v1\.0\.0|Catalog|Entry \d/);
   }
 });
 
@@ -1183,4 +1210,20 @@ test('colours are parsed leniently and written in the form the field pattern exp
   assert.equal(formatColor({ gddType: 'color-rrggbb' }, { rgb: '#aabbcc', alpha: '80' }), '#aabbcc');
   assert.equal(formatColor({ gddType: 'color-rrggbbaa' }, { rgb: '#aabbcc', alpha: '80' }), '#aabbcc80');
   assert.equal(formatColor({ gddType: 'color-rrggbb', pattern: '^#[0-9A-F]{6}$' }, { rgb: '#aabbcc', alpha: 'ff' }), '#AABBCC');
+});
+
+test('the account bar signs out with a POST and reports failures', async () => {
+  const requests = [];
+  let ok = false;
+  globalThis.fetch = async (url, options) => { requests.push([url, options?.method]); return new Response(null, { status: ok ? 204 : 500 }); };
+  const signedOut = [];
+  render(React.createElement(AccountBar, { account: { display_name: 'Host', provider: 'twitch' }, onSignedOut: () => signedOut.push(true) }));
+  assert.equal(screen.getByText('Host').title, 'Signed in with Twitch');
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+  await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('Sign-out failed')));
+  assert.deepEqual(signedOut, []);
+  ok = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+  await waitFor(() => assert.deepEqual(signedOut, [true]));
+  assert.deepEqual(requests, [['/api/auth/logout', 'POST'], ['/api/auth/logout', 'POST']]);
 });

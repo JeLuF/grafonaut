@@ -45,4 +45,4 @@ Endpoints of the web app under `/api`. They need the session cookie; changing re
 - Media library: `GET`/`POST /api/media` (the file is the request body, its name the `name` query parameter), `PATCH`/`DELETE /api/media/:id`, `PUT /api/media/:id/content` (replace, same file type), `GET /api/media/:id/content`.
 - Tokens: `GET /api/tokens/:kind` shows the renderer or API URL, `POST /api/tokens/:kind` creates a new token (`kind` is `renderer` or `api`).
 - Catalog: `GET /api/catalog`, `GET /api/catalog/:versionId`, `…/manifest`, `…/thumbnail`, `…/thumbnails/:index`.
-- Sign-in: `GET /api/auth/providers`, `GET /api/auth/me`, `GET /api/auth/twitch`, `GET /api/auth/google` and their callbacks.
+- Sign-in: `GET /api/auth/providers`, `GET /api/auth/me`, `GET /api/auth/twitch`, `GET /api/auth/google` and their callbacks; `POST /api/auth/logout` signs out.
