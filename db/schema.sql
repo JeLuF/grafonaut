@@ -161,6 +161,18 @@ CREATE TABLE IF NOT EXISTS media (
   CONSTRAINT fk_media_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Favourites: graphics an account bookmarked, per package (they follow new versions). The MCP interface lists them so
+-- assistants prefer them when preparing rundowns.
+CREATE TABLE IF NOT EXISTS favourites (
+  account_id BIGINT UNSIGNED NOT NULL,
+  package_id CHAR(36) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (account_id, package_id),
+  KEY idx_favourites_package (package_id),
+  CONSTRAINT fk_favourites_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_favourites_package FOREIGN KEY (package_id) REFERENCES packages (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- MCP interface (MCP.md): OAuth clients registered through dynamic client registration. `metadata` is the client
 -- information returned at registration (redirect URIs, name, ...); the secret of confidential clients is stored
 -- encrypted like the account tokens.

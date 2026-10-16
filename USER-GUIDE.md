@@ -19,6 +19,10 @@ Every upload is checked before anything is saved (requirements §6):
 
 Package files are served to graphic frames from `/render/assets/<version>/…`; HTML and SVG only ever in a CSP sandbox. Private versions are addressed by their random version UUID, which only the owner sees.
 
+## Favourites
+
+The star on a graphic card or on a graphic's page bookmarks the graphic; the **Favourites** page (sidebar link) lists your favourites from the public and your private catalog. A favourite is the graphic, not one version: it shows the current published version of a public graphic and the newest version of your own upload. You can keep up to 500 favourites. AI assistants connected through the [MCP interface](MCP.md) use your favourites first when they set up rundowns.
+
 ## Media library
 
 Signed-in users manage their own files on the Media page (sidebar): upload (several at once), rename, replace and delete. Uploads use the same allowed file types as packages (`UPLOAD_ALLOWED_EXTENSIONS`) and are limited to `MEDIA_MAX_BYTES` (20 MB) each. Files are stored under `storage/media/<account>/` and served to graphics from `/render/media/<uuid>.<ext>` on the graphics host (else the renderer host), with the same CSP sandbox as package files. Other websites cannot embed them ([hotlink protection](INSTALLATION.md#hotlink-protection)).

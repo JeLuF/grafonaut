@@ -36,7 +36,10 @@ export const instructions = `Grafonaut hosts OGraf broadcast graphics. A rundown
 each entry pins one graphic version and holds its own label and property values. The account's current rundown is the one
 its renderer and controllers use on air; the others are being prepared.
 
-Typical workflow: list_rundowns, create_rundown for a new event, search_graphics, get_graphic for the property schema,
+The user's favourite graphics (list_favourites) are the ones they want to use: prefer them whenever one fits, and only
+fall back to other graphics when no favourite does. search_graphics lists favourites first and marks them.
+
+Typical workflow: list_rundowns, list_favourites, create_rundown for a new event, search_graphics, get_graphic for the property schema,
 add_entry with property values, list_media for image or video URLs to put into properties, and create_group_action for
 steps that should be triggered together. Entries and group actions can be prepared in any rundown; set_current_rundown only
 when the user asks for it.
@@ -133,20 +136,35 @@ export function createMcpServer(context, { store = db, schemas = untrustedSchema
 
   // ---- Reading ----
 
+  tool('list_favourites', {
+    title: 'List favourites',
+    description: 'The graphics the user marked as favourites, newest first. Prefer these when choosing graphics for a rundown.'
+  }, async () => {
+    const favourites = await store.listFavourites(accountId);
+    return { total: favourites.length, graphics: favourites.map((item) => ({ ...graphicOf(item), description: untrusted(item.description),
+      isPrivate: item.isPrivate })) };
+  });
+
   tool('search_graphics', {
     title: 'Search graphics',
-    description: 'Searches the public catalog and the account\'s private uploads. Every word of the query must appear in the name or description. Returns version IDs for get_graphic and add_entry.',
+    description: 'Searches the public catalog and the account\'s private uploads. Every word of the query must appear in the name or description. Favourites come first and are marked isFavourite. Returns version IDs for get_graphic and add_entry.',
     input: { query: z.string().max(100).optional().describe('Words to search for; empty lists everything'),
+      favouritesOnly: z.boolean().optional().describe('Only search the user\'s favourites (default false)'),
       limit: z.number().int().min(1).max(50).optional().describe('Most results to return (default 20)') }
-  }, async ({ query = '', limit = 20 }) => {
-    const [own, published] = await Promise.all([store.listPrivateCatalog(accountId), store.listPublishedCatalog()]);
+  }, async ({ query = '', favouritesOnly = false, limit = 20 }) => {
+    const [own, published, favouriteIds] = await Promise.all([store.listPrivateCatalog(accountId), store.listPublishedCatalog(),
+      store.listFavouritePackageIds(accountId)]);
+    const favourite = new Set(favouriteIds);
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const seen = new Set();
     const items = [...own.map((item) => ({ ...item, isPrivate: true })), ...published.map((item) => ({ ...item, isPrivate: false }))]
       .filter((item) => !seen.has(item.versionId) && seen.add(item.versionId))
-      .filter((item) => words.every((word) => `${item.display_name ?? ''} ${item.description ?? ''}`.toLowerCase().includes(word)));
+      .map((item) => ({ ...item, isFavourite: favourite.has(item.packageId) }))
+      .filter((item) => !favouritesOnly || item.isFavourite)
+      .filter((item) => words.every((word) => `${item.display_name ?? ''} ${item.description ?? ''}`.toLowerCase().includes(word)))
+      .sort((a, b) => Number(b.isFavourite) - Number(a.isFavourite));
     return { total: items.length, graphics: items.slice(0, limit).map((item) => ({ ...graphicOf(item), description: untrusted(item.description),
-      isPrivate: item.isPrivate })) };
+      isPrivate: item.isPrivate, isFavourite: item.isFavourite })) };
   });
 
   tool('get_graphic', {
@@ -154,10 +172,11 @@ export function createMcpServer(context, { store = db, schemas = untrustedSchema
     description: 'Details of one graphic version: its properties with the JSON schema property values must match, the default values new entries start with, and its custom actions.',
     input: { versionId }
   }, async ({ versionId: id }) => {
-    const [item, version] = await Promise.all([store.findCatalogItem(id, accountId), store.findVisibleVersion(id, accountId)]);
+    const [item, version, favouriteIds] = await Promise.all([store.findCatalogItem(id, accountId), store.findVisibleVersion(id, accountId),
+      store.listFavouritePackageIds(accountId)]);
     if (!item || !version) throw new ToolError('Graphic not found');
     const schema = await resolvePropertySchema(version, storageRoot);
-    return { ...graphicOf(item), description: untrusted(item.description, 1000), isPrivate: item.isPrivate,
+    return { ...graphicOf(item), description: untrusted(item.description, 1000), isPrivate: item.isPrivate, isFavourite: favouriteIds.includes(item.packageId),
       author: untrusted(item.author?.name, 100), stepCount: item.stepCount,
       properties: item.properties.map((property) => ({ key: property.key, title: untrusted(property.title, 100),
         ...(property.description ? { description: untrusted(property.description) } : {}), type: property.type })),
@@ -393,7 +412,8 @@ export function createMcpServer(context, { store = db, schemas = untrustedSchema
 ${event}
 
 1. Check list_rundowns; create a new rundown named after the event unless I named an existing one.
-2. Find suitable graphics with search_graphics (prefer my private uploads) and read their properties with get_graphic.
+2. Find suitable graphics: start with my favourites (list_favourites) and use other graphics from search_graphics only
+   where no favourite fits. Read their properties with get_graphic.
 3. Add one entry per graphic needed, in running order, with a clear label and filled-in properties. Use list_media for images.
 4. Where several graphics should change together, propose group actions and create them.
 5. Do not make the rundown current. Finish with a short overview of the rundown and anything you could not fill in.` } }] }));

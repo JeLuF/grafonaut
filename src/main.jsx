@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bot, Braces, Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, LogOut, MonitorPlay, Plus, Search, X } from 'lucide-react';
+import { Bot, Braces, Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, LogOut, MonitorPlay, Plus, Search, Star, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { ApiView, RendererPreview, useApiUrl } from './renderer-view.jsx';
 import AssistantsView, { useMcpEnabled } from './assistants-view.jsx';
+import { FavouriteButton, useFavourites } from './favourites.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
 import MediaCatalogView, { useMedia } from './media.jsx';
@@ -24,6 +25,7 @@ const PAGE_SIZE = 6;
 export function parseRoute(hash) {
   if (hash === '#rundown' || hash === '#my-graphics') return { view: 'rundown' };
   if (hash === '#private') return { view: 'private' };
+  if (hash === '#favourites') return { view: 'favourites' };
   if (hash === '#media') return { view: 'media' };
   if (hash === '#renderer') return { view: 'renderer' };
   if (hash === '#api') return { view: 'api' };
@@ -93,13 +95,16 @@ export function SearchBox({ value, onChange, label = 'Search graphics' }) {
 }
 
 // Catalog cards: preview and title link to the detail page, the button adds the graphic to the current rundown.
-function GraphicCards({ items, account, onAdd }) {
+function GraphicCards({ items, account, onAdd, favourites }) {
   return <div className="catalog-grid">
     {items.map((item) => <article className="graphic-card" key={item.versionId}>
       <a className="card-art-link" href={graphicHref(item)} tabIndex={-1} aria-hidden="true"><GraphicPreview item={item} /></a>
       <div className="card-body"><div><h3><a href={graphicHref(item)}>{item.display_name}</a></h3>
         <p className="card-description">{item.description || (item.isPrivate ? 'A private OGraf package.' : 'A published OGraf package.')}</p></div>
-      <AddGraphicButton item={item} disabled={!account} onAdd={onAdd} /></div>
+      <div className="card-buttons">
+        {account && <FavouriteButton item={item} favourites={favourites} />}
+        <AddGraphicButton item={item} disabled={!account} onAdd={onAdd} />
+      </div></div>
     </article>)}
   </div>;
 }
@@ -140,6 +145,24 @@ export function AddGraphicButton({ item, disabled, onAdd, label }) {
     title={disabled ? 'Sign in to add graphics' : added ? 'Added to rundown' : 'Add to rundown'}>
     {label ? <>{added ? <Check size={18} /> : <Plus size={18} />}{added ? 'Added to rundown' : label}</> : <Plus size={20} />}
   </button>;
+}
+
+function FavouritesView({ account, authLoading, favourites, children }) {
+  return <section className="catalog-section favourites-section" aria-labelledby="favourites-heading">
+    <div className="section-heading"><div>
+      <p className="eyebrow">FAVOURITES</p>
+      <h2 id="favourites-heading">Your favourite graphics</h2>
+      <p className="section-copy">Star graphics in the catalog or your private catalog to keep them here. AI assistants
+        connected to your account use your favourites first when they prepare rundowns.</p>
+    </div></div>
+    {authLoading ? <p className="status" role="status">Loading account...</p>
+      : !account ? <div className="empty-state"><strong>Sign in to keep favourites.</strong><LoginButtons compact /></div>
+        : favourites.error ? <p className="error-message" role="alert">{favourites.error}</p>
+          : favourites.loading && !favourites.items.length ? <p className="status" role="status">Loading favourites...</p>
+            : !favourites.items.length ? <div className="empty-state"><strong>No favourites yet.</strong>
+              <span>Use the star on a graphic to add it.</span></div>
+              : children}
+  </section>;
 }
 
 export function Toast({ toast, onDismiss }) {
@@ -213,6 +236,7 @@ function App() {
   useEffect(() => { void loadGroups(); }, [loadGroups, rundownState.currentRundownId]);
   const rundownName = rundownState.current?.name;
   const mcpEnabled = useMcpEnabled(account);
+  const favourites = useFavourites(account, { onError: (error) => notify(error.message, 'error') });
   const [rendererStatus, setRendererStatus] = useState(null);
   const statusRequest = useRef(0);
   const refreshRendererStatus = useCallback(async () => {
@@ -433,6 +457,7 @@ function App() {
       <nav className="view-tabs" aria-label="Graphics views">
         <a href="#catalog" aria-current={view === 'catalog' || view === 'graphic' ? 'page' : undefined}><LayoutGrid size={17} />Catalog</a>
         <a href="#private" aria-current={view === 'private' ? 'page' : undefined}><Lock size={17} />Private catalog</a>
+        <a href="#favourites" aria-current={view === 'favourites' ? 'page' : undefined}><Star size={17} />Favourites</a>
         <a href="#media" aria-current={view === 'media' ? 'page' : undefined}><ImageIcon size={17} />Media</a>
         <a href="#renderer" aria-current={view === 'renderer' ? 'page' : undefined}><MonitorPlay size={17} />Renderer</a>
         <a href="#api" aria-current={view === 'api' ? 'page' : undefined}><Braces size={17} />API</a>
@@ -463,14 +488,18 @@ function App() {
           const pages = Math.max(1, Math.ceil(privateItems.length / PAGE_SIZE));
           const current = Math.min(privatePage, pages - 1);
           return <>
-            <GraphicCards items={privateItems.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)} account={account} onAdd={addToMyGraphics} />
+            <GraphicCards items={privateItems.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)} account={account} onAdd={addToMyGraphics} favourites={favourites} />
             <Pagination page={current} pageCount={pages} total={privateItems.length} onChange={setPrivatePage} />
           </>;
         })()}
       </PrivateCatalogView>
       : view === 'graphic' ? <GraphicDetail versionId={route.versionId}
         summary={[...catalog, ...privateItems].find((item) => item.versionId === route.versionId)}
-        account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics} /> : <>
+        account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics}
+        FavouriteButton={FavouriteButton} favourites={favourites} />
+      : view === 'favourites' ? <FavouritesView account={account} authLoading={authLoading} favourites={favourites}>
+        <GraphicCards items={favourites.items} account={account} onAdd={addToMyGraphics} favourites={favourites} />
+      </FavouritesView> : <>
       {signedOut && <>
         <section className="hero">
           <div className="hero-text">
@@ -496,7 +525,7 @@ function App() {
         </div>
         {status && <p className="status">{status}</p>}
         {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>Seed packages will appear here after the first startup import.</span></div>}
-        <GraphicCards items={pageItems} account={account} onAdd={addToMyGraphics} />
+        <GraphicCards items={pageItems} account={account} onAdd={addToMyGraphics} favourites={favourites} />
         <Pagination page={currentPage} pageCount={pageCount} total={filteredCatalog.length} onChange={changePage} />
       </section>
       {signedOut && <section className="cta-band" aria-labelledby="cta-heading">

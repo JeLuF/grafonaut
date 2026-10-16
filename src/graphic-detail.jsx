@@ -70,7 +70,7 @@ export function ThumbnailCarousel({ images, name, fallback }) {
   );
 }
 
-export default function GraphicDetail({ versionId, summary, account, Preview, AddButton, onAdd }) {
+export default function GraphicDetail({ versionId, summary, account, Preview, AddButton, onAdd, FavouriteButton, favourites }) {
   const [item, setItem] = useState(null);
   const [error, setError] = useState('');
   const [showManifest, setShowManifest] = useState(false);
@@ -109,6 +109,7 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
           <h1 id="graphic-heading">{graphic.display_name}</h1>
           <div className="detail-cta">
             <AddButton item={graphic} disabled={!account} onAdd={onAdd} label="Add to rundown" />
+            {account && FavouriteButton && <FavouriteButton item={graphic} favourites={favourites} label />}
             <ActionMenu label={`More options for ${graphic.display_name}`} items={[
               { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => setShowManifest(true) }
             ]} />

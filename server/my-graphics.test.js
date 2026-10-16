@@ -360,3 +360,22 @@ test('entries can be added to another rundown of the account with label, propert
   assert.deepEqual(queries[1].parameters, ['9', 'account']);
   assert.deepEqual(queries.at(-1).parameters, ['account', '9', 'Guest', '{"name":"Ada"}', false, 'version', 'account']);
 });
+
+test('favourites are stored per package of a visible version and listed with the version the account sees', async () => {
+  const { addFavourite, listFavourites } = await import('./db.js');
+  rows = [{ packageId: 'package', count: 0 }];
+  assert.equal(await addFavourite('account', 'version'), 'package');
+  assert.match(queries[0].sql, /pv.review_state = 'published' OR p.owner_account_id = \?/);
+  assert.match(queries[0].sql, /p.disabled = FALSE/);
+  assert.deepEqual(queries.at(-1), { sql: 'INSERT IGNORE INTO favourites (account_id, package_id) VALUES (?, ?)', parameters: ['account', 'package'] });
+  queries = [];
+  rows = [];
+  assert.equal(await addFavourite('account', 'private-version'), null);
+  assert.equal(queries.length, 1);
+  queries = [];
+  rows = [{ versionId: 'v', display_name: 'Clock', reviewState: 'draft', packageId: 'package', manifest: {} }];
+  assert.deepEqual((await listFavourites('account')).map(({ isPrivate, isFavourite, packageId }) => ({ isPrivate, isFavourite, packageId })),
+    [{ isPrivate: true, isFavourite: true, packageId: 'package' }]);
+  assert.match(queries[0].sql, /CASE WHEN p.owner_account_id = f.account_id THEN p.latest_version_id ELSE p.current_published_version_id END/);
+  assert.match(queries[0].sql, /p.disabled = FALSE/);
+});

@@ -37,6 +37,8 @@ const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await i
 const rendererViewUrl = (await compileModule('./renderer-view.jsx', brand)).url;
 const { default: RendererView, ApiView } = await import(rendererViewUrl);
 const assistantsViewUrl = (await compileModule('./assistants-view.jsx', brand)).url;
+const favouritesUrl = (await compileModule('./favourites.jsx')).url;
+const { FavouriteButton, useFavourites } = await import(favouritesUrl);
 const { default: AssistantsView } = await import(assistantsViewUrl);
 const rundownsUrl = (await compileModule('./rundowns.jsx')).url;
 const { RundownPanel, useRundowns } = await import(rundownsUrl);
@@ -51,7 +53,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './assistants-view.jsx': assistantsViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl, './media.jsx': mediaUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './assistants-view.jsx': assistantsViewUrl, './favourites.jsx': favouritesUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl, './media.jsx': mediaUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -391,6 +393,7 @@ test('hash routes resolve catalog, my graphics and graphic detail views', () => 
   assert.deepEqual(parseRoute('#private'), { view: 'private' });
   assert.deepEqual(parseRoute('#renderer'), { view: 'renderer' });
   assert.deepEqual(parseRoute('#api'), { view: 'api' });
+  assert.deepEqual(parseRoute('#favourites'), { view: 'favourites' });
   assert.deepEqual(parseRoute('#assistants'), { view: 'assistants' });
   assert.deepEqual(parseRoute('#graphic/abc%2Fdef'), { view: 'graphic', versionId: 'abc/def' });
   assert.deepEqual(parseRoute('#graphic/%E0%A4%A'), { view: 'catalog' });
@@ -588,6 +591,34 @@ function mockTokenApi({ failGet = {} } = {}) {
   });
   return requests;
 }
+
+test('the star adds and removes a graphic from the favourites', async () => {
+  let stored = [];
+  const requests = [];
+  mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    requests.push(`${options.method ?? 'GET'} ${url}`);
+    if (options.method === 'POST') { stored = [{ ...graphic, isFavourite: true }]; return Response.json({ packageId: 'p1' }, { status: 201 }); }
+    if (options.method === 'DELETE') { stored = []; return Response.json({ ok: true }); }
+    return Response.json({ items: stored });
+  });
+  const graphic = { versionId: 'v2', packageId: 'p1', display_name: 'Lower third' };
+  const account = { id: 'account' };
+  function Harness() {
+    const favourites = useFavourites(account);
+    return React.createElement('div', null, React.createElement(FavouriteButton, { item: graphic, favourites }),
+      React.createElement('span', null, `${favourites.items.length} favourites`));
+  }
+  render(React.createElement(Harness));
+  await waitFor(() => assert.ok(screen.getByText('0 favourites')));
+  const star = screen.getByRole('button', { name: 'Add to favourites: Lower third' });
+  assert.equal(star.getAttribute('aria-pressed'), 'false');
+  fireEvent.click(star);
+  await waitFor(() => assert.ok(screen.getByText('1 favourites')));
+  assert.equal(screen.getByRole('button', { name: 'Remove from favourites: Lower third' }).getAttribute('aria-pressed'), 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove from favourites: Lower third' }));
+  await waitFor(() => assert.ok(screen.getByText('0 favourites')));
+  assert.deepEqual(requests, ['GET /api/favourites', 'POST /api/favourites', 'GET /api/favourites', 'DELETE /api/favourites/p1']);
+});
 
 test('the renderer and API pages show their URL with open and copy actions', async () => {
   const requests = mockTokenApi();

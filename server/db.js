@@ -661,6 +661,51 @@ export async function deleteMedia(accountId, id) {
   return result.affectedRows === 1;
 }
 
+// ---- Favourites: bookmarked packages, shown with the version the account sees (its own packages: the latest
+// version; others: the current published version) ----
+
+export const MAX_FAVOURITES = 500;
+
+export async function listFavourites(accountId) {
+  const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel,
+      pv.manifest_name AS display_name, pv.manifest_description AS description, pv.manifest_json AS manifest,
+      pv.manifest_file_relpath AS manifestFile, pv.main_file_relpath AS mainFile, pv.review_state AS reviewState, p.id AS packageId
+    FROM favourites f
+    JOIN packages p ON p.id = f.package_id AND p.disabled = FALSE
+    JOIN package_versions pv ON pv.id = CASE WHEN p.owner_account_id = f.account_id THEN p.latest_version_id ELSE p.current_published_version_id END
+    WHERE f.account_id = ? ORDER BY f.created_at DESC, pv.manifest_name`, [accountId]);
+  return Promise.all(rows.map(async (row) => {
+    const { manifest, manifestFile, mainFile, reviewState, ...item } = row;
+    const thumbnail = await findThumbnail(row, storageRoot);
+    return { ...item, isPrivate: reviewState !== 'published', isFavourite: true,
+      thumbnailUrl: thumbnail ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null };
+  }));
+}
+
+export async function listFavouritePackageIds(accountId) {
+  const [rows] = await pool.query('SELECT package_id AS packageId FROM favourites WHERE account_id = ?', [accountId]);
+  return rows.map((row) => row.packageId);
+}
+
+// Bookmarks the package of a version the account can see. Returns the package ID, or null when the version is not
+// available to the account. Throws FAVOURITES_FULL at MAX_FAVOURITES.
+export async function addFavourite(accountId, versionId) {
+  const [versions] = await pool.query(`SELECT pv.package_id AS packageId ${addableVersion}`, [versionId, accountId]);
+  if (!versions.length) return null;
+  const [[{ count }]] = await pool.query('SELECT COUNT(*) AS count FROM favourites WHERE account_id = ?', [accountId]);
+  if (Number(count) >= MAX_FAVOURITES) {
+    const [existing] = await pool.query('SELECT 1 FROM favourites WHERE account_id = ? AND package_id = ?', [accountId, versions[0].packageId]);
+    if (!existing.length) throw Object.assign(new Error(`You can have at most ${MAX_FAVOURITES} favourites`), { code: 'FAVOURITES_FULL' });
+  }
+  await pool.query('INSERT IGNORE INTO favourites (account_id, package_id) VALUES (?, ?)', [accountId, versions[0].packageId]);
+  return versions[0].packageId;
+}
+
+export async function removeFavourite(accountId, packageId) {
+  const [result] = await pool.query('DELETE FROM favourites WHERE account_id = ? AND package_id = ?', [accountId, packageId]);
+  return result.affectedRows === 1;
+}
+
 // ---- MCP interface: OAuth clients, grants (connected apps) and activity ----
 
 const clientRow = (row) => row && { ...row.metadata, client_id: row.id,

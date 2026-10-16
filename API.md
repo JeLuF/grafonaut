@@ -44,6 +44,7 @@ Endpoints of the web app under `/api`. They need the session cookie; changing re
 - Private catalog: `GET`/`POST /api/private/packages` (the `.ograf.zip` is the request body).
 - Media library: `GET`/`POST /api/media` (the file is the request body, its name the `name` query parameter), `PATCH`/`DELETE /api/media/:id`, `PUT /api/media/:id/content` (replace, same file type), `GET /api/media/:id/content`.
 - Tokens: `GET /api/tokens/:kind` shows the renderer or API URL, `POST /api/tokens/:kind` creates a new token (`kind` is `renderer` or `api`).
+- Favourites: `GET /api/favourites` lists them with the version the account sees, `POST /api/favourites` with `{ "versionId": "<uuid>" }` bookmarks the graphic (package) of a visible version (`409` at 500 favourites), `DELETE /api/favourites/:packageId` removes one.
 - MCP interface: `GET /api/mcp` returns `{ enabled }` and, when enabled, the MCP `url`, the connected `apps` and recent `activity`; `DELETE /api/mcp/apps/:id` disconnects an app and revokes its tokens.
 - Catalog: `GET /api/catalog`, `GET /api/catalog/:versionId`, `…/manifest`, `…/thumbnail`, `…/thumbnails/:index`.
 - Sign-in: `GET /api/auth/providers`, `GET /api/auth/me`, `GET /api/auth/twitch`, `GET /api/auth/google` and their callbacks; `POST /api/auth/logout` signs out.

@@ -375,6 +375,30 @@ h3 {
     cursor: pointer;
 }
 
+.card-buttons {
+    display: flex;
+    flex: 0 0 auto;
+    align-self: center;
+    gap: 8px;
+}
+
+.card-body .favourite-button {
+    display: inline-grid;
+    place-items: center;
+    width: 38px;
+    color: var(--muted);
+}
+
+.favourite-button.is-favourite {
+    color: #ffc94d;
+}
+
+.detail-cta .favourite-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .card-body button:disabled {
     opacity: .35;
     cursor: not-allowed;

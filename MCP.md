@@ -55,6 +55,8 @@ Ask the assistant in plain words, for example:
 
 The assistant creates the rundown "Cup final" and fills it in. The new rundown doesn't become the current one, so whatever you are running on air stays as it is. Open it in Grafonaut, check the entries and their properties, and make it current when the event starts.
 
+The assistant is told to use your [favourites](USER-GUIDE.md#favourites) first and to pick other graphics only where no favourite fits. Star the graphics you want to see in your shows before asking.
+
 Clients that support MCP prompts also offer the prompt **Set up a rundown for an event** (`set_up_rundown`). It takes a description of the event and walks the assistant through these steps.
 
 ### Tools
@@ -63,7 +65,8 @@ Reading (scope `rundowns:read`):
 
 | Tool | What it does |
 | --- | --- |
-| `search_graphics` | Searches the public catalog and your private uploads by name and description |
+| `list_favourites` | The graphics you starred as favourites |
+| `search_graphics` | Searches the public catalog and your private uploads by name and description. Favourites come first and are marked; `favouritesOnly` limits the search to them. |
 | `get_graphic` | A graphic's properties, the JSON schema their values must match, default values and custom actions |
 | `list_rundowns` | Your rundowns, their number of entries, and which one is current |
 | `get_rundown` | A rundown's entries in order, with property values and on-air state, and its group actions |

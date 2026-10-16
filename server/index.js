@@ -10,6 +10,7 @@ import myGraphicsRouter from './my-graphics.js';
 import rundownsRouter from './rundowns.js';
 import { createPrivateCatalog } from './private-catalog.js';
 import { createGroupActions } from './group-actions.js';
+import { createFavourites } from './favourites.js';
 import { createAuth } from './auth.js';
 import { createMedia, createMediaFileHandler, mediaFileRoute } from './media.js';
 import { createRefererCheck, parseHosts, refererMode } from './referer.js';
@@ -105,6 +106,7 @@ app.use('/api/my-graphics', myGraphicsRouter);
 app.use('/api/rundowns', rundownsRouter);
 app.use('/api/private', createPrivateCatalog());
 app.use('/api/group-actions', createGroupActions());
+app.use('/api/favourites', createFavourites());
 app.use('/api/media', createMedia({ storageRoot, fileOrigin: hosts.graphicsOrigin }));
 app.use('/api-docs', createApiDocs({ apiUrlFor: async (request) => request.session?.accountId
   ? apiUrl(request, await findAccountToken(request.session.accountId, 'api')) : undefined }));
