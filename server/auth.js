@@ -5,6 +5,10 @@ import express from 'express';
 // Every login attempt gets a random `state` kept in the signed session cookie and checked on the callback
 // (protects against login CSRF); Google additionally uses PKCE (S256).
 const STATE_TTL_MS = 10 * 60 * 1000;
+// Where a sign-in may return to instead of the app: only the MCP consent page of a pending authorization (mcp-oauth.js).
+// Anything else (other paths, other hosts) is ignored, so the parameter cannot be used as an open redirect.
+const returnPathPattern = /^\/oauth\/consent\?request=[A-Za-z0-9_-]{43}$/;
+export const returnPath = (value) => typeof value === 'string' && returnPathPattern.test(value) ? value : null;
 const randomToken = () => crypto.randomBytes(32).toString('base64url');
 const challengeFor = (verifier) => crypto.createHash('sha256').update(verifier).digest('base64url');
 
@@ -71,7 +75,8 @@ export function createAuth({ upsertAccount, env = process.env, fetchImpl = fetch
       const state = randomToken();
       const verifier = provider.pkce ? randomToken() : undefined;
       // The signed session cookie carries the pending login; it is replaced by the account on success.
-      request.session = { ...(request.session ?? {}), oauth: { provider: name, state, verifier, created: now() } };
+      const returnTo = returnPath(request.query.returnTo);
+      request.session = { ...(request.session ?? {}), oauth: { provider: name, state, verifier, created: now(), ...(returnTo ? { returnTo } : {}) } };
       const params = new URLSearchParams({ client_id: settings.clientId, redirect_uri: settings.redirectUri, response_type: 'code',
         scope: provider.scope, state, ...(verifier ? { code_challenge: challengeFor(verifier), code_challenge_method: 'S256' } : {}),
         ...(provider.extraParams ?? {}) });
@@ -100,7 +105,7 @@ export function createAuth({ upsertAccount, env = process.env, fetchImpl = fetch
         const identity = await provider.profile(fetchImpl, token, env);
         const account = await upsertAccount({ provider: name, ...identity });
         request.session = { accountId: account.id };
-        response.redirect('/');
+        response.redirect(returnPath(pending.returnTo) ?? '/');
       } catch (failure) {
         console.error(`${provider.label} sign-in failed:`, failure.message);
         failurePage(response, 502, `${provider.label} sign-in failed. Please try again.`);

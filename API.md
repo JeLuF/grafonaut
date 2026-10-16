@@ -1,10 +1,10 @@
 # API
 
-Grafonaut has two APIs: the **OGraf Server API**, a public, token-authenticated API per account for controllers, and the **app API** under `/api`, used by the web app with the session cookie.
+Grafonaut has two APIs: the **OGraf Server API**, a public, token-authenticated API per account for controllers, and the **app API** under `/api`, used by the web app with the session cookie. AI assistants use the separate, OAuth-protected MCP interface described in [MCP.md](MCP.md).
 
 ## OGraf Server API
 
-Grafonaut implements the [OGraf Server API](https://ograf.ebu.io) for every account. The account's API lives at `https://<main host>/<api-token>/ograf/v1/`; the URL is shown on the Renderer page. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors.
+Grafonaut implements the [OGraf Server API](https://ograf.ebu.io) for every account. The account's API lives at `https://<main host>/<api-token>/ograf/v1/`; the URL is shown on the API page. The API token is a separate random token, so a leaked renderer URL cannot be used to control graphics. The API answers with CORS headers for any origin (the token in the path is the only credential) and returns RFC 7807 problem details for errors.
 
 - The renderer ID is `main`; its RenderTargets are the entries of the current rundown, identified as `{ "entryId": "<id>" }`. Each holds at most one GraphicInstance of the entry's pinned graphic version; `GET /renderers/main` lists them and the number of connected renderer pages (`status.connections`).
 - Implemented: `GET /`, `GET /graphics`, `GET /graphics/{id}`, `GET /renderers`, `GET /renderers/main`, `GET /renderers/main/target`, `POST …/graphicInstance/load`, `…/playAction`, `…/stopAction`, `…/updateAction`, `…/customActions/{id}` and `PUT …/graphicInstance/clear`. `graphicId` is the package version ID. Other endpoints answer `501 Not Implemented`.
@@ -21,7 +21,7 @@ Controllers that only implement the standard OGraf Server API work without the e
 
 ### Interactive documentation
 
-Swagger UI is served at `/api-docs/` and linked from the Renderer page. Its OpenAPI document (`/api-docs/openapi.json`) is built from `server/ograf-openapi.js`; a test checks it against the routes the API registers. For signed-in users the document's server is their own API URL, so "Try it out" works directly.
+Swagger UI is served at `/api-docs/` and linked from the API page. Its OpenAPI document (`/api-docs/openapi.json`) is built from `server/ograf-openapi.js`; a test checks it against the routes the API registers. For signed-in users the document's server is their own API URL, so "Try it out" works directly.
 
 ## App API
 
@@ -44,5 +44,6 @@ Endpoints of the web app under `/api`. They need the session cookie; changing re
 - Private catalog: `GET`/`POST /api/private/packages` (the `.ograf.zip` is the request body).
 - Media library: `GET`/`POST /api/media` (the file is the request body, its name the `name` query parameter), `PATCH`/`DELETE /api/media/:id`, `PUT /api/media/:id/content` (replace, same file type), `GET /api/media/:id/content`.
 - Tokens: `GET /api/tokens/:kind` shows the renderer or API URL, `POST /api/tokens/:kind` creates a new token (`kind` is `renderer` or `api`).
+- MCP interface: `GET /api/mcp` returns `{ enabled }` and, when enabled, the MCP `url`, the connected `apps` and recent `activity`; `DELETE /api/mcp/apps/:id` disconnects an app and revokes its tokens.
 - Catalog: `GET /api/catalog`, `GET /api/catalog/:versionId`, `…/manifest`, `…/thumbnail`, `…/thumbnails/:index`.
 - Sign-in: `GET /api/auth/providers`, `GET /api/auth/me`, `GET /api/auth/twitch`, `GET /api/auth/google` and their callbacks; `POST /api/auth/logout` signs out.

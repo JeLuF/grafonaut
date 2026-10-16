@@ -67,6 +67,11 @@ export class RundownError extends Error {
 }
 // Restricts my_graphics_entries g to the account's current rundown.
 const currentRundown = 'JOIN accounts cur ON cur.id = g.account_id AND cur.current_rundown_id = g.rundown_id';
+// Restricts the rows of `alias` (entries g, group actions ga) to one rundown of their account: the current one, or the
+// given rundown ID (the MCP interface prepares rundowns that are not current).
+const rundownFilter = (rundownId, alias = 'g') => rundownId == null
+  ? { join: `JOIN accounts cur ON cur.id = ${alias}.account_id AND cur.current_rundown_id = ${alias}.rundown_id`, params: [] }
+  : { join: `JOIN rundowns sel ON sel.id = ${alias}.rundown_id AND sel.account_id = ${alias}.account_id AND sel.id = ?`, params: [rundownId] };
 
 async function inTransaction(work) {
   const connection = await pool.getConnection();
@@ -105,6 +110,12 @@ export async function listRundowns(accountId) {
 }
 
 const duplicateName = (error) => error?.code === 'ER_DUP_ENTRY' ? new RundownError('DUPLICATE_NAME', 'A rundown with this name already exists') : error;
+
+export async function findRundown(accountId, rundownId) {
+  const [rows] = await pool.query(`SELECT CAST(r.id AS CHAR) AS id, r.name, a.current_rundown_id = r.id AS isCurrent
+    FROM rundowns r JOIN accounts a ON a.id = r.account_id WHERE r.id = ? AND r.account_id = ?`, [rundownId, accountId]);
+  return rows[0] ? { ...rows[0], isCurrent: Boolean(rows[0].isCurrent) } : null;
+}
 
 export async function createRundown(accountId, name) {
   try {
@@ -381,18 +392,21 @@ const addableVersion = `FROM package_versions pv
     WHERE pv.id = ? AND p.disabled = FALSE
       AND (pv.review_state = 'published' OR p.owner_account_id = ?)`;
 
-// New entries go to the current rundown and start with the schema defaults as their properties.
-export async function addMyGraphic(accountId, versionId) {
+// New entries go to the current rundown (or `rundownId`, a rundown of the account) and start with the schema defaults
+// as their properties unless `schemaData` (already validated) is given.
+export async function addMyGraphic(accountId, versionId, { rundownId, label = null, schemaData, enabled = true } = {}) {
   const [versions] = await pool.query(`SELECT pv.manifest_json AS manifest ${addableVersion}`, [versionId, accountId]);
   if (!versions.length) throw new Error('Available graphic version not found');
-  const rundownId = await ensureCurrentRundown(accountId);
-  const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, rundown_id, package_version_id, schema_data)
-    SELECT ?, ?, pv.id, ? ${addableVersion}`, [accountId, rundownId, JSON.stringify(await propertyDefaults(versions[0].manifest?.schema)), versionId, accountId]);
+  if (rundownId != null && !await findRundown(accountId, rundownId)) throw new RundownError('NOT_FOUND', 'Rundown not found');
+  const targetRundownId = rundownId ?? await ensureCurrentRundown(accountId);
+  const data = schemaData ?? await propertyDefaults(versions[0].manifest?.schema);
+  const [result] = await pool.query(`INSERT INTO my_graphics_entries (account_id, rundown_id, package_version_id, label, schema_data, enabled)
+    SELECT ?, ?, pv.id, ?, ?, ? ${addableVersion}`, [accountId, targetRundownId, label, JSON.stringify(data), enabled, versionId, accountId]);
   if (result.affectedRows !== 1) throw new Error('Available graphic version not found');
   return String(result.insertId);
 }
 
-const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, g.label, g.enabled,
+const myGraphicsSelect = `SELECT CAST(g.id AS CHAR) AS entryId, CAST(g.rundown_id AS CHAR) AS rundownId, g.label, g.enabled,
     g.schema_data AS schemaData, pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel,
     pv.manifest_name AS display_name, pv.manifest_description AS description,
     pv.manifest_json AS manifest, pv.manifest_file_relpath AS manifestFile,
@@ -417,9 +431,11 @@ export function manifestCustomActions(manifest) {
     }));
 }
 
-export async function listMyGraphics(accountId) {
-  const [rows] = await pool.query(`${myGraphicsSelect} ${currentRundown}
-    WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [accountId]);
+// The entries of the current rundown, or of `rundownId`.
+export async function listMyGraphics(accountId, rundownId) {
+  const rundown = rundownFilter(rundownId);
+  const [rows] = await pool.query(`${myGraphicsSelect} ${rundown.join}
+    WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [...rundown.params, accountId]);
   return Promise.all(rows.map(async (row) => {
     const { manifest, manifestFile, mainFile, ...item } = row;
     const [thumbnail, schema] = await Promise.all([!row.packageDisabled && findThumbnail(row, storageRoot), resolvePropertySchema(row, storageRoot)]);
@@ -442,15 +458,17 @@ export const copyLabel = (name) => {
   return (base.length + suffix.length > 100 ? base.slice(0, 100 - suffix.length).join('') : base.join('')) + suffix;
 };
 
-// Copies an entry of the current rundown (graphic version, properties, enabled state; label with " (copy)") and
-// places the copy directly below the original. Returns the new entry ID, or null when there is no such entry.
-export async function duplicateMyGraphic(accountId, entryId) {
+// Copies an entry of the current rundown (or of `rundownId`) with its graphic version, properties, enabled state and
+// label with " (copy)", and places the copy directly below the original. Returns the new entry ID, or null when there
+// is no such entry.
+export async function duplicateMyGraphic(accountId, entryId, rundownId) {
+  const rundown = rundownFilter(rundownId);
   return inTransaction(async (connection) => {
     await connection.query('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
     const [entries] = await connection.query(`SELECT CAST(g.id AS CHAR) AS entryId, g.rundown_id AS rundownId, g.package_version_id AS versionId,
         g.label, g.schema_data AS schemaData, g.enabled, pv.manifest_name AS displayName
-      FROM my_graphics_entries g JOIN package_versions pv ON pv.id = g.package_version_id ${currentRundown}
-      WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC FOR UPDATE`, [accountId]);
+      FROM my_graphics_entries g JOIN package_versions pv ON pv.id = g.package_version_id ${rundown.join}
+      WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC FOR UPDATE`, [...rundown.params, accountId]);
     const index = entries.findIndex((entry) => entry.entryId === String(entryId));
     if (index < 0) return null;
     const original = entries[index];
@@ -472,13 +490,15 @@ export async function deleteMyGraphic(accountId, entryId) {
   return result.affectedRows === 1;
 }
 
-export async function reorderMyGraphics(accountId, entryIds) {
+// Saves the complete order of the current rundown's entries (or those of `rundownId`).
+export async function reorderMyGraphics(accountId, entryIds, rundownId) {
+  const rundown = rundownFilter(rundownId);
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
     await connection.query('SELECT id FROM accounts WHERE id = ? FOR UPDATE', [accountId]);
-    const [entries] = await connection.query(`SELECT CAST(g.id AS CHAR) AS entryId FROM my_graphics_entries g ${currentRundown}
-      WHERE g.account_id = ? FOR UPDATE`, [accountId]);
+    const [entries] = await connection.query(`SELECT CAST(g.id AS CHAR) AS entryId FROM my_graphics_entries g ${rundown.join}
+      WHERE g.account_id = ? FOR UPDATE`, [...rundown.params, accountId]);
     const ownedIds = new Set(entries.map((entry) => entry.entryId));
     if (entryIds.length !== ownedIds.size || new Set(entryIds).size !== entryIds.length || entryIds.some((entryId) => !ownedIds.has(entryId))) {
       const error = new Error('My Graphics or the current rundown changed. Refresh the list and try again.');
@@ -556,40 +576,47 @@ export async function findAccountGraphic(accountId, versionId) {
   return rows[0] ?? null;
 }
 
-// ---- Group actions of the current rundown (FE-7) ----
+// ---- Group actions of the current rundown (FE-7); `rundownId` selects another rundown of the account ----
 
 const groupRow = (row) => ({ id: String(row.id), name: row.name, steps: Array.isArray(row.steps) ? row.steps : [] });
 
-export async function listGroupActions(accountId) {
-  const [rows] = await pool.query(`SELECT ga.id, ga.name, ga.steps FROM group_actions ga
-    JOIN accounts cur ON cur.id = ga.account_id AND cur.current_rundown_id = ga.rundown_id
-    WHERE ga.account_id = ? ORDER BY ga.created_at, ga.id`, [accountId]);
+export async function listGroupActions(accountId, rundownId) {
+  const rundown = rundownFilter(rundownId, 'ga');
+  const [rows] = await pool.query(`SELECT ga.id, ga.name, ga.steps FROM group_actions ga ${rundown.join}
+    WHERE ga.account_id = ? ORDER BY ga.created_at, ga.id`, [...rundown.params, accountId]);
   return rows.map(groupRow);
 }
 
-export async function createGroupAction(accountId, { name, steps }) {
-  const rundownId = await ensureCurrentRundown(accountId);
+// A group action of any rundown of the account, with its rundown ID.
+export async function findGroupAction(accountId, groupId) {
+  const [rows] = await pool.query('SELECT id, name, steps, rundown_id FROM group_actions WHERE id = ? AND account_id = ?', [groupId, accountId]);
+  return rows[0] ? { ...groupRow(rows[0]), rundownId: String(rows[0].rundown_id) } : null;
+}
+
+export async function createGroupAction(accountId, { name, steps }, rundownId) {
+  if (rundownId != null && !await findRundown(accountId, rundownId)) throw new RundownError('NOT_FOUND', 'Rundown not found');
+  const targetRundownId = rundownId ?? await ensureCurrentRundown(accountId);
   const [result] = await pool.query('INSERT INTO group_actions (account_id, rundown_id, name, steps) VALUES (?, ?, ?, ?)',
-    [accountId, rundownId, name, JSON.stringify(steps)]);
+    [accountId, targetRundownId, name, JSON.stringify(steps)]);
   return { id: String(result.insertId), name, steps };
 }
 
-// Changes name and/or steps of a group of the current rundown; returns false when there is no such group.
-export async function updateGroupAction(accountId, groupId, changes) {
+// Changes name and/or steps of a group of the current rundown (or of `rundownId`); returns false when there is no such group.
+export async function updateGroupAction(accountId, groupId, changes, rundownId) {
+  const rundown = rundownFilter(rundownId, 'ga');
   const fields = [];
   const values = [];
   if (changes.name !== undefined) { fields.push('ga.name = ?'); values.push(changes.name); }
   if (changes.steps !== undefined) { fields.push('ga.steps = ?'); values.push(JSON.stringify(changes.steps)); }
-  const [result] = await pool.query(`UPDATE group_actions ga
-    JOIN accounts cur ON cur.id = ga.account_id AND cur.current_rundown_id = ga.rundown_id
-    SET ${fields.join(', ')} WHERE ga.id = ? AND ga.account_id = ?`, [...values, groupId, accountId]);
+  const [result] = await pool.query(`UPDATE group_actions ga ${rundown.join}
+    SET ${fields.join(', ')} WHERE ga.id = ? AND ga.account_id = ?`, [...rundown.params, ...values, groupId, accountId]);
   return result.affectedRows === 1;
 }
 
-export async function deleteGroupAction(accountId, groupId) {
-  const [result] = await pool.query(`DELETE ga FROM group_actions ga
-    JOIN accounts cur ON cur.id = ga.account_id AND cur.current_rundown_id = ga.rundown_id
-    WHERE ga.id = ? AND ga.account_id = ?`, [groupId, accountId]);
+export async function deleteGroupAction(accountId, groupId, rundownId) {
+  const rundown = rundownFilter(rundownId, 'ga');
+  const [result] = await pool.query(`DELETE ga FROM group_actions ga ${rundown.join}
+    WHERE ga.id = ? AND ga.account_id = ?`, [...rundown.params, groupId, accountId]);
   return result.affectedRows === 1;
 }
 
@@ -632,6 +659,91 @@ export async function updateMedia(accountId, id, changes) {
 export async function deleteMedia(accountId, id) {
   const [result] = await pool.query('DELETE FROM media WHERE id = ? AND account_id = ?', [id, accountId]);
   return result.affectedRows === 1;
+}
+
+// ---- MCP interface: OAuth clients, grants (connected apps) and activity ----
+
+const clientRow = (row) => row && { ...row.metadata, client_id: row.id,
+  ...(row.secret_ciphertext ? { client_secret: decryptToken(row.secret_ciphertext) } : {}) };
+
+export async function findOAuthClient(clientId) {
+  if (typeof clientId !== 'string' || clientId.length > 36) return null;
+  const [rows] = await pool.query('SELECT id, secret_ciphertext, metadata FROM oauth_clients WHERE id = ?', [clientId]);
+  return clientRow(rows[0]) ?? null;
+}
+
+export async function insertOAuthClient({ client_id: clientId, client_secret: secret, ...metadata }) {
+  await pool.query('INSERT INTO oauth_clients (id, secret_ciphertext, metadata) VALUES (?, ?, ?)',
+    [clientId, secret ? encryptToken(secret) : null, JSON.stringify(metadata)]);
+}
+
+// Creates a grant with its first token pair ({ accessHash, accessTtl, refreshHash, refreshTtl }; lifetimes in seconds,
+// computed by the database so app and database time zones cannot disagree); returns the grant ID.
+export async function createMcpGrant(accountId, { clientId, scope, resource, tokens }) {
+  await pool.query('DELETE FROM mcp_grants WHERE refresh_expires_at < CURRENT_TIMESTAMP');
+  const [result] = await pool.query(`INSERT INTO mcp_grants (account_id, client_id, scope, resource, access_token_hash, access_expires_at,
+      refresh_token_hash, refresh_expires_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP + INTERVAL ? SECOND, ?, CURRENT_TIMESTAMP + INTERVAL ? SECOND)`,
+  [accountId, clientId, scope, resource, tokens.accessHash, tokens.accessTtl, tokens.refreshHash, tokens.refreshTtl]);
+  return String(result.insertId);
+}
+
+// `accessExpiresIn`: seconds the access token stays valid.
+const grantSelect = `SELECT CAST(g.id AS CHAR) AS id, CAST(g.account_id AS CHAR) AS accountId, g.client_id AS clientId, g.scope, g.resource,
+    TIMESTAMPDIFF(SECOND, CURRENT_TIMESTAMP, g.access_expires_at) AS accessExpiresIn, c.metadata AS clientMetadata
+  FROM mcp_grants g JOIN oauth_clients c ON c.id = g.client_id`;
+
+export async function findMcpGrantByAccessToken(accessHash) {
+  const [rows] = await pool.query(`${grantSelect} WHERE g.access_token_hash = ? AND g.access_expires_at > CURRENT_TIMESTAMP`, [accessHash]);
+  if (rows[0]) await pool.query('UPDATE mcp_grants SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?', [rows[0].id]);
+  return rows[0] ?? null;
+}
+
+// Replaces the token pair of the grant holding `refreshHash` (refresh token rotation). A refresh token that was already
+// replaced revokes its grant (it was copied, RFC 9700 4.14.2). Returns the grant, or null.
+export async function rotateMcpGrant(clientId, refreshHash, tokens) {
+  return inTransaction(async (connection) => {
+    const [rows] = await connection.query(`${grantSelect} WHERE g.client_id = ? AND g.refresh_token_hash = ?
+      AND g.refresh_expires_at > CURRENT_TIMESTAMP FOR UPDATE`, [clientId, refreshHash]);
+    if (!rows[0]) {
+      await connection.query('DELETE FROM mcp_grants WHERE client_id = ? AND previous_refresh_hash = ?', [clientId, refreshHash]);
+      return null;
+    }
+    await connection.query(`UPDATE mcp_grants SET access_token_hash = ?, access_expires_at = CURRENT_TIMESTAMP + INTERVAL ? SECOND,
+        previous_refresh_hash = refresh_token_hash, refresh_token_hash = ?, refresh_expires_at = CURRENT_TIMESTAMP + INTERVAL ? SECOND,
+        last_used_at = CURRENT_TIMESTAMP WHERE id = ?`,
+    [tokens.accessHash, tokens.accessTtl, tokens.refreshHash, tokens.refreshTtl, rows[0].id]);
+    return rows[0];
+  });
+}
+
+// Revokes the grant of a client that holds the given access or refresh token hash (RFC 7009).
+export async function revokeMcpGrantByToken(clientId, tokenHash) {
+  await pool.query('DELETE FROM mcp_grants WHERE client_id = ? AND (access_token_hash = ? OR refresh_token_hash = ?)', [clientId, tokenHash, tokenHash]);
+}
+
+export async function listMcpGrants(accountId) {
+  const [rows] = await pool.query(`SELECT CAST(g.id AS CHAR) AS id, g.scope, g.created_at AS createdAt, g.last_used_at AS lastUsedAt,
+      c.metadata AS clientMetadata
+    FROM mcp_grants g JOIN oauth_clients c ON c.id = g.client_id
+    WHERE g.account_id = ? AND g.refresh_expires_at > CURRENT_TIMESTAMP ORDER BY g.created_at DESC, g.id DESC`, [accountId]);
+  return rows;
+}
+
+export async function deleteMcpGrant(accountId, grantId) {
+  const [result] = await pool.query('DELETE FROM mcp_grants WHERE id = ? AND account_id = ?', [grantId, accountId]);
+  return result.affectedRows === 1;
+}
+
+export async function insertMcpActivity(accountId, { clientName, tool, summary, ok }) {
+  await pool.query('INSERT INTO mcp_activity (account_id, client_name, tool, summary, ok) VALUES (?, ?, ?, ?, ?)',
+    [accountId, [...clientName].slice(0, 255).join(''), tool, [...summary].slice(0, 255).join(''), ok]);
+  await pool.query('DELETE FROM mcp_activity WHERE account_id = ? AND created_at < CURRENT_TIMESTAMP - INTERVAL 90 DAY', [accountId]);
+}
+
+export async function listMcpActivity(accountId, limit = 50) {
+  const [rows] = await pool.query(`SELECT CAST(id AS CHAR) AS id, client_name AS clientName, tool, summary, ok, created_at AS createdAt
+    FROM mcp_activity WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`, [accountId, limit]);
+  return rows.map((row) => ({ ...row, ok: Boolean(row.ok) }));
 }
 
 export async function findVersionByChecksum(checksum) {

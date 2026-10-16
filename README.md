@@ -12,6 +12,7 @@ Grafonaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a
 - **Media library:** images and other files for graphic properties, with hotlink protection.
 - **Renderer:** one browser page per account for OBS/vMix, with every graphic in its own sandboxed frame.
 - **OGraf Server API** per account, with interactive documentation at `/api-docs/`, for controllers such as Bitfocus Companion.
+- **MCP interface** for AI assistants such as Claude: describe an event and let the assistant set up its rundown (optional, OAuth-protected, no control of graphics on air).
 - Sign-in with Twitch or YouTube (Google).
 
 ## Documentation
@@ -21,6 +22,7 @@ Grafonaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a
 | [INSTALLATION.md](INSTALLATION.md) | Running with Docker, configuration reference, sign-in providers, reverse proxy, renderer and graphics hosts, security settings |
 | [USER-GUIDE.md](USER-GUIDE.md) | Catalogs, uploads, media library, rundowns, properties, group actions, renderer and tokens |
 | [API.md](API.md) | The OGraf Server API (and its `x-actions` extension) and the app's own API |
+| [MCP.md](MCP.md) | The MCP interface for AI assistants: setup, connecting clients, tools, security |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Local development, tests, seed packages |
 | [STATUS.md](STATUS.md) | Status of the work packages from `ograf-platform-requirements.md` |
 

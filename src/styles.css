@@ -1613,6 +1613,52 @@ footer {
     margin-left: auto;
 }
 
+.renderer-card + .renderer-card {
+    margin-top: 32px;
+}
+
+.renderer-actions .mcp-url {
+    flex: 1 1 280px;
+}
+
+.mcp-subheading {
+    margin: 6px 0 0;
+    font-size: 16px;
+}
+
+.mcp-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font: 14px/1.5 var(--font-body);
+}
+
+.mcp-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 16px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+}
+
+.mcp-list li > div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mcp-list .muted {
+    font-size: 13px;
+}
+
+.mcp-activity li.is-refused > span:first-child {
+    color: var(--danger-text);
+}
+
 .renderer-info section {
     display: flex;
     flex-direction: column;

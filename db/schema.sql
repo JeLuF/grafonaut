@@ -160,3 +160,53 @@ CREATE TABLE IF NOT EXISTS media (
   KEY idx_media_account (account_id, created_at),
   CONSTRAINT fk_media_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- MCP interface (MCP.md): OAuth clients registered through dynamic client registration. `metadata` is the client
+-- information returned at registration (redirect URIs, name, ...); the secret of confidential clients is stored
+-- encrypted like the account tokens.
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  id CHAR(36) NOT NULL,
+  secret_ciphertext VARCHAR(255) NULL,
+  metadata JSON NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One grant per approved authorization of a client for an account. It holds the current access token and refresh
+-- token (SHA-256 hashes; both are replaced at every refresh) and is what the user sees and revokes as a connected app.
+CREATE TABLE IF NOT EXISTS mcp_grants (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  account_id BIGINT UNSIGNED NOT NULL,
+  client_id CHAR(36) NOT NULL,
+  scope VARCHAR(255) NOT NULL,
+  resource VARCHAR(512) NOT NULL,
+  access_token_hash CHAR(64) NOT NULL,
+  access_expires_at DATETIME NOT NULL,
+  refresh_token_hash CHAR(64) NOT NULL,
+  -- The refresh token replaced at the last refresh: presenting it again means it was copied, and revokes the grant.
+  previous_refresh_hash CHAR(64) NULL,
+  refresh_expires_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_used_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_mcp_grants_access (access_token_hash),
+  UNIQUE KEY uq_mcp_grants_refresh (refresh_token_hash),
+  KEY idx_mcp_grants_previous (previous_refresh_hash),
+  KEY idx_mcp_grants_account (account_id),
+  CONSTRAINT fk_mcp_grants_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE,
+  CONSTRAINT fk_mcp_grants_client FOREIGN KEY (client_id) REFERENCES oauth_clients (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Changes made through the MCP interface, shown to the account on the Renderer page (kept for 90 days).
+CREATE TABLE IF NOT EXISTS mcp_activity (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  account_id BIGINT UNSIGNED NOT NULL,
+  client_name VARCHAR(255) NOT NULL,
+  tool VARCHAR(64) NOT NULL,
+  summary VARCHAR(255) NOT NULL,
+  ok BOOLEAN NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_mcp_activity_account (account_id, created_at),
+  CONSTRAINT fk_mcp_activity_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

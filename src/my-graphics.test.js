@@ -35,7 +35,9 @@ const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-gr
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
 const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
 const rendererViewUrl = (await compileModule('./renderer-view.jsx', brand)).url;
-const { default: RendererView } = await import(rendererViewUrl);
+const { default: RendererView, ApiView } = await import(rendererViewUrl);
+const assistantsViewUrl = (await compileModule('./assistants-view.jsx', brand)).url;
+const { default: AssistantsView } = await import(assistantsViewUrl);
 const rundownsUrl = (await compileModule('./rundowns.jsx')).url;
 const { RundownPanel, useRundowns } = await import(rundownsUrl);
 const privateCatalogUrl = (await compileModule('./private-catalog.jsx', brand)).url;
@@ -49,7 +51,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl, './media.jsx': mediaUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './assistants-view.jsx': assistantsViewUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl, './media.jsx': mediaUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -388,6 +390,8 @@ test('hash routes resolve catalog, my graphics and graphic detail views', () => 
   assert.deepEqual(parseRoute('#my-graphics'), { view: 'rundown' });
   assert.deepEqual(parseRoute('#private'), { view: 'private' });
   assert.deepEqual(parseRoute('#renderer'), { view: 'renderer' });
+  assert.deepEqual(parseRoute('#api'), { view: 'api' });
+  assert.deepEqual(parseRoute('#assistants'), { view: 'assistants' });
   assert.deepEqual(parseRoute('#graphic/abc%2Fdef'), { view: 'graphic', versionId: 'abc/def' });
   assert.deepEqual(parseRoute('#graphic/%E0%A4%A'), { view: 'catalog' });
 });
@@ -585,47 +589,80 @@ function mockTokenApi({ failGet = {} } = {}) {
   return requests;
 }
 
-test('the renderer page shows the renderer and API URLs with open and copy actions', async () => {
+test('the renderer and API pages show their URL with open and copy actions', async () => {
   const requests = mockTokenApi();
   const copied = [];
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { copied.push(text); } } });
   render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByText(tokenUrls.renderer)));
+  assertAbsent(screen.queryByText(tokenUrls.api));
+  fireEvent.click(screen.getByRole('button', { name: 'Copy renderer URL' }));
+  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Renderer URL copied' })));
+  cleanup();
+  render(React.createElement(ApiView, { account: { id: 'account' }, authLoading: false }));
   await waitFor(() => assert.ok(screen.getByText(tokenUrls.api)));
-  assert.ok(screen.getByText(tokenUrls.renderer));
-  assert.deepEqual(requests.map(([url]) => url).sort(), ['/api/tokens/api', '/api/tokens/renderer']);
-  for (const [name, url] of [['Open renderer', tokenUrls.renderer], ['Open API', tokenUrls.api]]) {
+  assertAbsent(screen.queryByText(tokenUrls.renderer));
+  assert.equal(screen.getByRole('link', { name: 'interactive API documentation' }).getAttribute('href'), '/api-docs/');
+  fireEvent.click(screen.getByRole('button', { name: 'Copy API URL' }));
+  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'API URL copied' })));
+  assert.deepEqual(requests.map(([url]) => url), ['/api/tokens/renderer', '/api/tokens/api']);
+  for (const [name, url] of [['Open API', tokenUrls.api]]) {
     const link = screen.getByRole('link', { name });
     assert.equal(link.getAttribute('href'), url);
     assert.equal(link.getAttribute('target'), '_blank');
     assert.equal(link.getAttribute('rel'), 'noopener noreferrer');
   }
-  assert.equal(screen.getByRole('link', { name: 'interactive API documentation' }).getAttribute('href'), '/api-docs/');
-  fireEvent.click(screen.getByRole('button', { name: 'Copy renderer URL' }));
-  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'Renderer URL copied' })));
-  fireEvent.click(screen.getByRole('button', { name: 'Copy API URL' }));
-  await waitFor(() => assert.ok(screen.getByRole('button', { name: 'API URL copied' })));
   assert.deepEqual(copied, [tokenUrls.renderer, tokenUrls.api]);
   delete navigator.clipboard;
 });
 
-test('the renderer page asks signed-out users to sign in and reports lookup failures', async () => {
+test('the renderer, API and assistants pages ask signed-out users to sign in; lookup failures are reported', async () => {
   const fetchMock = mock.method(globalThis, 'fetch', async () => Response.json({ error: 'Sign-in required' }, { status: 401 }));
-  render(React.createElement(RendererView, { account: null, authLoading: false }));
-  assert.ok(screen.getByText('Sign in to get your renderer URL.'));
-  assert.equal(screen.getByRole('link', { name: 'Login with Twitch' }).getAttribute('href'), '/api/auth/twitch');
-  assertAbsent(screen.queryByRole('button', { name: 'New renderer token' }));
+  for (const [view, text] of [[RendererView, 'Sign in to get your renderer URL.'], [ApiView, 'Sign in to get your API URL.'], [AssistantsView, 'Sign in to connect an assistant.']]) {
+    render(React.createElement(view, { account: null, authLoading: false }));
+    assert.ok(screen.getByText(text));
+    assert.equal(screen.getByRole('link', { name: 'Login with Twitch' }).getAttribute('href'), '/api/auth/twitch');
+    cleanup();
+  }
   assert.equal(fetchMock.mock.callCount(), 0);
-  cleanup();
   render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
-  await waitFor(() => assert.equal(screen.getAllByRole('alert').length, 2));
+  await waitFor(() => assert.equal(screen.getAllByRole('alert').length, 1));
   assertAbsent(screen.queryByRole('link', { name: 'Open renderer' }));
-  assertAbsent(screen.queryByRole('link', { name: 'Open API' }));
+  cleanup();
+  render(React.createElement(AssistantsView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.equal(screen.getByRole('alert').textContent, 'Sign-in required'));
+});
+
+test('the assistants page explains when the MCP interface is off', async () => {
+  mock.method(globalThis, 'fetch', async () => Response.json({ enabled: false }));
+  render(React.createElement(AssistantsView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByText('The MCP interface is not enabled on this server.')));
+});
+
+test('the assistants page shows the MCP URL, connected apps and their changes, and disconnects apps', async () => {
+  let apps = [{ id: '4', name: 'Claude', scopes: ['rundowns:read', 'rundowns:write'], createdAt: '2026-10-01T10:00:00Z', lastUsedAt: null },
+    { id: '5', name: 'Reader', scopes: ['rundowns:read'], createdAt: '2026-10-02T10:00:00Z', lastUsedAt: '2026-10-03T10:00:00Z' }];
+  const requests = [];
+  mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    requests.push([url, options.method ?? 'GET']);
+    if (url === '/api/mcp/apps/4' && options.method === 'DELETE') { apps = apps.filter((app) => app.id !== '4'); return Response.json({ ok: true }); }
+    return Response.json({ enabled: true, url: 'https://app.example.com/mcp', apps,
+      activity: [{ id: '1', clientName: 'Claude', tool: 'add_entry', summary: 'Added "Host" to "Final"', ok: true, createdAt: '2026-10-01T10:05:00Z' }] });
+  });
+  render(React.createElement(AssistantsView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByText('https://app.example.com/mcp')));
+  assert.match(screen.getByText('Claude', { selector: 'strong' }).parentElement.textContent, /Can read and prepare rundowns/);
+  assert.match(screen.getByText('Reader', { selector: 'strong' }).parentElement.textContent, /Can read rundowns · connected .* · last used/);
+  assert.ok(screen.getByText('Added "Host" to "Final"'));
+  fireEvent.click(screen.getAllByRole('button', { name: 'Disconnect' })[0]);
+  await waitFor(() => assertAbsent(screen.queryByText('Claude', { selector: 'strong' })));
+  assert.deepEqual(requests.map(([url, method]) => `${method} ${url}`), ['GET /api/mcp', 'DELETE /api/mcp/apps/4', 'GET /api/mcp']);
 });
 
 test('creating a new token requires confirmation and only replaces that token', async () => {
   const requests = mockTokenApi();
   render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
-  await waitFor(() => assert.ok(screen.getByText(tokenUrls.api)));
+  await waitFor(() => assert.ok(screen.getByText(tokenUrls.renderer)));
   fireEvent.click(screen.getByRole('button', { name: 'New renderer token' }));
   assert.ok(screen.getByText('All renderer URLs with the current token stop working.'));
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -636,20 +673,22 @@ test('creating a new token requires confirmation and only replaces that token', 
   assert.deepEqual(requests.at(-1), ['/api/tokens/renderer', 'POST']);
   assert.equal(screen.getByRole('link', { name: 'Open renderer' }).getAttribute('href'), 'https://app.example.com/render/new/');
   assert.ok(screen.getByText('New URL created. Update your browser sources.'));
-  assert.ok(screen.getByText(tokenUrls.api));
+  cleanup();
+  render(React.createElement(ApiView, { account: { id: 'account' }, authLoading: false }));
+  await waitFor(() => assert.ok(screen.getByText(tokenUrls.api)));
   fireEvent.click(screen.getByRole('button', { name: 'New API token' }));
   assert.ok(screen.getByText('Controllers using the current API URL stop working.'));
   fireEvent.click(screen.getByRole('button', { name: 'Create new token' }));
   await waitFor(() => assert.ok(screen.getByText('https://app.example.com/api-new/ograf/v1/')));
   assert.deepEqual(requests.at(-1), ['/api/tokens/api', 'POST']);
+  assert.equal(requests.filter(([, method]) => method === 'POST').length, 2);
   assert.ok(screen.getByText('New API URL created. Update your controllers.'));
 });
 
 test('an unreadable token can still be replaced', async () => {
   mockTokenApi({ failGet: { api: 'This token cannot be read with the current encryption key. Create a new token.' } });
-  render(React.createElement(RendererView, { account: { id: 'account' }, authLoading: false }));
+  render(React.createElement(ApiView, { account: { id: 'account' }, authLoading: false }));
   await waitFor(() => assert.ok(screen.getByRole('alert').textContent.includes('cannot be read')));
-  assert.ok(screen.getByText(tokenUrls.renderer));
   fireEvent.click(screen.getByRole('button', { name: 'New API token' }));
   fireEvent.click(screen.getByRole('button', { name: 'Create new token' }));
   await waitFor(() => assert.ok(screen.getByText('https://app.example.com/api-new/ograf/v1/')));

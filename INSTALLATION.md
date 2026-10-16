@@ -37,6 +37,8 @@ All settings are environment variables, set in `.env` (see `.env.example`).
 | `UPLOAD_MAX_FILES` | `5000` | Most entries in a package. |
 | `UPLOAD_ALLOWED_EXTENSIONS` | see [USER-GUIDE.md](USER-GUIDE.md#private-catalog) | Allowed file types in packages and the media library, comma separated. |
 | `MEDIA_MAX_BYTES` | `20971520` (20 MB) | Largest media library upload. |
+| `MCP_BASE_URL` | empty (off) | Public HTTPS origin of the main host; turns on the MCP interface for AI assistants, see [MCP.md](MCP.md). |
+| `MCP_ALLOWED_ORIGINS` | empty | Origins of browser-based MCP clients allowed to call `/mcp`, see [MCP.md](MCP.md). |
 | `APP_PORT` | `3000` | Host port Docker Compose publishes the app on. |
 | `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD` | see `.env.example` | Database credentials; Compose passes them to MySQL and the app. |
 
@@ -164,6 +166,6 @@ The check stops other web pages from embedding the files; it is not access contr
 
 ## Tokens
 
-Renderer and API tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones on the Renderer page.
+Renderer and API tokens are stored AES-256-GCM encrypted with `TOKEN_ENCRYPTION_KEY` (32 bytes, base64 or hex; required in production) and looked up by SHA-256 hash. Keep the key outside the database and stable across restarts: if it changes, existing tokens can no longer be shown and users must create new ones on the Renderer and API pages.
 
 Renderer and API URLs carry their token in the path. Keep them out of access logs that others can read, or redact them there.

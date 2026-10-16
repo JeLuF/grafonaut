@@ -26,7 +26,7 @@ export function createApiDocs({ apiUrlFor }) {
 <link rel="stylesheet" href="/api-docs/assets/swagger-ui.css">
 <style>body{margin:0;background:#fafafa}.docs-bar{display:flex;align-items:center;gap:16px;padding:14px 20px;background:#17332f;color:#fdf9ef;font:14px Arial,sans-serif}
 .docs-bar a{color:#fdf9ef}.docs-bar strong{letter-spacing:.2em}</style>
-</head><body><div class="docs-bar"><strong>GRAFONAUT</strong><span>OGraf Server API</span><a href="/#renderer">Back to the Renderer page</a></div>
+</head><body><div class="docs-bar"><strong>GRAFONAUT</strong><span>OGraf Server API</span><a href="/#api">Back to Grafonaut</a></div>
 <div id="swagger-ui"></div>
 <script src="/api-docs/assets/swagger-ui-bundle.js"></script>
 <script nonce="${nonce}">window.ui = SwaggerUIBundle({ url: '/api-docs/openapi.json', dom_id: '#swagger-ui', deepLinking: true,

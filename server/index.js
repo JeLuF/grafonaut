@@ -21,6 +21,8 @@ import { createRenderHub } from './render-hub.js';
 import { tokenKey } from './tokens.js';
 import { apiMountPath, apiUrl, createOgrafApi } from './ograf-api.js';
 import { createApiDocs } from './api-docs.js';
+import { createMcp, parseAllowedOrigins } from './mcp.js';
+import { createMcpSettings, parseMcpBaseUrl } from './mcp-oauth.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -37,6 +39,9 @@ const assetRefererCheck = createRefererCheck({ hosts: hosts.hosts,
 const mediaRefererCheck = createRefererCheck({ hosts: hosts.hosts,
   mode: refererMode(process.env.ASSET_REFERER_CHECK) === 'off' ? 'off' : 'lenient' });
 tokenKey();
+// MCP interface (MCP.md): off unless MCP_BASE_URL is set.
+const mcpBaseUrl = parseMcpBaseUrl(process.env.MCP_BASE_URL);
+const mcpAllowedOrigins = parseAllowedOrigins(process.env.MCP_ALLOWED_ORIGINS);
 const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic, listGroupActions };
 const renderHub = createRenderHub(renderStore);
 app.locals.onEntriesChanged = (accountId) => renderHub.syncEntries(accountId)
@@ -47,6 +52,10 @@ app.use(apiMountPath, createOgrafApi({ hub: renderHub, store: renderStore, findA
 app.use(express.json());
 configureSession(app);
 app.use('/api', sameOriginWrites);
+const mcp = mcpBaseUrl ? createMcp({ baseUrl: mcpBaseUrl, allowedOrigins: mcpAllowedOrigins, mediaOrigin: hosts.graphicsOrigin,
+  onEntriesChanged: app.locals.onEntriesChanged }) : null;
+if (mcp) app.use(mcp.router);
+app.use('/api/mcp', createMcpSettings({ mcpUrl: mcp?.mcpUrl }));
 
 app.get('/health', (_request, response) => response.json({ ok: true }));
 app.get('/api/catalog', async (_request, response) => {

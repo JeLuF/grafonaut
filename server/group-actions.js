@@ -15,8 +15,9 @@ function validName(value) {
   return name && [...name].length <= 100 ? name : null;
 }
 
-// Returns { steps } with normalized steps, or { problems } describing every invalid step.
-export function validateSteps(steps, entryIds) {
+// Returns { steps } with normalized steps, or { problems } describing every invalid step. `rundownName` names the
+// rundown of `entryIds` in problems.
+export function validateSteps(steps, entryIds, rundownName = 'the current rundown') {
   if (!Array.isArray(steps)) return { problems: ['steps must be a list'] };
   if (steps.length > MAX_STEPS) return { problems: [`A group action can have at most ${MAX_STEPS} steps`] };
   const problems = [];
@@ -29,7 +30,7 @@ export function validateSteps(steps, entryIds) {
     }
     if (!entryTypes.has(step.type)) { problems.push(`${where}: unknown step type`); return null; }
     const entryId = typeof step.entryId === 'string' || typeof step.entryId === 'number' ? String(step.entryId) : '';
-    if (!entryIds.has(entryId)) problems.push(`${where}: the graphic is not in the current rundown`);
+    if (!entryIds.has(entryId)) problems.push(`${where}: the graphic is not in ${rundownName}`);
     if (step.type !== 'custom') return { type: step.type, entryId };
     if (typeof step.actionId !== 'string' || !step.actionId || step.actionId.length > 200) problems.push(`${where}: choose a custom action`);
     const payload = step.payload === undefined ? {} : step.payload;

@@ -76,7 +76,11 @@ Every account has one renderer: the page at `/render/<renderer-token>/`, used as
 
 Each graphic runs in its own sandboxed iframe. To be forgiving with graphics whose `load()` resolves before the pages they create in nested frames have loaded (e.g. SPX-style templates that define `play()` there), the renderer waits up to 5 seconds for such frames before it reports the graphic as loaded, so an action sent right after loading finds them ready. The frames are stacked in rundown order: the first entry is in front. Frames, package files and media files come from the graphics host; HTML and SVG files are served with a CSP sandbox so they never run in the app's origin. SPX-style graphics need the graphics host (see [Host names](INSTALLATION.md#host-names)).
 
-The Renderer page (sidebar link) shows the renderer URL, a 640×360 preview, the API URL and a link to the API documentation.
+The sidebar has a page for each way to connect to your account:
+
+- **Renderer:** the renderer URL for OBS/vMix browser sources, with setup steps.
+- **API:** the URL of your [OGraf Server API](API.md) for controllers such as Bitfocus Companion, and a link to the interactive API documentation.
+- **AI assistants:** shown when the server has the [MCP interface](MCP.md) enabled. It shows the MCP URL, the apps connected to your account (with a button to disconnect each) and the latest changes they made.
 
 ## Signing out
 
@@ -86,4 +90,4 @@ The button next to the account name at the bottom of the sidebar signs out.
 
 The renderer and API URLs each contain a token: 32 random bytes created with the account, permanent so the URLs can stay in browser sources and controllers. The API token is separate from the renderer token, so a leaked renderer URL cannot be used to control graphics.
 
-If a URL leaked, create a new renderer or API token on the Renderer page. Every URL with the old token stops working, and open renderer pages are disconnected.
+If a URL leaked, create a new token on the Renderer or API page. Every URL with the old token stops working, and open renderer pages are disconnected.

@@ -58,7 +58,7 @@ test('adding the same immutable version creates independent entries with default
   assert.match(queries[1].sql, /^SELECT current_rundown_id/);
   const insert = queries[2];
   assert.match(insert.sql, /^INSERT INTO my_graphics_entries \(account_id, rundown_id,/);
-  assert.deepEqual(insert.parameters, ['account', '5', JSON.stringify({ name: 'Host', theme: './themes/Default.css', colors: { text: '#fff' } }), 'version', 'account']);
+  assert.deepEqual(insert.parameters, ['account', '5', null, JSON.stringify({ name: 'Host', theme: './themes/Default.css', colors: { text: '#fff' } }), true, 'version', 'account']);
   for (const { sql } of queries.filter((query) => !query.sql.startsWith('SELECT current_rundown_id'))) {
     assert.match(sql, /p.disabled = FALSE/);
     assert.match(sql, /pv.review_state = 'published' OR p.owner_account_id = \?/);
@@ -67,7 +67,7 @@ test('adding the same immutable version creates independent entries with default
 test('graphics without a schema start with empty properties', async () => {
   rows = [{ manifest: { id: 'no-schema' } }];
   await addMyGraphic('account', 'version');
-  assert.equal(queries[2].parameters[2], '{}');
+  assert.equal(queries[2].parameters[3], '{}');
 });
 test('adding an unavailable or inaccessible version fails', async () => {
   await assert.rejects(addMyGraphic('account', 'private-version'), /Available graphic version not found/);
@@ -332,4 +332,31 @@ test('media are listed per account with their usage and changed only by their ow
   assert.match(queries[2].sql, /SET size_bytes = \?, checksum_sha256 = \?, updated_at = CURRENT_TIMESTAMP WHERE id = \? AND account_id = \?/);
   await deleteMedia('account', 'm1');
   assert.deepEqual(queries[3].parameters, ['m1', 'account']);
+});
+
+test('entries and group actions of a rundown other than the current one are selected by rundown and account', async () => {
+  rows = [];
+  await listMyGraphics('account', '9');
+  assert.match(queries[0].sql, /JOIN rundowns sel ON sel.id = g.rundown_id AND sel.account_id = g.account_id AND sel.id = \?/);
+  assert.doesNotMatch(queries[0].sql, /cur.current_rundown_id/);
+  assert.deepEqual(queries[0].parameters, ['9', 'account']);
+  queries = [];
+  await updateGroupAction('account', '3', { name: 'Opener', steps: [] }, '9');
+  assert.match(queries[0].sql, /^UPDATE group_actions ga JOIN rundowns sel ON sel.id = ga.rundown_id AND sel.account_id = ga.account_id AND sel.id = \?\s+SET ga.name = \?, ga.steps = \?/);
+  assert.deepEqual(queries[0].parameters, ['9', 'Opener', '[]', '3', 'account']);
+  queries = [];
+  await deleteGroupAction('account', '3', '9');
+  assert.deepEqual(queries[0].parameters, ['9', '3', 'account']);
+  queries = [];
+  rows = [{ id: '9', name: 'Final', isCurrent: 0 }];
+  await createGroupAction('account', { name: 'Opener', steps: [] }, '9');
+  assert.match(queries[0].sql, /FROM rundowns r JOIN accounts a ON a.id = r.account_id WHERE r.id = \? AND r.account_id = \?/);
+  assert.deepEqual(queries[1].parameters, ['account', '9', 'Opener', '[]']);
+});
+
+test('entries can be added to another rundown of the account with label, properties and enabled state', async () => {
+  rows = [{ manifest: { schema: defaultsSchema }, id: '9', name: 'Final', isCurrent: 0 }];
+  await addMyGraphic('account', 'version', { rundownId: '9', label: 'Guest', schemaData: { name: 'Ada' }, enabled: false });
+  assert.deepEqual(queries[1].parameters, ['9', 'account']);
+  assert.deepEqual(queries.at(-1).parameters, ['account', '9', 'Guest', '{"name":"Ada"}', false, 'version', 'account']);
 });

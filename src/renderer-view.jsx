@@ -148,19 +148,47 @@ export default function RendererView({ account, authLoading }) {
                   once, for example in OBS and in a browser tab for testing; all of them show the same graphics.</p>
               </section>
               <section aria-labelledby="renderer-token-heading">
-                <h2 id="renderer-token-heading">Keep your URLs private</h2>
-                <p>The renderer URL and the API URL each contain their own secret token. Anyone with the renderer URL can watch
-                  your graphics; anyone with the API URL can control them. If a URL leaked, create a new token for it: the old URL
-                  stops working immediately, and you need to update your browser sources or controllers.</p>
+                <h2 id="renderer-token-heading">Keep your URL private</h2>
+                <p>The renderer URL contains a secret token: anyone with it can watch your graphics. It cannot be used to control
+                  them; the API URL has a token of its own. If the URL leaked, create a new token: the old URL stops working
+                  immediately, and you need to update your browser sources.</p>
               </section>
             </div>
+          </>}
+    </section>
+  );
+}
+
+// The account's OGraf Server API: its URL (with its own token) for controllers and scripts.
+export function ApiView({ account, authLoading }) {
+  return (
+    <section className="renderer-page" aria-labelledby="api-heading">
+      <p className="eyebrow">API</p>
+      <h1 id="api-heading">Control from outside</h1>
+      <p className="renderer-lead">Control your graphics from Bitfocus Companion, a Stream Deck or your own scripts
+        through the <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf Server API</a>.</p>
+      {authLoading ? <p className="status" role="status">Loading account...</p>
+        : !account ? <div className="empty-state"><strong>Sign in to get your API URL.</strong><LoginButtons compact /></div>
+          : <>
             <TokenCard account={account} kind="api">
-              <p className="renderer-card-copy">Control your graphics from Bitfocus Companion, a Stream Deck or your own scripts
-                through the <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf Server API</a>. Use
-                this URL as the API base; it uses a different token than the renderer.
-                The <a href="/api-docs/" target="_blank" rel="noopener noreferrer">interactive API documentation</a> lists every
+              <p className="renderer-card-copy">Use this URL as the API base in your controller. The
+                {' '}<a href="/api-docs/" target="_blank" rel="noopener noreferrer">interactive API documentation</a> lists every
                 endpoint and lets you try them with your account.</p>
             </TokenCard>
+            <div className="renderer-info">
+              <section aria-labelledby="api-control-heading">
+                <h2 id="api-control-heading">What it controls</h2>
+                <p>Every entry of your current rundown is a render target of the renderer <code>main</code>: controllers can load,
+                  play, update and stop it and run its custom actions. Group actions of the current rundown run with one call
+                  as well.</p>
+              </section>
+              <section aria-labelledby="api-token-heading">
+                <h2 id="api-token-heading">Keep your URL private</h2>
+                <p>The API URL contains a secret token: anyone with it can control your graphics. It is separate from the
+                  renderer token. If the URL leaked, create a new token: the old URL stops working immediately, and you need to
+                  update your controllers.</p>
+              </section>
+            </div>
           </>}
     </section>
   );

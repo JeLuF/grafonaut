@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, LogOut, MonitorPlay, Plus, Search, X } from 'lucide-react';
+import { Bot, Braces, Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, LogOut, MonitorPlay, Plus, Search, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
-import RendererView, { RendererPreview, useApiUrl } from './renderer-view.jsx';
+import RendererView, { ApiView, RendererPreview, useApiUrl } from './renderer-view.jsx';
+import AssistantsView, { useMcpEnabled } from './assistants-view.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
 import MediaCatalogView, { useMedia } from './media.jsx';
@@ -25,6 +26,8 @@ export function parseRoute(hash) {
   if (hash === '#private') return { view: 'private' };
   if (hash === '#media') return { view: 'media' };
   if (hash === '#renderer') return { view: 'renderer' };
+  if (hash === '#api') return { view: 'api' };
+  if (hash === '#assistants') return { view: 'assistants' };
   const match = /^#graphic\/(.+)$/.exec(hash);
   if (match) {
     try { return { view: 'graphic', versionId: decodeURIComponent(match[1]) }; } catch { /* fall through to catalog */ }
@@ -209,6 +212,7 @@ function App() {
   }, [account]);
   useEffect(() => { void loadGroups(); }, [loadGroups, rundownState.currentRundownId]);
   const rundownName = rundownState.current?.name;
+  const mcpEnabled = useMcpEnabled(account);
   const [rendererStatus, setRendererStatus] = useState(null);
   const statusRequest = useRef(0);
   const refreshRendererStatus = useCallback(async () => {
@@ -431,6 +435,8 @@ function App() {
         <a href="#private" aria-current={view === 'private' ? 'page' : undefined}><Lock size={17} />Private catalog</a>
         <a href="#media" aria-current={view === 'media' ? 'page' : undefined}><ImageIcon size={17} />Media</a>
         <a href="#renderer" aria-current={view === 'renderer' ? 'page' : undefined}><MonitorPlay size={17} />Renderer</a>
+        <a href="#api" aria-current={view === 'api' ? 'page' : undefined}><Braces size={17} />API</a>
+        {(mcpEnabled || view === 'assistants') && <a href="#assistants" aria-current={view === 'assistants' ? 'page' : undefined}><Bot size={17} />AI assistants</a>}
       </nav>
       {account && <RundownPanel state={rundownState} viewing={view === 'rundown'} onOpen={() => { window.location.hash = '#rundown'; }}
         onDeleted={(rundown) => notify(`${rundown.name} deleted`)} onSwitched={(rundown) => {
@@ -447,6 +453,8 @@ function App() {
           onRun={runGroup} onSave={saveGroup} onDelete={deleteGroup} />}
         entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onDuplicate={duplicateEntry} media={media} onManifest={loadManifest} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
+      : view === 'api' ? <ApiView account={account} authLoading={authLoading} />
+      : view === 'assistants' ? <AssistantsView account={account} authLoading={authLoading} />
       : view === 'media' ? <MediaCatalogView account={account} authLoading={authLoading} media={media}
         onCopied={(item) => notify(`URL of ${item.name} copied`)}><LoginButtons compact /></MediaCatalogView>
       : view === 'private' ? <PrivateCatalogView account={account} authLoading={authLoading} count={privateItems.length} maxZipBytes={maxZipBytes}
