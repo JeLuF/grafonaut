@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import { after, beforeEach, test } from 'node:test';
-import { createMedia, createMediaFileHandler, mediaFileRoute } from './media.js';
+import { createMedia, createMediaFileHandler, isMediaUpload, mediaFileRoute } from './media.js';
 import { createRefererCheck, parseHosts, refererMode } from './referer.js';
 
 const storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ograf-media-'));
@@ -26,10 +26,11 @@ const store = {
     return rows.length < before;
   }
 };
+// The app's wiring (index.js): the JSON parser leaves media uploads to the media router.
 const app = express();
-app.use(express.json());
+app.use(express.json({ type: (request) => !isMediaUpload(request) && Boolean(request.is('application/json')) }));
 app.use((request, _response, next) => { request.session = request.headers['x-account'] ? { accountId: request.headers['x-account'] } : null; next(); });
-app.use('/api/media', createMedia({ store, storageRoot, limits: { maxBytes: 2000, allowedExtensions: new Set(['.png', '.jpg', '.svg', '.html']) },
+app.use('/api/media', createMedia({ store, storageRoot, limits: { maxBytes: 2000, allowedExtensions: new Set(['.png', '.jpg', '.svg', '.html', '.json']) },
   fileOrigin: () => 'https://render.example.com' }));
 app.get(mediaFileRoute, createRefererCheck({ hosts: ['render.example.com'], mode: 'lenient' }), createMediaFileHandler({ store, storageRoot, isolated: true }));
 const server = app.listen(0, '127.0.0.1');
@@ -57,7 +58,7 @@ test('uploads are stored per account and listed with their renderer URL', async 
   assert.deepEqual(await fs.readFile(path.join(storageRoot, 'media', '7', `${item.id}.png`)), png);
   const list = await call('GET', '/api/media');
   assert.deepEqual(list.body.items.map((media) => media.id), [item.id]);
-  assert.deepEqual(list.body.extensions.sort(), ['html', 'jpg', 'png', 'svg']);
+  assert.deepEqual(list.body.extensions.sort(), ['html', 'jpg', 'json', 'png', 'svg']);
   assert.equal((await call('GET', '/api/media', { account: '8' })).body.items.length, 0);
   assert.equal((await call('GET', '/api/media', { account: null })).status, 401);
 });
@@ -130,4 +131,17 @@ test('the referer check knows strict, lenient and off and parses host lists', as
   assert.equal(run('strict', 'https://render.example.com/render/t/'), 'next');
   assert.equal(run('strict', 'not a url'), 403);
   assert.equal(run('off', 'https://evil.example/'), 'next');
+});
+
+test('JSON files are stored as uploaded, not parsed as a request body', async () => {
+  const lottie = Buffer.from(JSON.stringify({ v: '5.7.4', layers: [{ nm: 'Confetti' }] }, null, 2));
+  const created = await call('POST', `/api/media?name=${encodeURIComponent('Confetti - Animation 01.json')}`, { body: lottie, type: 'application/json' });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.item.extension, 'json');
+  assert.deepEqual(await fs.readFile(path.join(storageRoot, 'media', '7', `${created.body.item.id}.json`)), lottie);
+  const replacement = Buffer.from('{"v":"5.8.0"}');
+  assert.equal((await call('PUT', `/api/media/${created.body.item.id}/content?name=new.json`, { body: replacement, type: 'application/json' })).status, 200);
+  assert.deepEqual(await fs.readFile(path.join(storageRoot, 'media', '7', `${created.body.item.id}.json`)), replacement);
+  // Other JSON requests are still parsed.
+  assert.equal((await call('PATCH', `/api/media/${created.body.item.id}`, { body: { name: 'Confetti.json' } })).status, 200);
 });

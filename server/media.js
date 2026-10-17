@@ -13,6 +13,11 @@ import { storageRoot as defaultStorageRoot } from './storage.js';
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const mediaFileRoute = '/render/media/:file';
 
+// Media uploads send the file itself as the request body, whatever its type (a .json file arrives as
+// application/json). The app's JSON parser must leave these requests to the media router (mounted at /api/media).
+export const isMediaUpload = (request) => (request.method === 'POST' && request.path === '/api/media') ||
+  (request.method === 'PUT' && /^\/api\/media\/[^/]+\/content$/.test(request.path));
+
 export function mediaLimits(env = process.env) {
   const max = Number(env.MEDIA_MAX_BYTES);
   return { maxBytes: Number.isInteger(max) && max > 0 ? max : 20 * 1024 * 1024, allowedExtensions: uploadLimits(env).allowedExtensions };

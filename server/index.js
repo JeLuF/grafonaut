@@ -12,7 +12,7 @@ import { createPrivateCatalog } from './private-catalog.js';
 import { createGroupActions } from './group-actions.js';
 import { createFavourites } from './favourites.js';
 import { createAuth } from './auth.js';
-import { createMedia, createMediaFileHandler, mediaFileRoute } from './media.js';
+import { createMedia, createMediaFileHandler, mediaFileRoute, isMediaUpload } from './media.js';
 import { createRefererCheck, parseHosts, refererMode } from './referer.js';
 import { configureSession } from './session.js';
 import { sameOriginWrites } from './request-guards.js';
@@ -50,7 +50,7 @@ app.locals.onEntriesChanged = (accountId) => renderHub.syncEntries(accountId)
 app.use(hosts.routing);
 // Mounted before the app's JSON parser so the API answers malformed bodies with its own problem details.
 app.use(apiMountPath, createOgrafApi({ hub: renderHub, store: renderStore, findAccountByToken }));
-app.use(express.json());
+app.use(express.json({ type: (request) => !isMediaUpload(request) && Boolean(request.is('application/json')) }));
 configureSession(app);
 app.use('/api', sameOriginWrites);
 const mcp = mcpBaseUrl ? createMcp({ baseUrl: mcpBaseUrl, allowedOrigins: mcpAllowedOrigins, mediaOrigin: hosts.graphicsOrigin,
