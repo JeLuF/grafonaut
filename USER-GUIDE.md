@@ -63,6 +63,8 @@ Special field types:
 
 - **Colours** (`color-rrggbb`, `color-rrggbbaa`): a colour picker popup with the last 8 colours picked in this browser, a hex field and, for `rrggbbaa`, an opacity slider.
 - **Files** (`file-path`, e.g. `file-path/image-path`): the [media library](#media-library) chooser.
+- **Multi-line text** (`multi-line` and specializations such as `multi-line/rich-formatted-text`, SPX `textarea`): a text area, as tall as the default value (4 to 12 lines) and resizable, that keeps line breaks and indentation.
+- **Lists** (`type: array`): one row per item with buttons to move it up or down, copy (when enabled) and remove it, and *Add Item* below. Items use the same field types as single properties.
 - **Selects** (`select`): the `gddOptions.labels`, or the `enum` values when labels are missing.
 - **SPX file lists** (`ftype: filelist`): a select of the files in the package's asset folder. SPX instruction fields are shown as notes.
 

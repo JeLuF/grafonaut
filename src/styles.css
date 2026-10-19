@@ -3085,3 +3085,70 @@ footer {
     padding: 6px 10px;
     font-size: 13px;
 }
+
+/* Multi-line properties (GDD multi-line, SPX textarea): keep line breaks and indentation readable */
+.properties-dialog textarea {
+    resize: vertical;
+    min-height: 4.5em;
+    line-height: 1.45;
+    tab-size: 4;
+    white-space: pre-wrap;
+}
+
+/* Arrays in the property dialog: one item per row, its buttons (up, down, copy, remove) on the right */
+.properties-dialog .array-item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.array-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+}
+
+.array-item-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.array-item-content .form-group {
+    margin-bottom: 8px;
+}
+
+.array-item-content > .form-group,
+.array-item-content .form-group:last-child {
+    margin-bottom: 0;
+}
+
+.array-item-toolbox {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+}
+
+.array-button {
+    width: 32px;
+    height: 32px;
+}
+
+.array-button.is-danger:not(:disabled):hover {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+.array-add {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.array-add .text-button {
+    padding: 6px 12px;
+    font-size: 13px;
+}

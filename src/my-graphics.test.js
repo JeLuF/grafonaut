@@ -1297,3 +1297,49 @@ test('the account bar signs out with a POST and reports failures', async () => {
   await waitFor(() => assert.deepEqual(signedOut, [true]));
   assert.deepEqual(requests, [['/api/auth/logout', 'POST'], ['/api/auth/logout', 'POST']]);
 });
+
+test('multi-line properties get a text area sized to their default and keep line breaks', async () => {
+  const code = 'class Greeter {\n  constructor(private name: string) {}\n}\n\nconsole.log(1);';
+  const multiEntry = { ...entry, schemaData: { text: code, short: 'x' }, schema: { type: 'object', properties: {
+    text: { type: 'string', title: 'Code / Text', default: code, gddType: 'multi-line' },
+    rich: { type: ['string', 'null'], title: 'Rich', gddType: 'multi-line/rich-formatted-text' },
+    spx: { type: 'string', title: 'SPX text', v_spx: { ftype: 'textarea' } },
+    short: { type: 'string', title: 'Short', gddType: 'single-line' }
+  } } };
+  const saved = [];
+  render(React.createElement(PropertiesDialog, { entry: multiEntry, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const dialog = within(screen.getByRole('dialog'));
+  const text = dialog.getByLabelText('Code / Text');
+  assert.equal(text.tagName, 'TEXTAREA');
+  assert.equal(text.getAttribute('rows'), '5');
+  assert.equal(text.value, code);
+  assert.equal(dialog.getByLabelText('Rich').tagName, 'TEXTAREA');
+  assert.equal(dialog.getByLabelText('Rich').getAttribute('rows'), '4');
+  assert.equal(dialog.getByLabelText('SPX text').tagName, 'TEXTAREA');
+  assert.equal(dialog.getByLabelText('Short').tagName, 'INPUT');
+  fireEvent.change(text, { target: { value: `${code}\n// added` } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.equal(saved.at(-1)?.[1].schemaData.text, `${code}\n// added`));
+});
+
+test('array properties get visible add, move, copy and remove buttons instead of glyphicons', async () => {
+  const arrayEntry = { ...entry, schemaData: { names: ['Ann', 'Ben'] }, schema: { type: 'object', properties: {
+    names: { type: 'array', title: 'Names', items: { type: 'string' } }
+  } } };
+  const saved = [];
+  render(React.createElement(PropertiesDialog, { entry: arrayEntry, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  const dialog = within(screen.getByRole('dialog'));
+  assertAbsent(screen.getByRole('dialog').querySelector('.glyphicon'));
+  const items = () => [...screen.getByRole('dialog').querySelectorAll('.array-item input')].map((input) => input.value);
+  assert.deepEqual(items(), ['Ann', 'Ben']);
+  assert.equal(dialog.getAllByRole('button', { name: 'Move up' })[0].disabled, true);
+  assert.ok(dialog.getAllByRole('button', { name: 'Move down' })[0].querySelector('svg'));
+  fireEvent.click(dialog.getAllByRole('button', { name: 'Move down' })[0]);
+  await waitFor(() => assert.deepEqual(items(), ['Ben', 'Ann']));
+  fireEvent.click(dialog.getByRole('button', { name: 'Add Item' }));
+  await waitFor(() => assert.equal(items().length, 3));
+  fireEvent.click(dialog.getAllByRole('button', { name: 'Remove' })[2]);
+  await waitFor(() => assert.deepEqual(items(), ['Ben', 'Ann']));
+  fireEvent.click(dialog.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved.at(-1)?.[1].schemaData.names, ['Ben', 'Ann']));
+});

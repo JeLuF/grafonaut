@@ -1,8 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { getTemplate, getUiOptions } from '@rjsf/utils';
-import { ArrowDown, ArrowUp, Copy, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
+import { getTemplate, getUiOptions, TranslatableString } from '@rjsf/utils';
+import { ArrowDown, ArrowUp, Copy, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -71,7 +71,43 @@ function PropertyField(props) {
   </WrapIfAdditionalTemplate>;
 }
 
-export const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription };
+// RJSF's default buttons and array layout use Bootstrap 3 (glyphicons, grid classes), which the app does not load.
+// These use the app's own icon buttons; the item layout is plain flexbox (.array-item in styles.css).
+function iconButton(Icon, translation, extraClass = '') {
+  return function ArrayIconButton({ id, className, onClick, disabled, registry, uiSchema: _uiSchema, iconType: _iconType, style: _style, ...rest }) {
+    const title = registry.translateString(translation);
+    return <button {...rest} id={id} type="button" className={`icon-button array-button ${extraClass} ${className ?? ''}`.trim()} onClick={onClick} disabled={disabled}
+      title={title} aria-label={title}><Icon size={15} aria-hidden="true" /></button>;
+  };
+}
+
+function AddButton({ id, className, onClick, disabled, registry }) {
+  return <div className="array-add">
+    <button id={id} type="button" className={`text-button ${className ?? ''}`.trim()} onClick={onClick} disabled={disabled}>
+      <Plus size={15} aria-hidden="true" />{registry.translateString(TranslatableString.AddItemButton)}
+    </button>
+  </div>;
+}
+
+function ArrayFieldItemTemplate(props) {
+  const { children, className, buttonsProps, hasToolbar, registry, uiSchema } = props;
+  const ArrayFieldItemButtonsTemplate = getTemplate('ArrayFieldItemButtonsTemplate', registry, getUiOptions(uiSchema));
+  return <div className={`array-item ${className ?? ''}`.trim()}>
+    <div className="array-item-content">{children}</div>
+    {hasToolbar && <div className="array-item-toolbox"><ArrayFieldItemButtonsTemplate {...buttonsProps} /></div>}
+  </div>;
+}
+
+const buttonTemplates = {
+  AddButton,
+  MoveUpButton: iconButton(ArrowUp, TranslatableString.MoveUpButton),
+  MoveDownButton: iconButton(ArrowDown, TranslatableString.MoveDownButton),
+  CopyButton: iconButton(Copy, TranslatableString.CopyButton),
+  RemoveButton: iconButton(Trash2, TranslatableString.RemoveButton, 'is-danger'),
+  ClearButton: iconButton(X, TranslatableString.ClearButton)
+};
+
+export const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription, ArrayFieldItemTemplate, ButtonTemplates: buttonTemplates };
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -129,8 +165,20 @@ export function displaySchema(schema) {
 export function propertyWidgets(schema) {
   if (!isObject(schema)) return {};
   const gddType = String(schema.gddType ?? '');
-  if (schema.type === 'string' && gddType.startsWith('file-path')) return { 'ui:widget': 'mediaPath' };
-  if (schema.type === 'string' && ['color-rrggbb', 'color-rrggbbaa'].includes(gddType)) return { 'ui:widget': 'gddColor' };
+  // `type` may also be ["string", "null"] (optional property).
+  const isString = schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string'));
+  if (isString && gddType.startsWith('file-path')) return { 'ui:widget': 'mediaPath' };
+  if (isString && ['color-rrggbb', 'color-rrggbbaa'].includes(gddType)) return { 'ui:widget': 'gddColor' };
+  // GDD "multi-line" and its specializations (e.g. "multi-line/rich-formatted-text" degrades to it), SPX textareas.
+  if (isString && (gddType === 'multi-line' || gddType.startsWith('multi-line/') || schema.v_spx?.ftype === 'textarea')) {
+    const lines = typeof schema.default === 'string' ? schema.default.split('\n').length : 0;
+    return { 'ui:widget': 'textarea', 'ui:options': { rows: Math.min(12, Math.max(4, lines)) } };
+  }
+  // Array items get the same widgets; simple items need no label of their own ("Names-1"), the array's title names them.
+  if (isObject(schema.items)) {
+    const items = propertyWidgets(schema.items);
+    return { items: isObject(schema.items.properties) ? items : { ...items, 'ui:label': false } };
+  }
   if (!isObject(schema.properties)) return {};
   return Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, propertyWidgets(value)]).filter(([, value]) => Object.keys(value).length));
 }
