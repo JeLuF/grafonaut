@@ -3152,3 +3152,83 @@ footer {
     padding: 6px 12px;
     font-size: 13px;
 }
+
+/* List heading with the "Compact view" switch */
+.array-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 16px;
+    width: 100%;
+    margin-bottom: 8px;
+    padding: 0;
+    font-weight: 600;
+}
+
+.dialog-content .compact-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--text-soft);
+    font-size: 13px;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+/* Compact list: one row per item (number, fields as columns, buttons), column headers above */
+.array-item-list.is-compact {
+    gap: 4px;
+}
+
+.array-compact-header,
+.array-item.is-compact {
+    display: grid;
+    grid-template-columns: 2em minmax(0, 1fr) var(--array-tools);
+    align-items: center;
+    gap: 10px;
+}
+
+.array-compact-header {
+    padding: 0 11px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.array-item.is-compact {
+    padding: 4px 10px;
+}
+
+.compact-columns {
+    display: grid;
+    grid-template-columns: repeat(var(--array-columns), minmax(0, 1fr));
+    align-items: start;
+    gap: 8px;
+}
+
+.compact-columns > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.array-item-number {
+    color: var(--faint);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.compact-cell {
+    min-width: 0;
+}
+
+.array-item.is-compact .array-item-toolbox {
+    justify-content: flex-end;
+}
+
+.array-compact-header > span:first-child {
+    text-align: right;
+}

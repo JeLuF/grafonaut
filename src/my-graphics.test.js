@@ -1343,3 +1343,37 @@ test('array properties get visible add, move, copy and remove buttons instead of
   fireEvent.click(dialog.getByRole('button', { name: 'Save properties' }));
   await waitFor(() => assert.deepEqual(saved.at(-1)?.[1].schemaData.names, ['Ben', 'Ann']));
 });
+
+test('lists of up to three simple fields offer a compact view: one row per item, numbered, labels as column headers', async () => {
+  globalThis.localStorage = dom.window.localStorage;
+  after(() => { delete globalThis.localStorage; });
+  const rowsEntry = { ...entry, versionId: 'compact-v1', schemaData: { rows: [{ label: 'Turnout', value: 72 }, { label: 'Votes', value: 1520 }], notes: [{ text: 'a', more: 'b' }] },
+    schema: { type: 'object', properties: {
+      rows: { type: 'array', title: 'Table rows', items: { type: 'object', properties: { value: { type: 'number', title: 'Value', order: 2 }, label: { type: 'string', title: 'Label', order: 1 } } } },
+      notes: { type: 'array', title: 'Notes', items: { type: 'object', properties: { text: { type: 'string', gddType: 'multi-line' }, more: { type: 'string' } } } },
+      names: { type: 'array', title: 'Names', items: { type: 'string' } }
+    } } };
+  const saved = [];
+  const open = () => render(React.createElement(PropertiesDialog, { entry: rowsEntry, onSave: async (...args) => { saved.push(args); }, onClose: () => {} }));
+  open();
+  const root = () => screen.getByRole('dialog');
+  const dialog = within(root());
+  // Only the list with up to three simple fields offers the switch.
+  assert.equal(dialog.getAllByRole('checkbox', { name: 'Compact view' }).length, 1);
+  assert.equal(root().querySelector('.array-compact-header'), null);
+  fireEvent.click(dialog.getByRole('checkbox', { name: 'Compact view' }));
+  const header = root().querySelector('.array-compact-header');
+  assert.deepEqual([...header.querySelectorAll('.compact-columns span')].map((cell) => cell.textContent), ['Label', 'Value']);
+  const rows = [...root().querySelectorAll('.array-item.is-compact')];
+  assert.deepEqual(rows.map((row) => row.querySelector('.array-item-number').textContent), ['1', '2']);
+  assert.doesNotMatch(root().textContent, /Table rows-1/);
+  assert.equal(dialog.getAllByLabelText('Label')[0].value, 'Turnout');
+  fireEvent.change(dialog.getAllByLabelText('Value')[1], { target: { value: '1600' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Save properties' }));
+  await waitFor(() => assert.deepEqual(saved.at(-1)?.[1].schemaData.rows, [{ label: 'Turnout', value: 72 }, { label: 'Votes', value: 1600 }]));
+  cleanup();
+  // The choice is remembered for this graphic and list.
+  open();
+  assert.ok(screen.getByRole('dialog').querySelector('.array-item.is-compact'));
+  assert.equal(within(screen.getByRole('dialog')).getByRole('checkbox', { name: 'Compact view' }).checked, true);
+});

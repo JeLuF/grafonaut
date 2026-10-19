@@ -1,5 +1,5 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import Form from '@rjsf/core';
+import React, { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import Form, { getDefaultRegistry } from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { getTemplate, getUiOptions, TranslatableString } from '@rjsf/utils';
 import { ArrowDown, ArrowUp, Copy, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
@@ -54,7 +54,13 @@ function TooltipRow({ text, className, children }) {
 
 function PropertyField(props) {
   const { id, label, children, errors, help, description, rawDescription, hidden, required, displayLabel, registry, uiSchema, schema, formData } = props;
+  const compact = useContext(CompactArrayContext);
   if (hidden) return <div className="hidden">{children}</div>;
+  // A field of an item in a compact list: one table cell, its label is the column header (kept for screen readers).
+  if (compact) {
+    if (schema?.type === 'object') return children;
+    return <div className="compact-cell"><label className="visually-hidden" htmlFor={id}>{label}</label>{children}{errors}</div>;
+  }
   if (schema?.v_spx?.ftype === 'instruction') {
     const text = formData ?? schema.default;
     return text ? <p className="property-instruction" id={id}>{String(text)}</p> : null;
@@ -69,6 +75,80 @@ function PropertyField(props) {
     </TooltipRow> : <TooltipRow text={id === 'root' ? undefined : title}>{children}{errors}{help}</TooltipRow>}
     {description}
   </WrapIfAdditionalTemplate>;
+}
+
+// ---- Compact view for lists: items with up to three simple fields, shown as one table row each ----
+
+const CompactArrayContext = createContext(null);
+const compactStorageKey = 'grafonaut.compactArrays';
+const isMultiLine = (schema) => isObject(schema) && (String(schema.gddType ?? '').split('/')[0] === 'multi-line' || schema.v_spx?.ftype === 'textarea');
+
+// The columns of a list that can be shown compact, or null: object items with one to three fields, none of them
+// multi-line or nested (an object or a list does not fit into a table cell).
+export function compactColumns(schema) {
+  const items = schema?.items;
+  if (!isObject(items) || !isObject(items.properties)) return null;
+  const fields = orderedEntries(items.properties);
+  if (!fields.length || fields.length > 3) return null;
+  const simple = fields.every(([, field]) => isObject(field) && !isObject(field.properties) && !isObject(field.items) &&
+    ![field.type].flat().some((type) => type === 'object' || type === 'array') && !isMultiLine(field));
+  return simple ? fields.map(([key, field]) => ({ key, title: field.title ?? field.label ?? key })) : null;
+}
+
+// The choice is remembered per graphic and list in this browser.
+function readCompact(key) {
+  try { return JSON.parse(localStorage.getItem(compactStorageKey) ?? '{}')[key] === true; } catch { return false; }
+}
+function writeCompact(key, value) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(compactStorageKey) ?? '{}');
+    if (value) stored[key] = true; else delete stored[key];
+    localStorage.setItem(compactStorageKey, JSON.stringify(stored));
+  } catch { /* storage unavailable: the choice lasts until the dialog closes */ }
+}
+
+function ArrayFieldTemplate(props) {
+  const { canAdd, className, disabled, fieldPathId, uiSchema, items, onAddClick, optionalDataControl, readonly, registry, required, schema, title } = props;
+  const options = getUiOptions(uiSchema);
+  const columns = compactColumns(schema);
+  const key = `${registry.formContext?.compactKey ?? ''}:${fieldPathId.$id}`;
+  const [compact, setCompact] = useState(() => Boolean(columns) && readCompact(key));
+  const active = Boolean(compact && columns);
+  const ArrayFieldDescriptionTemplate = getTemplate('ArrayFieldDescriptionTemplate', registry, options);
+  const { AddButton } = registry.templates.ButtonTemplates;
+  // Width of an item's buttons (up, down, copy, remove), so the column headers line up with the cells.
+  const tools = (options.orderable !== false ? 2 : 0) + (options.copyable ? 1 : 0) + (options.removable !== false ? 1 : 0);
+  const heading = options.title || title;
+  return <fieldset className={className} id={fieldPathId.$id}>
+    {(heading || columns) && <legend className="array-heading">
+      {heading && <span className="array-title">{heading}{required && <span className="required">*</span>}</span>}
+      {columns && <label className="compact-toggle">
+        <input type="checkbox" checked={compact} onChange={(event) => { setCompact(event.target.checked); writeCompact(key, event.target.checked); }} />Compact view
+      </label>}
+    </legend>}
+    <ArrayFieldDescriptionTemplate fieldPathId={fieldPathId} description={options.description || schema.description} schema={schema} uiSchema={uiSchema} registry={registry} />
+    {optionalDataControl}
+    <CompactArrayContext.Provider value={active ? columns : null}>
+      <div className={`row array-item-list${active ? ' is-compact' : ''}`}
+        style={active ? { '--array-columns': columns.length, '--array-tools': `${tools * 32 + Math.max(0, tools - 1) * 4}px` } : undefined}>
+        {active && items.length > 0 && <div className="array-compact-header" aria-hidden="true">
+          <span>#</span>
+          <span className="compact-columns">{columns.map((column) => <span key={column.key}>{column.title}</span>)}</span>
+          <span />
+        </div>}
+        {items}
+      </div>
+    </CompactArrayContext.Provider>
+    {canAdd && <AddButton id={`${fieldPathId.$id}__add`} className="rjsf-array-item-add" onClick={onAddClick} disabled={disabled || readonly} uiSchema={uiSchema} registry={registry} />}
+  </fieldset>;
+}
+
+// The fields of an item in a compact list: the cells of its row, without the item's title ("Table rows-1").
+const DefaultObjectFieldTemplate = getDefaultRegistry().templates.ObjectFieldTemplate;
+function ObjectFieldTemplate(props) {
+  const compact = useContext(CompactArrayContext);
+  if (!compact) return <DefaultObjectFieldTemplate {...props} />;
+  return <div className="compact-columns" id={props.fieldPathId.$id}>{props.properties.map((property) => property.content)}</div>;
 }
 
 // RJSF's default buttons and array layout use Bootstrap 3 (glyphicons, grid classes), which the app does not load.
@@ -90,9 +170,11 @@ function AddButton({ id, className, onClick, disabled, registry }) {
 }
 
 function ArrayFieldItemTemplate(props) {
-  const { children, className, buttonsProps, hasToolbar, registry, uiSchema } = props;
+  const { children, className, buttonsProps, hasToolbar, index, registry, uiSchema } = props;
+  const compact = useContext(CompactArrayContext);
   const ArrayFieldItemButtonsTemplate = getTemplate('ArrayFieldItemButtonsTemplate', registry, getUiOptions(uiSchema));
-  return <div className={`array-item ${className ?? ''}`.trim()}>
+  return <div className={`array-item${compact ? ' is-compact' : ''} ${className ?? ''}`.trim()}>
+    {compact && <span className="array-item-number">{index + 1}</span>}
     <div className="array-item-content">{children}</div>
     {hasToolbar && <div className="array-item-toolbox"><ArrayFieldItemButtonsTemplate {...buttonsProps} /></div>}
   </div>;
@@ -107,7 +189,8 @@ const buttonTemplates = {
   ClearButton: iconButton(X, TranslatableString.ClearButton)
 };
 
-export const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription, ArrayFieldItemTemplate, ButtonTemplates: buttonTemplates };
+export const propertyTemplates = { FieldTemplate: PropertyField, DescriptionFieldTemplate: PropertyDescription, ArrayFieldTemplate, ArrayFieldItemTemplate,
+  ObjectFieldTemplate, ButtonTemplates: buttonTemplates };
 
 const isObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
 
@@ -170,7 +253,7 @@ export function propertyWidgets(schema) {
   if (isString && gddType.startsWith('file-path')) return { 'ui:widget': 'mediaPath' };
   if (isString && ['color-rrggbb', 'color-rrggbbaa'].includes(gddType)) return { 'ui:widget': 'gddColor' };
   // GDD "multi-line" and its specializations (e.g. "multi-line/rich-formatted-text" degrades to it), SPX textareas.
-  if (isString && (gddType === 'multi-line' || gddType.startsWith('multi-line/') || schema.v_spx?.ftype === 'textarea')) {
+  if (isString && isMultiLine(schema)) {
     const lines = typeof schema.default === 'string' ? schema.default.split('\n').length : 0;
     return { 'ui:widget': 'textarea', 'ui:options': { rows: Math.min(12, Math.max(4, lines)) } };
   }
@@ -215,7 +298,7 @@ export function PropertiesDialog({ entry, media, onSave, onClose }) {
       <div className="dialog-content properties-form">
         {error && <p role="alert" className="error-message">{error}</p>}
         <PropertyFormBoundary>
-          <Form schema={schema} uiSchema={uiSchema} widgets={formWidgets} formContext={{ media }} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
+          <Form schema={schema} uiSchema={uiSchema} widgets={formWidgets} formContext={{ media, compactKey: entry.versionId }} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
             onSubmit={saveProperties} disabled={saving} noHtml5Validate>
             <div className="dialog-actions">
               <button className="text-button" type="button" onClick={onClose} disabled={saving}>Cancel</button>
@@ -365,7 +448,7 @@ export function CustomActionDialog({ entry, action, media, onRun, onClose }) {
         {action.description && <p className="property-instruction">{action.description}</p>}
         {error && <p role="alert" className="error-message">{error}</p>}
         <PropertyFormBoundary>
-          <Form schema={schema} uiSchema={uiSchema} widgets={formWidgets} formContext={{ media }} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
+          <Form schema={schema} uiSchema={uiSchema} widgets={formWidgets} formContext={{ media, compactKey: `${entry.versionId}:${action.id}` }} validator={validator} templates={propertyTemplates} formData={data} onChange={(event) => setData(event.formData)}
             onSubmit={run} disabled={running} noHtml5Validate>
             <div className="dialog-actions">
               <button className="text-button" type="button" onClick={onClose} disabled={running}>Cancel</button>
