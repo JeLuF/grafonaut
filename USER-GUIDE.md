@@ -8,7 +8,7 @@ The public catalog lists the published graphics, with search, pages of six and a
 
 ## Private catalog
 
-Signed-in users upload `.ograf.zip` packages on the Private catalog page. The graphics are only visible to their owner and can be added to rundowns like catalog graphics. Uploading a graphic whose manifest `id` already exists in the account adds a new version of that package; rundown entries keep the version they were added with. Re-uploading an identical file is skipped.
+Signed-in users upload `.ograf.zip` packages on the Private catalog page. The graphics are only visible to their owner and can be added to rundowns like catalog graphics. Uploading a graphic whose manifest `id` already exists in the account adds a new version of that package; rundown entries keep the version they were added with. Re-uploading an identical file is skipped. A search box next to the list filters the uploaded graphics by name and description, like the public catalog's search.
 
 Every upload is checked before anything is saved (requirements §6):
 

@@ -33,7 +33,7 @@ function UploadResult({ result }) {
 }
 
 // The account's own uploads. `children` renders the graphics (cards with "Add to rundown").
-export default function PrivateCatalogView({ account, authLoading, count, maxZipBytes, loading, error, onUploaded, children }) {
+export default function PrivateCatalogView({ account, authLoading, count, maxZipBytes, loading, error, onUploaded, search, children }) {
   const input = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -77,8 +77,8 @@ export default function PrivateCatalogView({ account, authLoading, count, maxZip
             </div>
             {result && <UploadResult result={result} />}
             <div className="section-heading private-heading">
-              <div><h2>Uploaded graphics</h2></div>
-              {count > 0 && <span className="status">{count} graphic{count === 1 ? '' : 's'}</span>}
+              <div><h2>Uploaded graphics</h2>{count > 0 && <span className="status">{count} graphic{count === 1 ? '' : 's'}</span>}</div>
+              {search}
             </div>
             {error && <p className="error-message" role="alert">{error}</p>}
             {loading && <p className="status" role="status">Loading private catalog...</p>}

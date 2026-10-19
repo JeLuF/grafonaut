@@ -64,7 +64,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     }
   } })]
 });
-const { AccountBar, AddGraphicButton, Pagination, SearchBox, Toast, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
+const { AccountBar, AddGraphicButton, Pagination, SearchBox, Toast, matchesSearch, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
 // Never hand DOM nodes to assert.equal/deepEqual: a failing comparison makes Node inspect and diff the whole jsdom
 // object graph, which exhausts memory instead of failing (and inside waitFor's first, expected miss, it stalls the run).
 const describeNode = (node) => node?.outerHTML?.slice(0, 160) ?? String(node);
@@ -1376,4 +1376,19 @@ test('lists of up to three simple fields offer a compact view: one row per item,
   open();
   assert.ok(screen.getByRole('dialog').querySelector('.array-item.is-compact'));
   assert.equal(within(screen.getByRole('dialog')).getByRole('checkbox', { name: 'Compact view' }).checked, true);
+});
+
+test('the private catalog shows a search box next to its heading; search matches name and description', () => {
+  const searched = [];
+  render(React.createElement(PrivateCatalogView, { account: { id: 'account' }, authLoading: false, count: 3, loading: false, error: '', onUploaded: async () => {},
+    search: React.createElement(SearchBox, { value: '', label: 'Search your graphics', onChange: (value) => searched.push(value) }) }));
+  const heading = screen.getByRole('heading', { name: 'Uploaded graphics' }).closest('.section-heading');
+  const input = within(heading).getByRole('textbox', { name: 'Search your graphics' });
+  fireEvent.change(input, { target: { value: 'score' } });
+  assert.deepEqual(searched, ['score']);
+  const item = { display_name: 'Live Scoreboard', description: 'Goals and minutes' };
+  assert.equal(matchesSearch(item, 'SCORE'), true);
+  assert.equal(matchesSearch(item, ' minutes '), true);
+  assert.equal(matchesSearch(item, 'weather'), false);
+  assert.equal(matchesSearch({ display_name: 'Clock' }, ''), true);
 });

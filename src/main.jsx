@@ -80,6 +80,11 @@ export function AccountBar({ account, onSignedOut }) {
   </div>;
 }
 
+// Catalog search: the name or the description contains the text (case-insensitive).
+export function matchesSearch(item, query) {
+  return `${item.display_name} ${item.description ?? ''}`.toLowerCase().includes(query.trim().toLowerCase());
+}
+
 export function SearchBox({ value, onChange, label = 'Search graphics' }) {
   const input = useRef(null);
   function clear() {
@@ -191,6 +196,7 @@ function App() {
   const [privateError, setPrivateError] = useState('');
   const [maxZipBytes, setMaxZipBytes] = useState(null);
   const [privatePage, setPrivatePage] = useState(0);
+  const [privateQuery, setPrivateQuery] = useState('');
   const catalogHeading = useRef(null);
   const catalogScroll = useRef(null);
   const previousView = useRef(view);
@@ -312,10 +318,8 @@ function App() {
     finally { if (requestId === graphicsRequest.current) setMyLoading(false); }
   }
 
-  const filteredCatalog = catalog.filter((item) => {
-    const haystack = `${item.display_name} ${item.description ?? ''}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  });
+  const filteredCatalog = catalog.filter((item) => matchesSearch(item, query));
+  const filteredPrivate = privateItems.filter((item) => matchesSearch(item, privateQuery));
   const pageCount = Math.max(1, Math.ceil(filteredCatalog.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const pageItems = filteredCatalog.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
@@ -483,13 +487,15 @@ function App() {
       : view === 'media' ? <MediaCatalogView account={account} authLoading={authLoading} media={media}
         onCopied={(item) => notify(`URL of ${item.name} copied`)}><LoginButtons compact /></MediaCatalogView>
       : view === 'private' ? <PrivateCatalogView account={account} authLoading={authLoading} count={privateItems.length} maxZipBytes={maxZipBytes}
-        loading={privateLoading} error={privateError} onUploaded={loadPrivateCatalog}>
+        loading={privateLoading} error={privateError} onUploaded={loadPrivateCatalog}
+        search={privateItems.length > 0 && <SearchBox value={privateQuery} label="Search your graphics" onChange={(value) => { setPrivateQuery(value); setPrivatePage(0); }} />}>
         {(() => {
-          const pages = Math.max(1, Math.ceil(privateItems.length / PAGE_SIZE));
+          const pages = Math.max(1, Math.ceil(filteredPrivate.length / PAGE_SIZE));
           const current = Math.min(privatePage, pages - 1);
           return <>
-            <GraphicCards items={privateItems.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)} account={account} onAdd={addToMyGraphics} favourites={favourites} />
-            <Pagination page={current} pageCount={pages} total={privateItems.length} onChange={setPrivatePage} />
+            {privateItems.length > 0 && filteredPrivate.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>None of your graphics matches “{privateQuery}”.</span></div>}
+            <GraphicCards items={filteredPrivate.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)} account={account} onAdd={addToMyGraphics} favourites={favourites} />
+            <Pagination page={current} pageCount={pages} total={filteredPrivate.length} onChange={setPrivatePage} />
           </>;
         })()}
       </PrivateCatalogView>
