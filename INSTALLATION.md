@@ -17,6 +17,14 @@ Open the public HTTPS hostname served by your reverse proxy. The app exposes `GE
 
 The Compose stack runs the app (including the renderer), MySQL 8.4, a volume for uploaded and unpacked files (`/app/storage`) and a read-only seed volume (`./seeds/volume`). The database schema is created at startup.
 
+### Prebuilt image
+
+Every published GitHub release builds an image and pushes it to the GitHub Container Registry (`.github/workflows/docker-release.yml`, after the tests pass). A release tagged `v0.6.0` is available as `ghcr.io/jeluf/grafonaut:0.6.0`, `:0.6` and `:latest`; pre-releases only get their exact version. A manual run in the Actions tab rebuilds the image of an existing tag.
+
+To use it instead of building locally, replace `build: .` with `image: ghcr.io/jeluf/grafonaut:0.6.0` (or `:latest`) in `docker-compose.yml`, then run `docker compose pull && docker compose up -d`. While the package is private, the server needs `docker login ghcr.io` with a classic token that has the `read:packages` scope.
+
+The image is built from the repository, so it contains no built-in seed packages (`seeds/builtin/` is not in git). Provide graphics through the `seeds/volume` mount or upload them in the private catalog.
+
 ## Configuration
 
 All settings are environment variables, set in `.env` (see `.env.example`).
