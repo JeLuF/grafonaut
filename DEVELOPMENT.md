@@ -2,7 +2,7 @@
 
 ## Local development
 
-Requires Node.js 22 and a reachable MySQL 8 instance. Set the database variables from `.env.example`, install dependencies, and run:
+Requires Node.js 26 (the Docker image and CI use 26.12.1) and a reachable MySQL 8 instance. Set the database variables from `.env.example`, install dependencies, and run:
 
 ```sh
 npm install
