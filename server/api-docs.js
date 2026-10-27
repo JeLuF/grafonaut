@@ -1,13 +1,15 @@
 import crypto from 'node:crypto';
 import express from 'express';
-import swaggerUi from 'swagger-ui-dist';
+// Only the folder of the Swagger UI files is needed: the package's main module would load the whole browser bundle
+// into Node (which touches localStorage, a startup warning on Node 26).
+import getAbsoluteFSPath from 'swagger-ui-dist/absolute-path.js';
 import { ografOpenApi } from './ograf-openapi.js';
 
 // Interactive documentation of Grafonaut's OGraf Server API (Swagger UI) at /api-docs/. For signed-in users the OpenAPI
 // document's server is their own API URL, so "Try it out" works right away.
 export function createApiDocs({ apiUrlFor }) {
   const router = express.Router();
-  const assets = swaggerUi.getAbsoluteFSPath();
+  const assets = getAbsoluteFSPath();
   router.use('/assets', express.static(assets, { index: false, maxAge: '1d' }));
   router.get('/openapi.json', async (request, response) => {
     let serverUrl;
