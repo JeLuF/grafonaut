@@ -318,11 +318,16 @@ test('the duplicate endpoint answers 201 with the new entry and 404 for unknown 
 });
 
 test('media are listed per account with their usage and changed only by their owner', async () => {
-  rows = [{ id: 'm1', account_id: 7, name: 'logo.png', extension: 'png', size_bytes: 10, checksum_sha256: 'c'.repeat(64), usage_count: 2 }];
-  assert.deepEqual((await listMedia('account')).map((media) => [media.id, media.accountId, media.size, media.usage]), [['m1', '7', 10, 2]]);
-  assert.match(queries[0].sql, /AS usage_count/);
-  assert.match(queries[0].sql, /LIKE CONCAT\('%', m.id, '%'\)/);
-  assert.deepEqual(queries[0].parameters, ['account']);
+  // The fake pool answers both queries (media, then the entries' properties) with the same rows.
+  const media = { account_id: 7, name: 'logo.png', extension: 'png', size_bytes: 10, checksum_sha256: 'c'.repeat(64) };
+  rows = [{ ...media, id: 'm1', schemaData: { image: 'https://graphics.example.com/render/media/m1.png' } },
+    { ...media, id: 'm2', schemaData: JSON.stringify({ logos: ['https://graphics.example.com/render/media/m1.png'] }) }, { ...media, id: 'm3', schemaData: null }];
+  assert.deepEqual((await listMedia('account')).map((file) => [file.id, file.accountId, file.size, file.usage]), [['m1', '7', 10, 2], ['m2', '7', 10, 0], ['m3', '7', 10, 0]]);
+  assert.equal(queries[0].sql, 'SELECT * FROM media WHERE account_id = ? ORDER BY created_at DESC, name');
+  assert.equal(queries[1].sql, 'SELECT schema_data AS schemaData FROM my_graphics_entries WHERE account_id = ?');
+  assert.deepEqual(queries.map((query) => query.parameters), [['account'], ['account']]);
+  // No SQL text comparison between the properties and the media IDs (collation errors on MySQL 8).
+  assert.doesNotMatch(queries.map((query) => query.sql).join(' '), /LIKE|CAST/);
   queries = [];
   await findMedia('m1', 'account');
   assert.match(queries[0].sql, /WHERE id = \? AND account_id = \?/);

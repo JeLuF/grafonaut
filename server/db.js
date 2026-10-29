@@ -627,11 +627,14 @@ const mediaRow = (row) => row && { id: row.id, name: row.name, extension: row.ex
   ...(row.usage_count !== undefined ? { usage: Number(row.usage_count) } : {}) };
 
 // The account's media, newest first, with how many rundown entries (of any rundown) reference each file.
+// Usage is counted here rather than in SQL: comparing the JSON text of the properties with the media ID in MySQL mixes
+// the connection's collation with the table's ("Illegal mix of collations") and made the whole list fail.
 export async function listMedia(accountId) {
-  const [rows] = await pool.query(`SELECT m.*, (SELECT COUNT(*) FROM my_graphics_entries g
-      WHERE g.account_id = m.account_id AND CAST(g.schema_data AS CHAR) LIKE CONCAT('%', m.id, '%')) AS usage_count
-    FROM media m WHERE m.account_id = ? ORDER BY m.created_at DESC, m.name`, [accountId]);
-  return rows.map(mediaRow);
+  const [rows] = await pool.query('SELECT * FROM media WHERE account_id = ? ORDER BY created_at DESC, name', [accountId]);
+  if (!rows.length) return [];
+  const [entries] = await pool.query('SELECT schema_data AS schemaData FROM my_graphics_entries WHERE account_id = ?', [accountId]);
+  const properties = entries.map((entry) => (typeof entry.schemaData === 'string' ? entry.schemaData : JSON.stringify(entry.schemaData ?? null)));
+  return rows.map((row) => ({ ...mediaRow(row), usage: properties.filter((text) => text.includes(row.id)).length }));
 }
 
 export async function findMedia(id, accountId = null) {

@@ -23,6 +23,9 @@ export function mediaLimits(env = process.env) {
   return { maxBytes: Number.isInteger(max) && max > 0 ? max : 20 * 1024 * 1024, allowedExtensions: uploadLimits(env).allowedExtensions };
 }
 
+// Failures answer 503 without details; the reason goes to the server log.
+const failed = (operation, error) => console.error(`Media ${operation} failed:`, error?.message ?? error);
+
 function cleanName(value) {
   const name = path.basename(String(value ?? '').replace(/\\/g, '/')).replace(/[\u0000-\u001f]/g, '').trim();
   return name && [...name].length <= 255 ? name : null;
@@ -60,7 +63,7 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
       const items = await store.listMedia(request.session.accountId);
       response.set('Cache-Control', 'private, no-store').json({ items: items.map((media) => describe(request, media)), maxBytes: limits.maxBytes,
         extensions: [...limits.allowedExtensions].map((extension) => extension.slice(1)) });
-    } catch { response.status(503).json({ error: 'Media unavailable' }); }
+    } catch (error) { failed('list', error); response.status(503).json({ error: 'Media unavailable' }); }
   });
 
   // Upload: the file is the request body, its name the `name` query parameter.
@@ -77,7 +80,8 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
       await writeFile(target, request.body);
       await store.insertMedia(request.session.accountId, media);
       response.status(201).json({ item: describe(request, { ...media, usage: 0 }) });
-    } catch {
+    } catch (error) {
+      failed('upload', error);
       await fs.rm(target, { force: true });
       response.status(503).json({ error: 'The file could not be saved' });
     }
@@ -97,7 +101,7 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
       await writeFile(filePath(request.session.accountId, media), request.body);
       await store.updateMedia(request.session.accountId, media.id, changes);
       response.json({ item: describe(request, { ...media, ...changes }) });
-    } catch { response.status(503).json({ error: 'The file could not be replaced' }); }
+    } catch (error) { failed('replace', error); response.status(503).json({ error: 'The file could not be replaced' }); }
   });
 
   router.patch('/:mediaId', async (request, response) => {
@@ -108,7 +112,7 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
       if (!media) return response.status(404).json({ error: 'File not found' });
       await store.updateMedia(request.session.accountId, media.id, { name });
       response.json({ ok: true, name });
-    } catch { response.status(503).json({ error: 'The file could not be renamed' }); }
+    } catch (error) { failed('rename', error); response.status(503).json({ error: 'The file could not be renamed' }); }
   });
 
   router.delete('/:mediaId', async (request, response) => {
@@ -117,7 +121,7 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
       if (!media || !await store.deleteMedia(request.session.accountId, media.id)) return response.status(404).json({ error: 'File not found' });
       await fs.rm(filePath(request.session.accountId, media), { force: true });
       response.json({ ok: true });
-    } catch { response.status(503).json({ error: 'The file could not be deleted' }); }
+    } catch (error) { failed('delete', error); response.status(503).json({ error: 'The file could not be deleted' }); }
   });
 
   // Preview for the owner in the app (thumbnails in the media catalog and the property dialog).
@@ -126,7 +130,7 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
       const media = await store.findMedia(request.params.mediaId, request.session.accountId);
       if (!media) return response.sendStatus(404);
       sendMedia(response, filePath(request.session.accountId, media), media, false, 'private, max-age=3600');
-    } catch { response.sendStatus(503); }
+    } catch (error) { failed('preview', error); response.sendStatus(503); }
   });
 
   router.use((error, _request, response, next) => {
@@ -153,6 +157,6 @@ export function createMediaFileHandler({ store = db, storageRoot = defaultStorag
       const media = await store.findMedia(match[1]);
       if (!media || media.extension !== match[2]) return response.sendStatus(404);
       sendMedia(response, path.join(storageRoot, 'media', media.accountId, `${media.id}.${media.extension}`), media, isolated, 'public, max-age=60');
-    } catch { if (!response.headersSent) response.sendStatus(503); }
+    } catch (error) { failed('file', error); if (!response.headersSent) response.sendStatus(503); }
   };
 }
