@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bot, Braces, Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, LogOut, MonitorPlay, Plus, Search, Star, X } from 'lucide-react';
+import { Bot, Braces, Check, ChevronLeft, ChevronRight, CircleCheck, CircleAlert, Image as ImageIcon, LayoutGrid, Lock, LogOut, MonitorPlay, Plus, Search, Star, Tag, Users, X } from 'lucide-react';
 import MyGraphicsView from './my-graphics.jsx';
 import GraphicDetail from './graphic-detail.jsx';
 import RendererView, { ApiView, RendererPreview, useApiUrl } from './renderer-view.jsx';
 import AssistantsView, { useMcpEnabled } from './assistants-view.jsx';
+import UsersView from './admin.jsx';
 import { FavouriteButton, useFavourites } from './favourites.jsx';
 import { RundownPanel, useRundowns } from './rundowns.jsx';
 import PrivateCatalogView from './private-catalog.jsx';
@@ -30,6 +31,13 @@ export function parseRoute(hash) {
   if (hash === '#renderer') return { view: 'renderer' };
   if (hash === '#api') return { view: 'api' };
   if (hash === '#assistants') return { view: 'assistants' };
+  if (hash === '#users') return { view: 'users' };
+  // Catalog filtered by tag and/or creator, e.g. from a tag on a detail page: #catalog?tag=lower%20third
+  const filters = /^#catalog\?(.*)$/.exec(hash);
+  if (filters) {
+    const params = new URLSearchParams(filters[1]);
+    return { view: 'catalog', tag: params.get('tag') ?? '', creator: params.get('creator') ?? '' };
+  }
   const match = /^#graphic\/(.+)$/.exec(hash);
   if (match) {
     try { return { view: 'graphic', versionId: decodeURIComponent(match[1]) }; } catch { /* fall through to catalog */ }
@@ -80,6 +88,32 @@ export function AccountBar({ account, onSignedOut }) {
   </div>;
 }
 
+// The distinct values of a catalog field (tags, creators), sorted; spellings differing only in case count once.
+export function distinctValues(values) {
+  const seen = new Map();
+  for (const value of values) if (value && !seen.has(value.toLowerCase())) seen.set(value.toLowerCase(), value);
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+// Tag and creator filters of the public catalog; empty means all.
+export function matchesFilters(item, { tag, creator }) {
+  return (!tag || (item.tags ?? []).some((candidate) => candidate.toLowerCase() === tag.toLowerCase())) &&
+    (!creator || (item.creator ?? '').toLowerCase() === creator.toLowerCase());
+}
+
+export function CatalogFilters({ tags, creators, tag, creator, onChange }) {
+  if (!tags.length && !creators.length && !tag && !creator) return null;
+  const option = (value) => <option key={value} value={value}>{value}</option>;
+  return <div className="catalog-filters">
+    {(tags.length > 0 || tag) && <select aria-label="Filter by tag" value={tag} onChange={(event) => onChange({ tag: event.target.value, creator })}>
+      <option value="">All tags</option>{distinctValues([...tags, tag]).map(option)}
+    </select>}
+    {(creators.length > 0 || creator) && <select aria-label="Filter by creator" value={creator} onChange={(event) => onChange({ tag, creator: event.target.value })}>
+      <option value="">All creators</option>{distinctValues([...creators, creator]).map(option)}
+    </select>}
+  </div>;
+}
+
 // Catalog search: the name or the description contains the text (case-insensitive).
 export function matchesSearch(item, query) {
   return `${item.display_name} ${item.description ?? ''}`.toLowerCase().includes(query.trim().toLowerCase());
@@ -100,12 +134,16 @@ export function SearchBox({ value, onChange, label = 'Search graphics' }) {
 }
 
 // Catalog cards: preview and title link to the detail page, the button adds the graphic to the current rundown.
-function GraphicCards({ items, account, onAdd, favourites }) {
+function GraphicCards({ items, account, onAdd, favourites, onTag }) {
   return <div className="catalog-grid">
     {items.map((item) => <article className="graphic-card" key={item.versionId}>
       <a className="card-art-link" href={graphicHref(item)} tabIndex={-1} aria-hidden="true"><GraphicPreview item={item} /></a>
       <div className="card-body"><div><h3><a href={graphicHref(item)}>{item.display_name}</a></h3>
-        <p className="card-description">{item.description || (item.isPrivate ? 'A private OGraf package.' : 'A published OGraf package.')}</p></div>
+        <p className="card-description">{item.description || (item.isPrivate ? 'A private OGraf package.' : 'A published OGraf package.')}</p>
+        {item.tags?.length > 0 && <ul className="tag-list card-tags" aria-label="Tags">{item.tags.map((tag) => <li key={tag} className="tag-chip">
+          {onTag ? <button type="button" onClick={() => onTag(tag)} title={`Show graphics tagged ${tag}`}><Tag size={12} aria-hidden="true" />{tag}</button>
+            : <a href={`#catalog?tag=${encodeURIComponent(tag)}`}><Tag size={12} aria-hidden="true" />{tag}</a>}
+        </li>)}</ul>}</div>
       <div className="card-buttons">
         {account && <FavouriteButton item={item} favourites={favourites} />}
         <AddGraphicButton item={item} disabled={!account} onAdd={onAdd} />
@@ -185,6 +223,7 @@ export function Toast({ toast, onDismiss }) {
 function App() {
   const [catalog, setCatalog] = useState([]);
   const [query, setQuery] = useState('');
+  const [catalogFilter, setCatalogFilter] = useState(() => ({ tag: parseRoute(window.location.hash).tag ?? '', creator: parseRoute(window.location.hash).creator ?? '' }));
   const [account, setAccount] = useState(null);
   const [status, setStatus] = useState('Loading catalog');
   const [notice, setNotice] = useState('');
@@ -280,6 +319,7 @@ function App() {
     const changeView = () => {
       const next = parseRoute(window.location.hash);
       if (previousView.current === 'catalog' && next.view === 'graphic') catalogScroll.current = window.scrollY;
+      if (next.tag !== undefined) { setCatalogFilter({ tag: next.tag, creator: next.creator }); setPage(0); }
       setRoute(next);
     };
     window.addEventListener('hashchange', changeView);
@@ -318,7 +358,17 @@ function App() {
     finally { if (requestId === graphicsRequest.current) setMyLoading(false); }
   }
 
-  const filteredCatalog = catalog.filter((item) => matchesSearch(item, query));
+  const catalogTags = useMemo(() => distinctValues(catalog.flatMap((item) => item.tags ?? [])), [catalog]);
+  const catalogCreators = useMemo(() => distinctValues(catalog.map((item) => item.creator)), [catalog]);
+  const filteredCatalog = catalog.filter((item) => matchesSearch(item, query) && matchesFilters(item, catalogFilter));
+  function filterCatalog(next) {
+    setCatalogFilter(next);
+    setPage(0);
+  }
+  // Tags edited on a detail page apply to every version of that animation.
+  function tagsChanged(packageId, tags) {
+    setCatalog((current) => current.map((item) => (item.packageId === packageId ? { ...item, tags } : item)));
+  }
   const filteredPrivate = privateItems.filter((item) => matchesSearch(item, privateQuery));
   const pageCount = Math.max(1, Math.ceil(filteredCatalog.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
@@ -361,6 +411,10 @@ function App() {
       void rundownState.reload();
     } catch (error) { notify(error.message, 'error'); throw error; }
     finally { setPending((current) => { const next = new Set(current); next.delete(entry.entryId); return next; }); }
+  }
+
+  async function loadLicense(entry) {
+    return (await requestJson(`/api/my-graphics/${encodeURIComponent(entry.entryId)}/license`)).license;
   }
 
   async function loadManifest(entry) {
@@ -466,6 +520,7 @@ function App() {
         <a href="#renderer" aria-current={view === 'renderer' ? 'page' : undefined}><MonitorPlay size={17} />Renderer</a>
         <a href="#api" aria-current={view === 'api' ? 'page' : undefined}><Braces size={17} />API</a>
         {(mcpEnabled || view === 'assistants') && <a href="#assistants" aria-current={view === 'assistants' ? 'page' : undefined}><Bot size={17} />AI assistants</a>}
+        {account?.is_approver ? <a href="#users" aria-current={view === 'users' ? 'page' : undefined}><Users size={17} />Users</a> : null}
       </nav>
       {account && <RundownPanel state={rundownState} viewing={view === 'rundown'} onOpen={() => { window.location.hash = '#rundown'; }}
         onDeleted={(rundown) => notify(`${rundown.name} deleted`)} onSwitched={(rundown) => {
@@ -480,7 +535,7 @@ function App() {
       {view === 'rundown' ? authLoading ? <p className="status" role="status">Loading account...</p> : <MyGraphicsView account={account} rundownName={rundownName}
         groupActions={<GroupActionsPanel groups={groups} entries={controlledEntries} error={groupsError} running={runningGroups} disabled={!apiUrl}
           onRun={runGroup} onSave={saveGroup} onDelete={deleteGroup} />}
-        entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onDuplicate={duplicateEntry} media={media} onManifest={loadManifest} onReorder={reorderEntries} />
+        entries={controlledEntries} rendererStatus={rendererStatus} loading={myLoading} error={myError} pending={pending} Preview={GraphicPreview} rendererPreview={<RendererPreview account={account} />} onRetry={refreshMyGraphics} onSave={saveEntry} onAction={runAction} onCustomAction={runCustomAction} onDelete={deleteEntry} onDuplicate={duplicateEntry} media={media} onManifest={loadManifest} onLicense={loadLicense} onReorder={reorderEntries} />
       : view === 'renderer' ? <RendererView account={account} authLoading={authLoading} />
       : view === 'api' ? <ApiView account={account} authLoading={authLoading} />
       : view === 'assistants' ? <AssistantsView account={account} authLoading={authLoading} />
@@ -502,7 +557,8 @@ function App() {
       : view === 'graphic' ? <GraphicDetail versionId={route.versionId}
         summary={[...catalog, ...privateItems].find((item) => item.versionId === route.versionId)}
         account={account} Preview={GraphicPreview} AddButton={AddGraphicButton} onAdd={addToMyGraphics}
-        FavouriteButton={FavouriteButton} favourites={favourites} />
+        FavouriteButton={FavouriteButton} favourites={favourites} tagSuggestions={catalogTags} onTagsChanged={tagsChanged} />
+      : view === 'users' ? <UsersView account={account} authLoading={authLoading} />
       : view === 'favourites' ? <FavouritesView account={account} authLoading={authLoading} favourites={favourites}>
         <GraphicCards items={favourites.items} account={account} onAdd={addToMyGraphics} favourites={favourites} />
       </FavouritesView> : <>
@@ -527,11 +583,16 @@ function App() {
             ? <div><p className="eyebrow">FEATURED ANIMATIONS</p><h2 id="catalog-heading">Ready to use. Easy to customize.</h2>
               <p className="section-copy">From lower thirds to scoreboards: find the right animation for your stream.</p></div>
             : <div><p className="eyebrow">THE LIBRARY</p><h2 id="catalog-heading">Published graphics</h2></div>}
-          <SearchBox value={query} onChange={(value) => { setQuery(value); setPage(0); }} />
+          <div className="catalog-tools">
+            <CatalogFilters tags={catalogTags} creators={catalogCreators} tag={catalogFilter.tag} creator={catalogFilter.creator} onChange={filterCatalog} />
+            <SearchBox value={query} onChange={(value) => { setQuery(value); setPage(0); }} />
+          </div>
         </div>
         {status && <p className="status">{status}</p>}
-        {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong><span>Seed packages will appear here after the first startup import.</span></div>}
-        <GraphicCards items={pageItems} account={account} onAdd={addToMyGraphics} favourites={favourites} />
+        {!status && filteredCatalog.length === 0 && <div className="empty-state"><strong>No graphics found.</strong>
+          <span>{catalog.length ? 'No graphic matches the search and filters.' : 'Seed packages will appear here after the first startup import.'}</span></div>}
+        <GraphicCards items={pageItems} account={account} onAdd={addToMyGraphics} favourites={favourites}
+          onTag={(tag) => { filterCatalog({ ...catalogFilter, tag }); catalogHeading.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }} />
         <Pagination page={currentPage} pageCount={pageCount} total={filteredCatalog.length} onChange={changePage} />
       </section>
       {signedOut && <section className="cta-band" aria-labelledby="cta-heading">

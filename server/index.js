@@ -2,16 +2,18 @@ import 'dotenv/config';
 import path from 'node:path';
 import express from 'express';
 import { deleteRenderInstances, listGroupActions, findAccountById, findAccountByToken, findAccountGraphic, findAccountToken, findCatalogItem, findRenderableVersion, findVisibleVersion,
-  initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertAccount } from './db.js';
+  initializeDatabase, listPublishedCatalog, listRenderEntries, listRenderInstances, rotateAccountToken, saveRenderInstance, upsertAccount, setApprover, syncApprovers } from './db.js';
 import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
+import { readLicense } from './licenses.js';
 import myGraphicsRouter from './my-graphics.js';
 import rundownsRouter from './rundowns.js';
 import { createPrivateCatalog } from './private-catalog.js';
 import { createGroupActions } from './group-actions.js';
 import { createFavourites } from './favourites.js';
 import { createAuth } from './auth.js';
+import { adminMatcher, createAdmin } from './admins.js';
 import { createMedia, createMediaFileHandler, mediaFileRoute, isMediaUpload } from './media.js';
 import { createRefererCheck, parseHosts, refererMode } from './referer.js';
 import { configureSession } from './session.js';
@@ -30,6 +32,8 @@ const port = Number(process.env.PORT ?? 3000);
 const publicDirectory = path.resolve('dist');
 const rendererHost = parseRendererHost(process.env.RENDERER_HOST);
 // Main, renderer and graphics hosts and what each serves (see hosts.js). APP_HOST may list several, comma separated.
+// Accounts with the admin role (ADMIN_USERS, see admins.js); invalid entries stop the start.
+const isAdmin = adminMatcher(process.env.ADMIN_USERS);
 const hosts = createHosts({ appHosts: parseHosts(process.env.APP_HOST), rendererHost,
   graphicsHost: parseHostSetting(process.env.GRAPHICS_HOST, 'GRAPHICS_HOST') });
 // Strict (Referer required) with a graphics host. Without one, graphic frames run in an opaque origin and the
@@ -86,6 +90,14 @@ app.get('/api/catalog/:versionId/manifest', async (request, response) => {
     if (!version) return response.status(404).json({ error: 'Graphic not found' });
     response.json({ manifest: version.manifest });
   } catch { response.status(503).json({ error: 'Unable to load graphic manifest' }); }
+});
+app.get('/api/catalog/:versionId/license', async (request, response) => {
+  try {
+    const version = await findVisibleVersion(request.params.versionId, request.session?.accountId ?? null);
+    const license = version && await readLicense(version, storageRoot);
+    if (!license) return response.status(404).json({ error: 'This graphic has no license file' });
+    response.json({ license });
+  } catch (error) { console.error('License failed:', error?.message ?? error); response.status(503).json({ error: 'Unable to load the license' }); }
 });
 app.get('/api/catalog/:versionId/thumbnail', async (request, response) => {
   try {
@@ -152,7 +164,14 @@ app.get('/api/auth/me', async (request, response) => {
   const account = request.session?.accountId ? await findAccountById(request.session.accountId) : null;
   response.json({ account });
 });
-app.use('/api/auth', createAuth({ upsertAccount }));
+// Signing in also applies ADMIN_USERS to the account.
+app.use('/api/auth', createAuth({ upsertAccount: async (identity) => {
+  const account = await upsertAccount(identity);
+  const admin = isAdmin(identity);
+  if (Boolean(account.is_approver) !== admin) await setApprover(account.id, admin);
+  return { ...account, is_approver: admin };
+} }));
+app.use('/api/admin', createAdmin());
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(publicDirectory));
@@ -160,6 +179,8 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 await initializeDatabase();
+const changedRoles = await syncApprovers(isAdmin);
+if (changedRoles) console.log(`ADMIN_USERS: admin role changed for ${changedRoles} account(s)`);
 const seedDirectories = [
   [process.env.SEED_BUILTIN_DIR ?? './seeds/builtin', 'seed_builtin'],
   [process.env.SEED_VOLUME_DIR ?? './seeds/volume', 'seed_volume']

@@ -35,6 +35,7 @@ All settings are environment variables, set in `.env` (see `.env.example`).
 | `TOKEN_ENCRYPTION_KEY` | none (required in production) | 32 bytes, base64 or hex. Encrypts the renderer and API tokens at rest, see [Tokens](#tokens). |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_REDIRECT_URI` | empty | Twitch sign-in; hidden unless all three are set. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | empty | Google sign-in, labelled "Login with YouTube"; hidden unless all three are set. |
+| `ADMIN_USERS` | empty | Accounts with the admin role, comma separated, see [Admins](#admins). |
 | `APP_HOST` | empty | Host names of the main page, comma separated. Used by the [referer check](#hotlink-protection). |
 | `RENDERER_HOST` | empty (main host) | Host name or origin of the renderer page, see [Host names](#host-names). |
 | `GRAPHICS_HOST` | empty (opaque origin) | Host name or origin for graphic frames, package and media files, see [Host names](#host-names). |
@@ -59,6 +60,19 @@ Users sign in with Twitch or with Google, labelled "Login with YouTube". Each lo
 For Google, create a project in the Google Cloud console (free, no billing needed), configure the OAuth consent screen (external, scopes `openid` and `userinfo.profile`, privacy policy URL) and an OAuth client of type *Web application* with the authorised redirect URI `https://<your host>/api/auth/google/callback`.
 
 Every login attempt carries a random `state` that is kept in the signed session cookie and checked on the callback (valid for 10 minutes, usable once), which protects against login CSRF; the Google login additionally uses PKCE (S256). Cancelled or failed logins show an explanation page.
+
+## Admins
+
+Admins see a **Users** page (all accounts, with what each has created) and can tag the graphics of the public catalog. `ADMIN_USERS` names them, comma separated, each as `provider:login` or `provider:user-id`:
+
+```sh
+ADMIN_USERS=twitch:jeluf, google:112233445566778899
+```
+
+- Twitch accounts are given by their login (case-insensitive).
+- Google accounts have no login and are given by their Google user ID, which Grafonaut stores once the person has signed in: `SELECT provider_user_id, display_name FROM accounts WHERE provider = 'google';`
+
+The list is applied at every start and at every sign-in, so removing an entry also removes the role (after the next restart). An invalid entry stops the start with an error. The role is stored in `accounts.is_approver`.
 
 ## Reverse proxy and sessions
 

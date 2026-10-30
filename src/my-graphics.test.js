@@ -33,7 +33,9 @@ const compiled = await compileModule('./my-graphics.jsx', { ...brand, './media.j
 const myGraphicsUrl = compiled.url;
 const graphicDetailUrl = (await compileModule('./graphic-detail.jsx', { './my-graphics.jsx': myGraphicsUrl, ...brand })).url;
 const { default: MyGraphicsView, PropertiesDialog } = await import(myGraphicsUrl);
-const { default: GraphicDetail, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
+const { default: GraphicDetail, TagEditor, ThumbnailCarousel, formatRequirement } = await import(graphicDetailUrl);
+const adminUrl = (await compileModule('./admin.jsx')).url;
+const { default: UsersView } = await import(adminUrl);
 const rendererViewUrl = (await compileModule('./renderer-view.jsx', brand)).url;
 const { default: RendererView, ApiView } = await import(rendererViewUrl);
 const assistantsViewUrl = (await compileModule('./assistants-view.jsx', brand)).url;
@@ -53,7 +55,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     ImportDeclaration(importPath) {
       const file = importPath.node.source.value;
       if (file.endsWith('.css')) { importPath.remove(); return; }
-      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './assistants-view.jsx': assistantsViewUrl, './favourites.jsx': favouritesUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl, './media.jsx': mediaUrl };
+      const local = { './my-graphics.jsx': myGraphicsUrl, './graphic-detail.jsx': graphicDetailUrl, './renderer-view.jsx': rendererViewUrl, './assistants-view.jsx': assistantsViewUrl, './admin.jsx': adminUrl, './favourites.jsx': favouritesUrl, './rundowns.jsx': rundownsUrl, './private-catalog.jsx': privateCatalogUrl, './group-actions.jsx': groupActionsUrl, './brand.jsx': brandUrl, './media.jsx': mediaUrl };
       importPath.node.source.value = local[file] ?? (file.startsWith('.') ? new URL(file, mainUrl).href : import.meta.resolve(file));
     },
     ExpressionStatement(statement) {
@@ -64,7 +66,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     }
   } })]
 });
-const { AccountBar, AddGraphicButton, Pagination, SearchBox, Toast, matchesSearch, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
+const { AccountBar, AddGraphicButton, CatalogFilters, Pagination, SearchBox, Toast, distinctValues, matchesFilters, matchesSearch, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
 // Never hand DOM nodes to assert.equal/deepEqual: a failing comparison makes Node inspect and diff the whole jsdom
 // object graph, which exhausts memory instead of failing (and inside waitFor's first, expected miss, it stalls the run).
 const describeNode = (node) => node?.outerHTML?.slice(0, 160) ?? String(node);
@@ -1391,4 +1393,82 @@ test('the private catalog shows a search box next to its heading; search matches
   assert.equal(matchesSearch(item, ' minutes '), true);
   assert.equal(matchesSearch(item, 'weather'), false);
   assert.equal(matchesSearch({ display_name: 'Clock' }, ''), true);
+});
+
+test('catalog routes carry tag and creator filters; filters match case-insensitively', () => {
+  assert.deepEqual(parseRoute('#catalog?tag=lower%20third'), { view: 'catalog', tag: 'lower third', creator: '' });
+  assert.deepEqual(parseRoute('#catalog?creator=Emisora&tag='), { view: 'catalog', tag: '', creator: 'Emisora' });
+  assert.deepEqual(parseRoute('#catalog'), { view: 'catalog' });
+  assert.deepEqual(parseRoute('#users'), { view: 'users' });
+  const item = { tags: ['Lower third', 'Sports'], creator: 'Emisora' };
+  assert.equal(matchesFilters(item, { tag: 'lower third', creator: '' }), true);
+  assert.equal(matchesFilters(item, { tag: '', creator: 'emisora' }), true);
+  assert.equal(matchesFilters(item, { tag: 'Weather', creator: '' }), false);
+  assert.equal(matchesFilters({ tags: [] }, { tag: '', creator: 'DTB' }), false);
+  assert.deepEqual(distinctValues(['sports', 'Lower third', null, 'lower third', 'Sports', 'banner']), ['banner', 'Lower third', 'sports']);
+});
+
+test('the catalog filters offer the tags and creators in use', () => {
+  const changes = [];
+  render(React.createElement(CatalogFilters, { tags: ['Sports', 'Lower third'], creators: ['DTB', 'Emisora'], tag: '', creator: '', onChange: (next) => changes.push(next) }));
+  const tag = screen.getByRole('combobox', { name: 'Filter by tag' });
+  assert.deepEqual([...tag.options].map((option) => option.textContent), ['All tags', 'Lower third', 'Sports']);
+  fireEvent.change(tag, { target: { value: 'Sports' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Filter by creator' }), { target: { value: 'DTB' } });
+  assert.deepEqual(changes, [{ tag: 'Sports', creator: '' }, { tag: '', creator: 'DTB' }]);
+  cleanup();
+  const { container } = render(React.createElement(CatalogFilters, { tags: [], creators: [], tag: '', creator: '', onChange: () => {} }));
+  assert.equal(container.innerHTML, '');
+});
+
+test('admins add and remove tags on a graphic; others only see them as links', async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push([url, options.method, JSON.parse(options.body)]);
+    return Response.json({ tags: JSON.parse(options.body).tags.sort() });
+  };
+  const saved = [];
+  const view = render(React.createElement(TagEditor, { versionId: 'v1', tags: ['Sports'], editable: true, suggestions: ['Lower third', 'Sports'], onSaved: (tags) => saved.push(tags) }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'New tag' }), { target: { value: '  lower   THIRD ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Add tag' }));
+  await waitFor(() => assert.deepEqual(saved.at(-1), ['Lower third', 'Sports']));
+  assert.deepEqual(requests[0], ['/api/admin/catalog/v1/tags', 'PUT', { tags: ['Sports', 'Lower third'] }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Remove tag Sports' }));
+  await waitFor(() => assert.deepEqual(requests.at(-1)[2], { tags: [] }));
+  view.unmount();
+  render(React.createElement(TagEditor, { versionId: 'v1', tags: ['Sports'], editable: false, onSaved: () => {} }));
+  assert.equal(screen.getByRole('link', { name: 'Sports' }).getAttribute('href'), '#catalog?tag=Sports');
+  assertAbsent(screen.queryByRole('combobox', { name: 'New tag' }));
+  assertAbsent(screen.queryByRole('button', { name: /Remove tag/ }));
+});
+
+test('the users page lists all accounts for admins only', async () => {
+  globalThis.fetch = async () => Response.json({ users: [
+    { id: '1', displayName: 'JeLuF', provider: 'twitch', login: 'jeluf', isAdmin: true, createdAt: '2026-10-01T10:00:00Z', lastSignIn: '2026-10-29T10:00:00Z', rundowns: 2, entries: 9, privateGraphics: 3, media: 4 },
+    { id: '2', displayName: 'Guest', provider: 'google', login: null, isAdmin: false, createdAt: '2026-10-02T10:00:00Z', lastSignIn: '2026-10-02T10:00:00Z', rundowns: 1, entries: 0, privateGraphics: 0, media: 0 }] });
+  render(React.createElement(UsersView, { account: { id: 1, is_approver: 1 }, authLoading: false }));
+  await waitFor(() => assert.equal(screen.getAllByRole('row').length, 3));
+  const [, admin, guest] = screen.getAllByRole('row');
+  assert.match(admin.textContent, /JeLuF \(you\)Twitch @jeluf.*Admin/);
+  assert.match(guest.textContent, /GuestYouTubeUser/);
+  assert.deepEqual([...guest.querySelectorAll('td.number')].map((cell) => cell.textContent), ['1', '0', '0', '0']);
+  cleanup();
+  render(React.createElement(UsersView, { account: { id: 2, is_approver: 0 }, authLoading: false }));
+  assert.ok(screen.getByText('Admins only.'));
+});
+
+test('entries with a license file offer "Show license", which shows the file in a dialog', async () => {
+  const licenses = [];
+  showView({ entries: [{ ...entry, hasLicense: true }, { ...entry, entryId: '2', label: 'Right' }],
+    onLicense: async (item) => { licenses.push(item.entryId); return { name: 'LICENSE.md', text: 'MIT License\n\nCopyright (c) 2026', truncated: false }; } });
+  const [withLicense, without] = screen.getAllByRole('listitem');
+  fireEvent.click(within(without).getByRole('button', { name: 'More options for Right' }));
+  assertAbsent(screen.queryByRole('menuitem', { name: 'Show license' }));
+  fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+  fireEvent.click(within(withLicense).getByRole('button', { name: 'More options for Left' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Show license' }));
+  const dialog = await screen.findByRole('dialog', { name: 'License' });
+  await waitFor(() => assert.equal(dialog.querySelector('.license-text')?.textContent, 'MIT License\n\nCopyright (c) 2026'));
+  assert.match(dialog.textContent, /LICENSE\.md/);
+  assert.deepEqual(licenses, ['1']);
 });

@@ -3,6 +3,7 @@ import path from 'node:path';
 import mysql from 'mysql2/promise';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
+import { findLicense } from './licenses.js';
 import { resolvePropertySchema } from './asset-files.js';
 import { propertyDefaults } from './property-defaults.js';
 import { decryptToken, encryptToken, generateToken, hashToken, tokenPattern } from './tokens.js';
@@ -43,6 +44,61 @@ export async function findAccountById(id) {
 }
 
 // Creates or updates the account of one login identity ({ provider, providerUserId, login, displayName }).
+// ---- Admins (ADMIN_USERS) ----
+
+// Sets is_approver for every account from the ADMIN_USERS list (`isAdmin({ provider, providerUserId, login })`), so
+// removing someone from the list also takes the role away. Returns the number of accounts whose role changed.
+export async function syncApprovers(isAdmin) {
+  const [rows] = await pool.query('SELECT id, provider, provider_user_id AS providerUserId, login, is_approver AS isApprover FROM accounts');
+  let changed = 0;
+  for (const row of rows) {
+    const admin = isAdmin(row);
+    if (Boolean(row.isApprover) === admin) continue;
+    await pool.query('UPDATE accounts SET is_approver = ? WHERE id = ?', [admin, row.id]);
+    changed += 1;
+  }
+  return changed;
+}
+
+export async function setApprover(accountId, admin) {
+  await pool.query('UPDATE accounts SET is_approver = ? WHERE id = ? AND is_approver <> ?', [admin, accountId, admin]);
+}
+
+// All accounts with what they have created, for the admins' user list.
+export async function listAccounts() {
+  const [rows] = await pool.query(`SELECT a.id, a.provider, a.login, a.display_name AS displayName, a.is_approver AS isAdmin,
+      a.created_at AS createdAt, a.updated_at AS lastSignIn,
+      (SELECT COUNT(*) FROM rundowns r WHERE r.account_id = a.id) AS rundowns,
+      (SELECT COUNT(*) FROM my_graphics_entries g WHERE g.account_id = a.id) AS entries,
+      (SELECT COUNT(*) FROM packages p WHERE p.owner_account_id = a.id) AS privateGraphics,
+      (SELECT COUNT(*) FROM media m WHERE m.account_id = a.id) AS media
+    FROM accounts a ORDER BY a.created_at, a.id`);
+  return rows.map((row) => ({ ...row, id: String(row.id), isAdmin: Boolean(row.isAdmin), rundowns: Number(row.rundowns),
+    entries: Number(row.entries), privateGraphics: Number(row.privateGraphics), media: Number(row.media) }));
+}
+
+// ---- Catalog tags ----
+
+// Replaces the tags of the package of a published catalog version; returns the saved tags, or null when the version is
+// not in the public catalog.
+export async function setCatalogTags(versionId, tags) {
+  const [rows] = await pool.query(`SELECT pv.package_id AS packageId FROM package_versions pv JOIN packages p ON p.id = pv.package_id
+    WHERE pv.id = ? AND pv.review_state = 'published' AND p.disabled = FALSE`, [versionId]);
+  if (!rows.length) return null;
+  const { packageId } = rows[0];
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM package_tags WHERE package_id = ?', [packageId]);
+    if (tags.length) await connection.query('INSERT INTO package_tags (package_id, tag) VALUES ?', [tags.map((tag) => [packageId, tag])]);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally { connection.release(); }
+  return [...tags].sort((a, b) => a.localeCompare(b));
+}
+
 export async function upsertAccount({ provider, providerUserId, login = null, displayName }) {
   await pool.query(`INSERT INTO accounts (provider, provider_user_id, login, display_name)
     VALUES (?, ?, ?, ?)
@@ -209,6 +265,21 @@ export async function findAccountByToken(token, kind = 'renderer') {
   return rows[0] ?? null;
 }
 
+// Tags per package ID, sorted by name.
+async function tagsByPackage(packageIds) {
+  const tags = new Map(packageIds.map((id) => [id, []]));
+  if (!packageIds.length) return tags;
+  const [rows] = await pool.query('SELECT package_id AS packageId, tag FROM package_tags WHERE package_id IN (?) ORDER BY tag', [[...new Set(packageIds)]]);
+  for (const row of rows) tags.get(row.packageId)?.push(row.tag);
+  return tags;
+}
+
+// The creator shown and filtered on in the catalog: the manifest's author.
+export function manifestCreator(manifest) {
+  const name = manifest?.author?.name;
+  return typeof name === 'string' && name.trim() ? name.trim().slice(0, 100) : null;
+}
+
 export async function listPublishedCatalog() {
   const [rows] = await pool.query(`SELECT pv.id AS versionId, pv.archive_id AS archiveId, pv.version_label AS versionLabel,
       pv.manifest_name AS display_name, pv.manifest_description AS description,
@@ -219,10 +290,12 @@ export async function listPublishedCatalog() {
     JOIN packages p ON p.id = pv.package_id
     WHERE pv.review_state = 'published' AND p.disabled = FALSE
     ORDER BY pv.created_at DESC`);
+  const tags = await tagsByPackage(rows.map((row) => row.packageId));
   return Promise.all(rows.map(async (row) => {
     const { manifest, manifestFile, mainFile, ...item } = row;
     const thumbnail = await findThumbnail(row, storageRoot);
-    return { ...item, thumbnailUrl: thumbnail ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null };
+    return { ...item, creator: manifestCreator(manifest), tags: tags.get(row.packageId) ?? [],
+      thumbnailUrl: thumbnail ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null };
   }));
 }
 
@@ -300,8 +373,9 @@ export async function findCatalogItem(versionId, accountId = null) {
   const row = rows[0];
   if (!row) return null;
   const { manifest, manifestFile, mainFile, reviewState, ...item } = row;
-  const thumbnails = await findThumbnails(row, storageRoot);
-  return { ...item, isPrivate: reviewState !== 'published', ...catalogDetails(manifest),
+  const [thumbnails, license] = await Promise.all([findThumbnails(row, storageRoot), findLicense(row, storageRoot).catch(() => null)]);
+  const tags = reviewState === 'published' ? (await tagsByPackage([row.packageId])).get(row.packageId) : [];
+  return { ...item, isPrivate: reviewState !== 'published', ...catalogDetails(manifest), creator: manifestCreator(manifest), tags, hasLicense: Boolean(license),
     thumbnailUrl: thumbnails.length ? `/api/catalog/${encodeURIComponent(row.versionId)}/thumbnail` : null,
     thumbnails: thumbnails.map(({ index }) => {
       const declared = manifest.thumbnails[index];
@@ -438,8 +512,9 @@ export async function listMyGraphics(accountId, rundownId) {
     WHERE g.account_id = ? ORDER BY g.sort_position IS NULL, g.sort_position, g.created_at DESC, g.id DESC`, [...rundown.params, accountId]);
   return Promise.all(rows.map(async (row) => {
     const { manifest, manifestFile, mainFile, ...item } = row;
-    const [thumbnail, schema] = await Promise.all([!row.packageDisabled && findThumbnail(row, storageRoot), resolvePropertySchema(row, storageRoot)]);
-    return { ...item, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled), schema,
+    const [thumbnail, schema, license] = await Promise.all([!row.packageDisabled && findThumbnail(row, storageRoot), resolvePropertySchema(row, storageRoot),
+      findLicense(row, storageRoot).catch(() => null)]);
+    return { ...item, enabled: Boolean(row.enabled), packageDisabled: Boolean(row.packageDisabled), schema, hasLicense: Boolean(license),
       customActions: manifestCustomActions(manifest),
       // Addressed by the immutable version, never by entry ID: entry IDs can repeat (e.g. after a database reset)
       // and a cached image would then show another graphic.

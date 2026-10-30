@@ -31,11 +31,11 @@ Beyond the work packages: rundowns (several prepared events per account), the pr
 - **OPS-2** Hosts, upload limits and keys are configured by environment variables. Missing: a configurable CSP policy.
 - **XC-1** Hardening and tests for uploads, tokens, sandboxing and OAuth. Missing: a formal security review.
 - **XC-3** Installation, user and API documentation (see [README.md](README.md#documentation)), interactive API documentation. Missing: a guide for graphic authors.
+- **BE-10** Roles and permissions (User vs. Approver). Started: the admin role (`ADMIN_USERS`, stored as `is_approver`) with the user list and catalog tags; the approval workflow itself is missing.
 
 **Not started**
 
 - **BE-9** Publication workflow (draft, pending, published, rejected; approver actions, reviewer notes, in-app notifications).
-- **BE-10** Roles and permissions (User vs. Approver).
 - **FE-8** Publication management view.
 - **OPS-3** CI/CD pipeline.
 - **OPS-5** Access logs with redacted tokens, error tracking, monitoring.

@@ -137,3 +137,11 @@ test('a select without labels is accepted with a note; the stored manifest stays
   assert.deepEqual(result.warnings, ['wheel.ograf.json: property "layout": gddType "select" without gddOptions.labels; the enum values are used as labels']);
   assert.deepEqual(saved[0].manifest.schema.properties.layout, layout);
 });
+
+test('files without a suffix are allowed, a trailing dot is not', async () => {
+  const files = [...graphicFiles(), { name: 'LICENSE', data: 'MIT' }, { name: 'docs/README', data: 'read me' }, { name: '.DS_Store', data: 'x' }];
+  const { saved, upload } = await ingest(makeZip(files), { maxFiles: 10 });
+  assert.equal(saved.length, 1);
+  for (const name of ['LICENSE', path.join('docs', 'README'), '.DS_Store']) assert.ok(upload.files.includes(name), name);
+  await rejects(makeZip([...graphicFiles(), { name: 'notes.', data: 'x' }]), /File type not allowed: notes\./, { maxFiles: 10 });
+});

@@ -1984,7 +1984,8 @@ footer {
     padding: 20px 0 90px;
 }
 
-.private-catalog h1 {
+.private-catalog h1,
+.users-view h1 {
     font-size: clamp(40px, 5vw, 64px);
     line-height: 1;
 }
@@ -3231,4 +3232,176 @@ footer {
 
 .array-compact-header > span:first-child {
     text-align: right;
+}
+
+/* Catalog tags and filters */
+.catalog-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.catalog-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.catalog-filters select {
+    max-width: 200px;
+    padding: 9px 12px;
+    border: 1px solid var(--input-border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font: 14px var(--font-body);
+}
+
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.card-tags {
+    margin-top: 10px;
+}
+
+.tag-chip {
+    display: inline-flex;
+    white-space: nowrap;
+    align-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: 99px;
+    background: var(--chip);
+    font-size: 12px;
+}
+
+.tag-chip > a,
+.tag-chip > button:not(.tag-remove) {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border: 0;
+    background: none;
+    color: var(--text-soft);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.tag-chip > a:hover,
+.tag-chip > button:not(.tag-remove):hover {
+    color: var(--text);
+}
+
+.tag-remove {
+    display: inline-grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    margin-right: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--faint);
+    cursor: pointer;
+}
+
+.tag-remove:hover:not(:disabled) {
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+
+.detail-tags {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 4px 0 18px;
+}
+
+.tag-add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tag-add input {
+    flex: 1 1 220px;
+    max-width: 320px;
+    padding: 7px 12px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font: 14px var(--font-body);
+}
+
+/* Users (admins) */
+.users-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.users-table th,
+.users-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.users-table thead th {
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.users-table tbody tr:last-child > * {
+    border-bottom: 0;
+}
+
+.users-table .number {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.users-login,
+.users-you {
+    color: var(--faint);
+}
+
+.role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    border-radius: 99px;
+    background: var(--chip);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.license-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    line-height: 1.5;
 }

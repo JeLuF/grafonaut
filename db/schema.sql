@@ -222,3 +222,14 @@ CREATE TABLE IF NOT EXISTS mcp_activity (
   KEY idx_mcp_activity_account (account_id, created_at),
   CONSTRAINT fk_mcp_activity_account FOREIGN KEY (account_id) REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Tags of catalog animations (e.g. "lower third"), set by admins and used to filter the catalog. They belong to the
+-- package, so every version of an animation has them.
+CREATE TABLE IF NOT EXISTS package_tags (
+  package_id CHAR(36) NOT NULL,
+  tag VARCHAR(40) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (package_id, tag),
+  KEY idx_package_tags_tag (tag),
+  CONSTRAINT fk_package_tags_package FOREIGN KEY (package_id) REFERENCES packages (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

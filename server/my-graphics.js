@@ -2,6 +2,7 @@ import express from 'express';
 import { addMyGraphic, deleteMyGraphic, duplicateMyGraphic, findMyGraphic, listMyGraphics, reorderMyGraphics, updateMyGraphic } from './db.js';
 import { storageRoot } from './storage.js';
 import { resolvePropertySchema } from './asset-files.js';
+import { readLicense } from './licenses.js';
 import { SchemaTimeoutError, untrustedSchemas } from './untrusted-schema.js';
 
 const router = express.Router();
@@ -103,6 +104,15 @@ router.post('/:entryId/duplicate', async (request, response) => {
     entriesChanged(request);
     response.status(201).json({ entryId });
   } catch { response.status(503).json({ error: 'Unable to duplicate graphic entry' }); }
+});
+router.get('/:entryId/license', async (request, response) => {
+  try {
+    const entry = await findMyGraphic(request.session.accountId, request.params.entryId);
+    if (!entry) return response.status(404).json({ error: 'Graphic entry not found' });
+    const license = await readLicense(entry, storageRoot);
+    if (!license) return response.status(404).json({ error: 'This graphic has no license file' });
+    response.set('Cache-Control', 'private, no-store').json({ license });
+  } catch { response.status(503).json({ error: 'Unable to load the license' }); }
 });
 router.get('/:entryId/manifest', async (request, response) => {
   try {

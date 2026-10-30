@@ -24,7 +24,7 @@ mock.module('mysql2/promise', { defaultExport: {
   }
 } });
 mock.module('./storage.js', { namedExports: { storageRoot: '/unused' } });
-const { listMedia, findMedia, updateMedia, deleteMedia, copyLabel, duplicateMyGraphic, createGroupAction, deleteGroupAction, listGroupActions, updateGroupAction, manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
+const { listAccounts, setCatalogTags, syncApprovers, manifestCreator, listMedia, findMedia, updateMedia, deleteMedia, copyLabel, duplicateMyGraphic, createGroupAction, deleteGroupAction, listGroupActions, updateGroupAction, manifestCustomActions, listRenderEntries, saveRenderInstance, findCatalogItem, findRenderableVersion, findVisibleVersion, listPrivateCatalog, saveUploadedVersions, addMyGraphic, deleteMyGraphic, findMyGraphic, listMyGraphics, updateMyGraphic } = await import('./db.js');
 const { default: router } = await import('./my-graphics.js');
 const app = express();
 app.use(express.json());
@@ -383,4 +383,33 @@ test('favourites are stored per package of a visible version and listed with the
     [{ isPrivate: true, isFavourite: true, packageId: 'package' }]);
   assert.match(queries[0].sql, /CASE WHEN p.owner_account_id = f.account_id THEN p.latest_version_id ELSE p.current_published_version_id END/);
   assert.match(queries[0].sql, /p.disabled = FALSE/);
+});
+
+test('ADMIN_USERS is applied to every account: roles are given and taken away', async () => {
+  rows = [{ id: 1, provider: 'twitch', providerUserId: '11', login: 'jeluf', isApprover: 0 },
+    { id: 2, provider: 'twitch', providerUserId: '22', login: 'former', isApprover: 1 },
+    { id: 3, provider: 'google', providerUserId: '33', login: null, isApprover: 0 }];
+  const changed = await syncApprovers((account) => account.login === 'jeluf');
+  assert.equal(changed, 2);
+  assert.deepEqual(queries.slice(1).map((query) => query.parameters), [[true, 1], [false, 2]]);
+  assert.match(queries[1].sql, /^UPDATE accounts SET is_approver = \? WHERE id = \?$/);
+});
+
+test('the user list counts what each account has created', async () => {
+  rows = [{ id: 7, provider: 'twitch', login: 'host', displayName: 'Host', isAdmin: 0, rundowns: '2', entries: '5', privateGraphics: '1', media: '3' }];
+  assert.deepEqual(await listAccounts(), [{ id: '7', provider: 'twitch', login: 'host', displayName: 'Host', isAdmin: false, rundowns: 2, entries: 5, privateGraphics: 1, media: 3 }]);
+  assert.match(queries[0].sql, /FROM accounts a ORDER BY a.created_at, a.id/);
+});
+
+test('catalog tags replace the tags of the published version\'s package in one transaction', async () => {
+  rows = [{ packageId: 'p1' }];
+  assert.deepEqual(await setCatalogTags('v1', ['Sports', 'Lower third']), ['Lower third', 'Sports']);
+  assert.match(queries[0].sql, /review_state = 'published' AND p.disabled = FALSE/);
+  assert.deepEqual(queries.slice(1).map((query) => [query.sql.split(' ').slice(0, 3).join(' '), query.parameters]),
+    [['DELETE FROM package_tags', ['p1']], ['INSERT INTO package_tags', [[['p1', 'Sports'], ['p1', 'Lower third']]]]]);
+  assert.deepEqual(transactionEvents, ['begin', 'commit', 'release']);
+  rows = [];
+  assert.equal(await setCatalogTags('private', ['x']), null);
+  assert.equal(manifestCreator({ author: { name: '  Emisora ' } }), 'Emisora');
+  assert.equal(manifestCreator({ author: { email: 'x@example.com' } }), null);
 });

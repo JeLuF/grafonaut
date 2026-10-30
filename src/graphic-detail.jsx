@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, FileJson, Mail, Play, RefreshCw, Square, User, Zap } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useState } from 'react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, FileJson, Mail, Play, Plus, RefreshCw, ScrollText, Square, Tag, User, X, Zap } from 'lucide-react';
 import { requestJson } from './api.js';
 import { ActionMenu, EntryDialog } from './my-graphics.jsx';
 import { LoginButtons } from './brand.jsx';
@@ -70,13 +70,61 @@ export function ThumbnailCarousel({ images, name, fallback }) {
   );
 }
 
-export default function GraphicDetail({ versionId, summary, account, Preview, AddButton, onAdd, FavouriteButton, favourites }) {
+// Tags of a catalog animation. Everyone sees them (each links to the catalog filtered by it); admins add and remove them.
+export function TagEditor({ versionId, tags, editable, suggestions = [], onSaved }) {
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const listId = useId();
+  async function save(next) {
+    setSaving(true);
+    setError('');
+    try {
+      const response = await requestJson(`/api/admin/catalog/${encodeURIComponent(versionId)}/tags`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tags: next }) });
+      onSaved(response.tags);
+      setDraft('');
+    } catch (failure) { setError(failure.message); }
+    finally { setSaving(false); }
+  }
+  function add(event) {
+    event.preventDefault();
+    const tag = draft.replace(/\s+/g, ' ').trim();
+    if (!tag) return;
+    // An existing tag keeps its spelling ("Lower third", not "lower THIRD").
+    const known = suggestions.find((candidate) => candidate.toLowerCase() === tag.toLowerCase()) ?? tag;
+    if (tags.some((existing) => existing.toLowerCase() === known.toLowerCase())) { setDraft(''); return; }
+    void save([...tags, known]);
+  }
+  if (!editable && !tags.length) return null;
+  return <div className="detail-tags">
+    <ul className="tag-list" aria-label="Tags">
+      {tags.map((tag) => <li key={tag} className="tag-chip">
+        <a href={`#catalog?tag=${encodeURIComponent(tag)}`}><Tag size={12} aria-hidden="true" />{tag}</a>
+        {editable && <button type="button" className="tag-remove" disabled={saving} onClick={() => save(tags.filter((candidate) => candidate !== tag))}
+          aria-label={`Remove tag ${tag}`} title="Remove tag"><X size={12} /></button>}
+      </li>)}
+    </ul>
+    {editable && <form className="tag-add" onSubmit={add}>
+      <input value={draft} onChange={(event) => setDraft(event.target.value)} list={listId} maxLength={40} placeholder="Add a tag, e.g. lower third"
+        aria-label="New tag" disabled={saving} />
+      <datalist id={listId}>{suggestions.filter((tag) => !tags.includes(tag)).map((tag) => <option key={tag} value={tag} />)}</datalist>
+      <button className="text-button" type="submit" disabled={saving || !draft.trim()}><Plus size={14} />Add tag</button>
+    </form>}
+    {error && <p className="error-message" role="alert">{error}</p>}
+  </div>;
+}
+
+export default function GraphicDetail({ versionId, summary, account, Preview, AddButton, onAdd, FavouriteButton, favourites, tagSuggestions = [], onTagsChanged }) {
   const [item, setItem] = useState(null);
   const [error, setError] = useState('');
   const [showManifest, setShowManifest] = useState(false);
+  const [showLicense, setShowLicense] = useState(false);
   const loadManifest = useCallback(async () => (await requestJson(`/api/catalog/${encodeURIComponent(versionId)}/manifest`)).manifest, [versionId]);
+  const loadLicense = useCallback(async () => (await requestJson(`/api/catalog/${encodeURIComponent(versionId)}/license`)).license, [versionId]);
   useEffect(() => {
     setShowManifest(false);
+    setShowLicense(false);
     const controller = new AbortController();
     setItem(null);
     setError('');
@@ -107,16 +155,21 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
         <div className="detail-summary">
           <p className="eyebrow">{isPrivate ? 'PRIVATE GRAPHIC' : 'OGRAF GRAPHIC'} · v{graphic.versionLabel}</p>
           <h1 id="graphic-heading">{graphic.display_name}</h1>
+          {item && !isPrivate && <TagEditor versionId={item.versionId} tags={item.tags ?? []} editable={Boolean(account?.is_approver)} suggestions={tagSuggestions}
+            onSaved={(tags) => { setItem((current) => ({ ...current, tags })); onTagsChanged?.(item.packageId, tags); }} />}
           <div className="detail-cta">
             <AddButton item={graphic} disabled={!account} onAdd={onAdd} label="Add to rundown" />
             {account && FavouriteButton && <FavouriteButton item={graphic} favourites={favourites} label />}
             <ActionMenu label={`More options for ${graphic.display_name}`} items={[
-              { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => setShowManifest(true) }
+              { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => setShowManifest(true) },
+              item?.hasLicense && { key: 'license', label: 'Show license', icon: ScrollText, onSelect: () => setShowLicense(true) }
             ]} />
             {!account && <LoginButtons compact />}
           </div>
           <dl className="detail-facts">
-            <div><dt>Creator</dt><dd>{author?.name ?? 'Unknown'}</dd></div>
+            <div><dt>Creator</dt><dd>{!isPrivate && item?.creator
+              ? <a href={`#catalog?creator=${encodeURIComponent(item.creator)}`} title={`All graphics by ${item.creator}`}>{item.creator}</a>
+              : author?.name ?? 'Unknown'}</dd></div>
             {item?.source && <div><dt>Source</dt><dd>{sourceLabels[item.source] ?? item.source}</dd></div>}
             {item?.publishedAt && <div><dt>Published</dt><dd>{new Date(item.publishedAt).toLocaleDateString()}</dd></div>}
             {item?.manifestId && <div><dt>Graphic ID</dt><dd className="mono">{item.manifestId}</dd></div>}
@@ -124,6 +177,7 @@ export default function GraphicDetail({ versionId, summary, account, Preview, Ad
         </div>
       </div>
       {showManifest && <EntryDialog entry={summary ?? graphic} mode="manifest" onManifest={loadManifest} onClose={() => setShowManifest(false)} />}
+      {showLicense && <EntryDialog entry={summary ?? graphic} mode="license" onLicense={loadLicense} onClose={() => setShowLicense(false)} />}
       {error && <p className="error-message" role="alert">{error}</p>}
       {!item && !error && <p className="status" role="status">Loading details...</p>}
 

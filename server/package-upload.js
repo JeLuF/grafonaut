@@ -54,8 +54,10 @@ function inspectEntries(files, limits) {
     if (unsafeName(entry.path)) problems.push(`Unsafe path: ${entry.path}`);
     else if (isSymlink(entry)) problems.push(`Symbolic links are not allowed: ${entry.path}`);
     else if (entry.type === 'File') {
+      // Files without a suffix (LICENSE, README, .DS_Store) are allowed: they are stored, but never served to graphics,
+      // which only get the file types the renderer knows.
       const extension = path.posix.extname(entry.path).toLowerCase();
-      if (!limits.allowedExtensions.has(extension)) problems.push(`File type not allowed: ${entry.path}`);
+      if (extension && !limits.allowedExtensions.has(extension)) problems.push(`File type not allowed: ${entry.path}`);
       declared += entry.uncompressedSize;
     }
   }

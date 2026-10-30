@@ -36,6 +36,7 @@ Endpoints of the web app under `/api`. They need the session cookie; changing re
 - `POST /api/my-graphics/:entryId/duplicate`: copy an entry of the current rundown directly below the original; returns the new `entryId`.
 - `DELETE /api/my-graphics/:entryId`: delete one entry owned by the current account.
 - `GET /api/my-graphics/:entryId/manifest`: return the pinned version's original manifest, only to the entry owner.
+- `GET /api/my-graphics/:entryId/license`: the license file of the pinned version (`{ license: { name, text, truncated } }`, `404` without one); entries carry `hasLicense`.
 
 **Other endpoints:**
 
@@ -46,5 +47,6 @@ Endpoints of the web app under `/api`. They need the session cookie; changing re
 - Tokens: `GET /api/tokens/:kind` shows the renderer or API URL, `POST /api/tokens/:kind` creates a new token (`kind` is `renderer` or `api`).
 - Favourites: `GET /api/favourites` lists them with the version the account sees, `POST /api/favourites` with `{ "versionId": "<uuid>" }` bookmarks the graphic (package) of a visible version (`409` at 500 favourites), `DELETE /api/favourites/:packageId` removes one.
 - MCP interface: `GET /api/mcp` returns `{ enabled }` and, when enabled, the MCP `url`, the connected `apps` and recent `activity`; `DELETE /api/mcp/apps/:id` disconnects an app and revokes its tokens.
-- Catalog: `GET /api/catalog`, `GET /api/catalog/:versionId`, `…/manifest`, `…/thumbnail`, `…/thumbnails/:index`.
+- Catalog: `GET /api/catalog`, `GET /api/catalog/:versionId`, `…/manifest`, `…/thumbnail`, `…/thumbnails/:index`. Catalog items carry `tags` and `creator` (the manifest's `author.name`). `GET /api/catalog/:versionId/license` returns the graphic's license file (`LICENSE`, `LICENSE.md` or `LICENSE.txt`, cut at 256 KB); the detail item's `hasLicense` says whether there is one.
+- Admins only (`403` for others): `GET /api/admin/users` lists all accounts; `PUT /api/admin/catalog/:versionId/tags` with `{ "tags": ["lower third"] }` replaces the tags of a public catalog graphic (its package).
 - Sign-in: `GET /api/auth/providers`, `GET /api/auth/me`, `GET /api/auth/twitch`, `GET /api/auth/google` and their callbacks; `POST /api/auth/logout` signs out.

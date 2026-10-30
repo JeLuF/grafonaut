@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useId, useMemo, useRef, us
 import Form, { getDefaultRegistry } from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { getTemplate, getUiOptions, TranslatableString } from '@rjsf/utils';
-import { ArrowDown, ArrowUp, Copy, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Save, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, Copy, FileJson, Info, GripVertical, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Save, ScrollText, SlidersHorizontal, Square, Trash2, X, Zap } from 'lucide-react';
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -351,20 +351,23 @@ export function ActionMenu({ label, busy, items, icon: TriggerIcon = MoreHorizon
   </div>;
 }
 
-function EntryMenu({ entry, busy, onDelete, onDuplicate, onManifest }) {
+function EntryMenu({ entry, busy, onDelete, onDuplicate, onManifest, onLicense }) {
   return <ActionMenu label={`More options for ${entry.label || entry.display_name}`} busy={busy} items={[
     !entry.packageDisabled && { key: 'details', label: 'Show details', icon: Info, href: `#graphic/${encodeURIComponent(entry.versionId)}` },
     { key: 'manifest', label: 'Show manifest', icon: FileJson, onSelect: () => onManifest(entry) },
+    entry.hasLicense && onLicense && { key: 'license', label: 'Show license', icon: ScrollText, onSelect: () => onLicense(entry) },
     { key: 'duplicate', label: 'Duplicate', icon: Copy, onSelect: () => onDuplicate(entry) },
     { key: 'delete', label: 'Delete', icon: Trash2, onSelect: () => onDelete(entry), danger: true }
   ]} />;
 }
 
-export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
+// Dialogs of an entry (or catalog graphic): its manifest, its license file, or the delete confirmation.
+export function EntryDialog({ entry, mode, onDelete, onManifest, onLicense, onClose }) {
   const dialog = useRef(null);
   const headingId = useId();
   const [manifest, setManifest] = useState(null);
-  const [loading, setLoading] = useState(mode === 'manifest');
+  const [license, setLicense] = useState(null);
+  const [loading, setLoading] = useState(mode === 'manifest' || mode === 'license');
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -373,16 +376,18 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
     return () => element.close();
   }, []);
   useEffect(() => {
-    if (mode !== 'manifest') return;
+    if (mode !== 'manifest' && mode !== 'license') return;
     let active = true;
     async function load() {
-      try { const result = await onManifest(entry); if (active) setManifest(result); }
-      catch (failure) { if (active) setError(failure.message); }
+      try {
+        if (mode === 'manifest') { const result = await onManifest(entry); if (active) setManifest(result); }
+        else { const result = await onLicense(entry); if (active) setLicense(result); }
+      } catch (failure) { if (active) setError(failure.message); }
       finally { if (active) setLoading(false); }
     }
     void load();
     return () => { active = false; };
-  }, [entry, mode, onManifest]);
+  }, [entry, mode, onManifest, onLicense]);
   async function remove() {
     setDeleting(true);
     setError('');
@@ -390,11 +395,13 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
     catch (failure) { setError(failure.message); }
     finally { setDeleting(false); }
   }
-  return <dialog ref={dialog} className={`properties-dialog ${mode === 'manifest' ? 'manifest-dialog' : 'confirm-dialog'}`} aria-labelledby={headingId} onCancel={(event) => {
+  const viewer = mode === 'manifest' || mode === 'license';
+  const title = mode === 'manifest' ? 'Manifest' : mode === 'license' ? 'License' : 'Delete graphic?';
+  return <dialog ref={dialog} className={`properties-dialog ${viewer ? 'manifest-dialog' : 'confirm-dialog'}`} aria-labelledby={headingId} onCancel={(event) => {
     if (deleting) event.preventDefault(); else onClose();
   }}>
     <header className="dialog-heading">
-      <div><h2 id={headingId}>{mode === 'manifest' ? 'Manifest' : 'Delete graphic?'}</h2><p>{entry.label || entry.display_name} <span>v{entry.versionLabel}</span></p></div>
+      <div><h2 id={headingId}>{title}</h2><p>{entry.label || entry.display_name} <span>v{entry.versionLabel}</span>{license && <span>{license.name}</span>}</p></div>
       <button className="icon-button" type="button" disabled={deleting} onClick={onClose} title="Close dialog" aria-label="Close dialog"><X size={18} /></button>
     </header>
     <div className="dialog-content">
@@ -402,6 +409,12 @@ export function EntryDialog({ entry, mode, onDelete, onManifest, onClose }) {
       {mode === 'manifest' ? <>
         {loading && <p role="status">Loading manifest...</p>}
         {!loading && !error && <pre className="manifest-json">{JSON.stringify(manifest, null, 2)}</pre>}
+      </> : mode === 'license' ? <>
+        {loading && <p role="status">Loading license...</p>}
+        {!loading && !error && license && <>
+          <pre className="manifest-json license-text">{license.text}</pre>
+          {license.truncated && <p className="status">The license file is longer; only its beginning is shown.</p>}
+        </>}
       </> : <>
         <p>Remove this graphic from the rundown?</p>
         <div className="dialog-actions">
@@ -461,7 +474,7 @@ export function CustomActionDialog({ entry, action, media, onRun, onClose }) {
   );
 }
 
-function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, connections, onSave, onProperties, onAction, onCustomAction, onDelete, onDuplicate, onManifest }) {
+function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview, connections, onSave, onProperties, onAction, onCustomAction, onDelete, onDuplicate, onManifest, onLicense }) {
   const [label, setLabel] = useState(entry.label ?? entry.display_name);
   const [editingLabel, setEditingLabel] = useState(false);
   const [savingLabel, setSavingLabel] = useState(false);
@@ -535,7 +548,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
           {entry.customActions?.length > 0 && <ActionMenu label={`Custom actions for ${entry.label || entry.display_name}`} busy={busy || !actionable}
             icon={Zap} title={actionable ? 'Custom actions' : unavailableReason} menuLabel="Custom actions"
             items={entry.customActions.map((action) => ({ key: action.id, label: action.name, icon: Zap, hint: action.description, onSelect: () => onCustomAction(entry, action) }))} />}
-          <EntryMenu entry={entry} busy={busy} onDelete={onDelete} onDuplicate={onDuplicate} onManifest={onManifest} />
+          <EntryMenu entry={entry} busy={busy} onDelete={onDelete} onDuplicate={onDuplicate} onManifest={onManifest} onLicense={onLicense} />
         </div>
         <span className={`entry-availability${entry.live?.playing ? ' is-on-air' : ''}`}>{entry.packageDisabled ? 'Package unavailable'
           : !canControlGraphic(entry.control) ? 'Renderer unavailable'
@@ -545,7 +558,7 @@ function GraphicEntry({ entry, busy, orderDisabled, first, last, onMove, Preview
   );
 }
 
-export default function MyGraphicsView({ account, rundownName, groupActions, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onDuplicate = async () => {}, onManifest, onReorder, media }) {
+export default function MyGraphicsView({ account, rundownName, groupActions, entries, loading, error, pending, Preview, rendererPreview, rendererStatus, onRetry, onSave, onAction, onCustomAction = async () => {}, onDelete, onDuplicate = async () => {}, onManifest, onLicense, onReorder, media }) {
   const [editing, setEditing] = useState(null);
   const [customAction, setCustomAction] = useState(null);
   const [entryDialog, setEntryDialog] = useState(null);
@@ -586,14 +599,15 @@ export default function MyGraphicsView({ account, rundownName, groupActions, ent
             <ul className="graphics-list">{entries.map((entry, index) => <GraphicEntry key={entry.entryId} entry={entry} busy={ordering || pending.has(entry.entryId)}
               orderDisabled={orderDisabled} first={index === 0} last={index === entries.length - 1} onMove={(direction) => moveEntry(index, index + direction)} Preview={Preview} connections={rendererStatus?.connections} onSave={onSave} onProperties={setEditing} onAction={onAction}
               onCustomAction={(item, action) => needsPayload(action) ? setCustomAction({ entry: item, action }) : onCustomAction(item, action, {}).catch(() => {})}
-              onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onDuplicate={(item) => { void onDuplicate(item).catch(() => {}); }} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })} />)}</ul>
+              onDelete={(item) => setEntryDialog({ entry: item, mode: 'delete' })} onDuplicate={(item) => { void onDuplicate(item).catch(() => {}); }} onManifest={(item) => setEntryDialog({ entry: item, mode: 'manifest' })}
+              onLicense={onLicense && ((item) => setEntryDialog({ entry: item, mode: 'license' }))} />)}</ul>
           </SortableContext>
         </DndContext>}
         </div>
       </div>}
       {editing && <PropertiesDialog key={editing.entryId} entry={editing} media={media} onSave={onSave} onClose={() => setEditing(null)} />}
       {customAction && <CustomActionDialog key={`${customAction.entry.entryId}-${customAction.action.id}`} {...customAction} media={media} onRun={onCustomAction} onClose={() => setCustomAction(null)} />}
-      {entryDialog && <EntryDialog key={`${entryDialog.entry.entryId}-${entryDialog.mode}`} {...entryDialog} onDelete={onDelete} onManifest={onManifest} onClose={() => setEntryDialog(null)} />}
+      {entryDialog && <EntryDialog key={`${entryDialog.entry.entryId}-${entryDialog.mode}`} {...entryDialog} onDelete={onDelete} onManifest={onManifest} onLicense={onLicense} onClose={() => setEntryDialog(null)} />}
     </section>
   );
 }

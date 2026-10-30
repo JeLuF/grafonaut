@@ -4,7 +4,16 @@ How Grafonaut works for signed-in users: catalogs, uploads, the media library, r
 
 ## Catalog
 
-The public catalog lists the published graphics, with search, pages of six and a detail page per graphic (description, thumbnails, manifest). Signed-in users add a graphic to their current rundown from the catalog or its detail page.
+The public catalog lists the published graphics, with search, pages of six and a detail page per graphic (description, thumbnails, manifest, and the license if the package has one). A license is a file named `LICENSE`, `LICENSE.md` or `LICENSE.txt` (any case) next to the graphic's manifest or in a folder above it in the package; *Show license* in the graphic's menu shows it. Signed-in users add a graphic to their current rundown from the catalog or its detail page.
+
+Graphics can carry **tags**, e.g. "lower third", shown on their cards and detail pages. Next to the search box, the catalog filters by tag and by **creator** (the `author` of the graphic's manifest). Clicking a tag, or the creator on a detail page, shows the catalog filtered by it; such links can be shared, e.g. `#catalog?tag=lower%20third`.
+
+## Admins
+
+Accounts listed in `ADMIN_USERS` ([INSTALLATION.md](INSTALLATION.md#admins)) are admins. They have two extra abilities:
+
+- **Users** (sidebar): all accounts with their sign-in provider, role, sign-up and last sign-in dates, and how many rundowns, entries, uploaded graphics and media files each has.
+- **Tags:** on the detail page of a public catalog graphic, admins add tags (existing tags are suggested, so spellings stay consistent) and remove them. Tags belong to the animation, so all its versions share them; up to 20 tags of at most 40 characters each.
 
 ## Private catalog
 
@@ -14,7 +23,7 @@ Every upload is checked before anything is saved (requirements §6):
 
 - At most `UPLOAD_MAX_ZIP_BYTES` (10 MB), `UPLOAD_MAX_FILES` (5,000) entries and `UPLOAD_MAX_UNCOMPRESSED_BYTES` (50 MB) unpacked. The unpacked size is counted while extracting, so forged size headers cannot get around it; extraction also has a time limit.
 - No absolute paths, `..` segments, backslashes or symbolic links.
-- Only allowed file types: by default `.json .mjs .js .jpg .jpeg .png .apng .webp .gif .svg .mp3 .mp4` (the requirements list) plus `.css .html .htm .ttf .otf .woff .woff2 .md .txt`, which real graphics need (stylesheets, HTML templates, fonts, read-me files). Set `UPLOAD_ALLOWED_EXTENSIONS` to change the list, e.g. to the strict requirements list.
+- Only allowed file types: by default `.json .mjs .js .jpg .jpeg .png .apng .webp .gif .svg .mp3 .mp4` (the requirements list) plus `.css .html .htm .ttf .otf .woff .woff2 .md .txt`, which real graphics need (stylesheets, HTML templates, fonts, read-me files). Set `UPLOAD_ALLOWED_EXTENSIONS` to change the list, e.g. to the strict requirements list. Files without a suffix (e.g. `LICENSE`, `README`) are allowed as well; they are stored with the package but not served to graphics.
 - Every `*.ograf.json` manifest must validate against the official OGraf v1 JSON Schema (vendored in `server/schemas/ograf`), and its `main` must be an existing `.mjs`/`.js` file inside the package. The check is lenient where a detail does not affect playback: a property with `"gddType": "select"` but no `gddOptions.labels` uses its `enum` values as labels; the upload succeeds with a note, and the manifest is stored as uploaded. Error messages name the property (e.g. `property "layout" must have required property 'gddOptions'`) and leave out the schema's generic "must match then schema" lines.
 
 Package files are served to graphic frames from `/render/assets/<version>/…`; HTML and SVG only ever in a CSP sandbox. Private versions are addressed by their random version UUID, which only the owner sees.
@@ -39,7 +48,7 @@ Each addition from the public or private catalog creates a new entry in the curr
 
 Each entry shows its label (the graphic's name until it is renamed) and, below it, its current property values in GDD order, e.g. "Jane Doe · Host". Properties marked `hidden` are left out, as the OGraf specification asks for labels and display names, and so are colours, file paths, SPX file lists and instructions, and on/off values. Select fields show their label. The values take up to two lines, or one line for renamed entries, which show the graphic's name above them. The version and source (catalog or upload) are shown in the tooltip of the label.
 
-A successful addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show details**, **Show manifest** for its pinned version, **Duplicate** (a copy with the same version, properties and enabled state, labelled "… (copy)", placed directly below) and **Delete**, with confirmation. Deletion removes only that entry; the package and other copies remain unchanged.
+A successful addition briefly lights the add button green and displays a dismissible toast. Each entry's three-dot menu offers **Show details**, **Show manifest** for its pinned version, **Show license** when the graphic comes with a license file, **Duplicate** (a copy with the same version, properties and enabled state, labelled "… (copy)", placed directly below) and **Delete**, with confirmation. Deletion removes only that entry; the package and other copies remain unchanged.
 
 Reorder entries with the drag handle or the up/down arrows. The handle also supports keyboard sorting: focus it, press Space to pick up, use the arrow keys to move, and press Space to drop or Escape to cancel. The order is saved per rundown, survives reloads and defines the stacking in the renderer (first entry in front); failed saves leave the displayed order unchanged.
 
