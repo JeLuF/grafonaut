@@ -147,7 +147,7 @@ function MediaCard({ item, media, onCopied }) {
   return <li className="media-card">
     <MediaThumb item={item} />
     <div className="media-card-body">
-      {renaming ? <form className="rundown-form-row" onSubmit={async (event) => {
+      {renaming ? <form className="media-rename" onSubmit={async (event) => {
         event.preventDefault();
         if (await run(() => media.rename(item, name.trim()))) setRenaming(false);
       }}>

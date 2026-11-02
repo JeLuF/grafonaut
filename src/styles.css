@@ -2908,6 +2908,32 @@ footer {
     white-space: nowrap;
 }
 
+/* Rename form: the name field takes the room the two buttons leave, so they stay inside the tile */
+.media-rename {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.media-rename input {
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
+    padding: 6px 9px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--surface-3);
+    color: var(--text);
+    font: 14px var(--font-body);
+}
+
+.media-rename .icon-button {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+}
+
 .media-meta {
     margin: 0;
     color: var(--faint);
