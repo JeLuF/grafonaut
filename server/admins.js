@@ -1,5 +1,6 @@
 import express from 'express';
 import * as db from './db.js';
+import { buildInfo } from './build-info.js';
 
 // ADMIN_USERS lists the accounts with the admin role (stored as accounts.is_approver), comma separated, each as
 // provider:login or provider:user-id, e.g. "twitch:jeluf, google:112233445566778899". Twitch logins are matched
@@ -36,7 +37,7 @@ export function normalizeTags(value) {
 
 // Admin-only endpoints (/api/admin): the user list and the tags of catalog animations. The role is checked against the
 // database on every request, so a role taken away by ADMIN_USERS ends at the next restart.
-export function createAdmin({ store = db } = {}) {
+export function createAdmin({ store = db, build = buildInfo() } = {}) {
   const router = express.Router();
   router.use(async (request, response, next) => {
     if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });
@@ -46,6 +47,8 @@ export function createAdmin({ store = db } = {}) {
       next();
     } catch { response.status(503).json({ error: 'Account unavailable' }); }
   });
+  // What is running, for the footer.
+  router.get('/build', (_request, response) => response.set('Cache-Control', 'private, no-store').json(build));
   router.get('/users', async (_request, response) => {
     try { response.set('Cache-Control', 'private, no-store').json({ users: await store.listAccounts() }); }
     catch (error) { console.error('Admin user list failed:', error?.message ?? error); response.status(503).json({ error: 'Users unavailable' }); }

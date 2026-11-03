@@ -25,16 +25,36 @@ export function schemaStatements(schema) {
     .split(';').map((statement) => statement.trim()).filter(Boolean);
 }
 
-export async function initializeDatabase() {
-  const schema = await fs.readFile(path.resolve('db/schema.sql'), 'utf8');
-  const statements = schemaStatements(schema);
-  for (const statement of statements) {
+// db/schema.sql is the complete schema; it runs at every start and creates what is missing (new tables). Changes to
+// existing tables come as upgrade scripts in db/migrations (NNN-description.sql), run once each, in name order, and
+// recorded in schema_migrations. A fresh database gets the complete schema, so its scripts are only recorded.
+// Errors that mean "already done" (a column, key or foreign key that exists) count as success, so an upgrade that was
+// interrupted can run again.
+const alreadyDone = new Set(['ER_DUP_KEYNAME', 'ER_FK_DUP_NAME', 'ER_DUP_FIELDNAME', 'ER_TABLE_EXISTS_ERROR']);
+
+export async function initializeDatabase({ schemaFile = path.resolve('db/schema.sql'), migrationsDirectory = path.resolve('db/migrations') } = {}) {
+  const [existing] = await pool.query("SHOW TABLES LIKE 'accounts'");
+  const fresh = existing.length === 0;
+  for (const statement of schemaStatements(await fs.readFile(schemaFile, 'utf8'))) {
     try {
       await pool.query(statement);
     } catch (error) {
       // The schema runs at every start: its ALTER TABLE foreign keys (circular references) already exist after the first.
       if (error.code !== 'ER_DUP_KEYNAME' && error.code !== 'ER_FK_DUP_NAME') throw error;
     }
+  }
+  const files = (await fs.readdir(migrationsDirectory).catch(() => [])).filter((file) => /^\d+-[\w.-]+\.sql$/.test(file)).sort();
+  const [rows] = await pool.query('SELECT name FROM schema_migrations');
+  const applied = new Set(rows.map((row) => row.name));
+  for (const file of files.filter((name) => !applied.has(name))) {
+    if (!fresh) {
+      for (const statement of schemaStatements(await fs.readFile(path.join(migrationsDirectory, file), 'utf8'))) {
+        try { await pool.query(statement); }
+        catch (error) { if (!alreadyDone.has(error.code)) throw new Error(`Database upgrade ${file} failed: ${error.message}`); }
+      }
+      console.log(`Database upgrade applied: ${file}`);
+    }
+    await pool.query('INSERT INTO schema_migrations (name) VALUES (?)', [file]);
   }
 }
 
@@ -697,7 +717,7 @@ export async function deleteGroupAction(accountId, groupId, rundownId) {
 
 // ---- Media library ----
 
-const mediaRow = (row) => row && { id: row.id, name: row.name, extension: row.extension, size: Number(row.size_bytes),
+const mediaRow = (row) => row && { id: row.id, name: row.name, extension: row.extension, source: row.source === 'slide' ? 'slide' : 'file', size: Number(row.size_bytes),
   checksum: row.checksum_sha256, createdAt: row.created_at, updatedAt: row.updated_at, accountId: String(row.account_id),
   ...(row.usage_count !== undefined ? { usage: Number(row.usage_count) } : {}) };
 
@@ -719,8 +739,8 @@ export async function findMedia(id, accountId = null) {
 }
 
 export async function insertMedia(accountId, media) {
-  await pool.query('INSERT INTO media (id, account_id, name, extension, size_bytes, checksum_sha256) VALUES (?, ?, ?, ?, ?, ?)',
-    [media.id, accountId, media.name, media.extension, media.size, media.checksum]);
+  await pool.query('INSERT INTO media (id, account_id, name, extension, source, size_bytes, checksum_sha256) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [media.id, accountId, media.name, media.extension, media.source === 'slide' ? 'slide' : 'file', media.size, media.checksum]);
 }
 
 // Changes the name and/or the content details of a file; returns false when the account has no such file.

@@ -70,6 +70,26 @@ export function Pagination({ page, pageCount, total, onChange }) {
 }
 
 // Catalog search; the ✕ button (or Escape) clears the filter and keeps the focus in the field.
+// Admins only: what is running (version, commit and its time, image build time), below the footer.
+export function BuildInfo({ account }) {
+  const [build, setBuild] = useState(null);
+  const admin = Boolean(account?.is_approver);
+  useEffect(() => {
+    if (!admin) { setBuild(null); return undefined; }
+    const controller = new AbortController();
+    requestJson('/api/admin/build', { signal: controller.signal }).then(setBuild).catch(() => {});
+    return () => controller.abort();
+  }, [admin]);
+  if (!build) return null;
+  const date = (value) => (value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null);
+  const parts = [build.version && `v${build.version}`,
+    build.commit && `${build.commit.slice(0, 7)}${build.modified ? ' (modified)' : ''}${build.committedAt ? ` of ${date(build.committedAt)}` : ''}`,
+    build.imageBuiltAt && `image built ${date(build.imageBuiltAt)}`, build.node && `Node ${build.node.replace(/^v/, '')}`].filter(Boolean);
+  return <p className="build-info" title={[build.commit && `Commit ${build.commit}`, build.startedAt && `Running since ${date(build.startedAt)}`].filter(Boolean).join('\n')}>
+    {parts.join(' · ')}
+  </p>;
+}
+
 // The signed-in account and the sign-out button. Signing out reloads the app, so no state of the account remains.
 export function AccountBar({ account, onSignedOut }) {
   const [state, setState] = useState('idle');
@@ -605,6 +625,7 @@ function App() {
       </section>}
       </>}
       <footer><span>GRAFONAUT</span><span>Catalog, rundowns and rendering for <a href="https://ograf.ebu.io" target="_blank" rel="noopener noreferrer">OGraf</a> graphics · {new Date().getFullYear()}</span></footer>
+      <BuildInfo account={account} />
       {toast && <Toast key={toast.id} toast={toast} onDismiss={setToast} />}
     </main>
     </div>

@@ -3,3 +3,5 @@ dist/
 storage/
 .env
 seeds/builtin/
+.image-built-at
+seeds/volume/fonts/google-fonts.txt

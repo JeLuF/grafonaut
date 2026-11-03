@@ -6,7 +6,7 @@ How to run Grafonaut in production: Docker, configuration, sign-in providers, re
 
 1. Copy `.env.example` to `.env` and set `SESSION_SECRET` (at least 32 characters, e.g. `openssl rand -base64 48`; the app refuses to start in production without it), `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
 2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafonaut.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
-3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/`.
+3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/` (fonts for slides in `seeds/volume/fonts/`, see [Slides](#slides)).
 4. Start the stack:
 
 ```sh
@@ -19,7 +19,7 @@ The Compose stack runs the app (including the renderer), MySQL 8.4, a volume for
 
 ### Prebuilt image
 
-Every published GitHub release builds an image and pushes it to the GitHub Container Registry (`.github/workflows/docker-release.yml`, after the tests pass). A release tagged `v0.6.0` is available as `ghcr.io/jeluf/grafonaut:0.6.0`, `:0.6` and `:latest`; pre-releases only get their exact version. A manual run in the Actions tab rebuilds the image of an existing tag.
+Every published GitHub release builds an image and pushes it to the GitHub Container Registry (`.github/workflows/docker-release.yml`, after the tests pass). A release tagged `v0.6.0` is available as `ghcr.io/jeluf/grafonaut:0.6.0`, `:0.6` and `:latest`; pre-releases only get their exact version. A manual run in the Actions tab rebuilds the image of an existing tag. The workflow passes the version, the commit and its time into the image (build arguments `GRAFONAUT_VERSION`, `GRAFONAUT_COMMIT`, `GRAFONAUT_COMMITTED_AT`), and every image records when it was built; admins see this below the page footer. A local `docker compose up --build` shows the package version and the image build time.
 
 To use it instead of building locally, replace `build: .` with `image: ghcr.io/jeluf/grafonaut:0.6.0` (or `:latest`) in `docker-compose.yml`, then run `docker compose pull && docker compose up -d`. While the package is private, the server needs `docker login ghcr.io` with a classic token that has the `read:packages` scope.
 
@@ -185,6 +185,21 @@ Package files (`/render/assets/…`) and media files (`/render/media/…`) are n
 - `off`: no check.
 
 The check stops other web pages from embedding the files; it is not access control, since anyone can send any `Referer` with a direct request.
+
+## Slides
+
+Slides from the slide editor are rendered to PNG on the server, with `canvas` (node-canvas) in a separate Node process that gets none of the app's settings or secrets. The Docker image is based on Debian (`node:…-trixie-slim`) because `canvas` ships prebuilt binaries for it; on Alpine it would have to be compiled.
+
+**Fonts.** The editor offers exactly the fonts the server has, under their real names, and loads the same font files from the server, so text in the editor looks as it will in the PNG. The Docker image brings Liberation Sans, Liberation Serif and Liberation Mono (same character widths as Arial, Times New Roman and Courier New). Outside the image, Grafonaut takes the Croscore fonts (Arimo, Tinos, Cousine) or URW's Nimbus fonts instead, one family each for sans, serif and monospace text. At startup the server logs the fonts it found (`Slide fonts: …`); "none found" means slides are rendered with a fallback font.
+
+Slides made before, or elsewhere, may use Arial, Helvetica, Times New Roman or Courier New. When such a slide is opened, saved or uploaded, it switches to the server's family with the same character widths (e.g. Liberation Sans), so the text keeps its layout. Fonts added with the editor's Google Fonts import ("+ Import fonts…") are saved in the slide; the server downloads them from Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`) the first time a slide uses them and keeps them in `<STORAGE_ROOT>/slide-fonts`, so later renders need no network access. A slide using any other font the server doesn't have, or a Google Font that can't be downloaded (e.g. a server without internet access), is rendered with a fallback font; Grafonaut says so after saving or uploading it. A font is downloaded once: to get a newer version from Google, delete its folder in `slide-fonts` and restart the app.
+
+More fonts go into the `fonts` folder of the seed volume (`seeds/volume/fonts/`, i.e. `<SEED_VOLUME_DIR>/fonts`); restart the app after changing them. These fonts are registered for rendering and offered in the editor, which loads the same files from `/api/slides/fonts/…`.
+
+- `.ttf` or `.otf` files. The family, weight and style are read from the files, so the file names don't matter. WOFF/WOFF2 files don't work for rendering.
+- Google Fonts: put the embed code from fonts.google.com (the `@import` or `<link>` lines, as offered under "Get embed code") into `google-fonts.txt` in that folder. At startup the fonts are downloaded from Google once and kept in `<STORAGE_ROOT>/seed-fonts`; later starts use those files without network access. Fonts that can't be downloaded are logged (`Slide font … could not be downloaded`) and left out. To get a newer version of a font, delete `seed-fonts` and restart.
+
+**Safety.** Slides are uploaded by users and rendered on the server. A slide may only contain embedded images (`data:image/…`); slides with other image URLs are refused, and the rendering process loads nothing from the network or the disk except the slide's Google Fonts (only from Google's font hosts, with a timeout and a size limit, into `slide-fonts`) and the icon search of the MCP tools (Iconify). Slides are limited to 4096 × 4096 pixels, and rendering one may take at most 30 seconds; a render that takes longer is stopped by killing that process (a new one starts for the next slide), so the app itself keeps running.
 
 ## Tokens
 

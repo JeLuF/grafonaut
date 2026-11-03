@@ -13,6 +13,7 @@ Graphics can carry **tags**, e.g. "lower third", shown on their cards and detail
 Accounts listed in `ADMIN_USERS` ([INSTALLATION.md](INSTALLATION.md#admins)) are admins. They have two extra abilities:
 
 - **Users** (sidebar): all accounts with their sign-in provider, role, sign-up and last sign-in dates, and how many rundowns, entries, uploaded graphics and media files each has.
+- **Build information** below the page footer: version, commit and its date, when the Docker image was built, and the Node.js version of the running Grafonaut (the commit is marked *modified* when a development checkout has uncommitted changes).
 - **Tags:** on the detail page of a public catalog graphic, admins add tags (existing tags are suggested, so spellings stay consistent) and remove them. Tags belong to the animation, so all its versions share them; up to 20 tags of at most 40 characters each.
 
 ## Private catalog
@@ -37,6 +38,18 @@ The star on a graphic card or on a graphic's page bookmarks the graphic; the **F
 Signed-in users manage their own files on the Media page (sidebar): upload (several at once), rename, replace and delete. Uploads use the same allowed file types as packages (`UPLOAD_ALLOWED_EXTENSIONS`) and are limited to `MEDIA_MAX_BYTES` (20 MB) each. Files are stored under `storage/media/<account>/` and served to graphics from `/render/media/<uuid>.<ext>` on the graphics host (else the renderer host), with the same CSP sandbox as package files. Other websites cannot embed them ([hotlink protection](INSTALLATION.md#hotlink-protection)).
 
 Graphic properties with a `gddType` of `file-path` (e.g. `file-path/image-path`) get a file chooser in the property dialog and in custom-action dialogs: keep the graphic's default, pick a file from the media library or upload a new one. Choices are limited to the property's `gddOptions.extensions` (image types for `image-path`). The property gets the file's absolute URL. Replacing a file keeps its URL, so every graphic that uses it shows the new content; the media page shows how many rundown entries use a file and warns before deleting it.
+
+### Slides
+
+**Create slide** next to the upload area opens the slide editor ([slide-editor](https://www.npmjs.com/package/slide-editor)): text, shapes, icons and emoji, images, gradients and shadows on one screen, e.g. a break screen or a sponsor board. Saving stores the slide as a PNG in the media library, so it can be chosen in image properties like any image; its JSON is kept with it. Uploading a slide JSON (a `.json` file with `"type": "slide-editor"`, e.g. saved from the editor's demo page) does the same.
+
+Slides have three extra buttons on their card:
+
+- **Edit slide** opens the slide in the editor. Saving renders the PNG again; its URL stays, so every graphic using the slide shows the change.
+- **Use as template** opens a copy in the editor; saving creates a new slide and leaves the original as it is.
+- **Download slide JSON** saves the slide's JSON, e.g. to open it elsewhere or upload it again.
+
+Slides can only contain embedded images: images added in the editor (from your computer or the clipboard) are stored inside the slide. The icon search in the editor uses the public Iconify service, which sees the search words. Fonts: the editor offers the fonts the server renders slides with, under their real names, e.g. Liberation Sans ([INSTALLATION.md](INSTALLATION.md#slides)), and shows them exactly as they end up in the PNG. Slides using Arial, Helvetica, Times New Roman or Courier New switch to the server's font with the same character widths when they are opened or saved. Fonts you add with "+ Import fonts…" in the font menu (embed code from fonts.google.com) are saved in the slide and rendered on the server too. A slide that uses another font the server doesn't have (e.g. one uploaded from elsewhere) is rendered with a fallback font, and the media page names the missing fonts after saving or uploading it.
 
 ## Rundowns
 

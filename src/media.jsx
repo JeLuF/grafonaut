@@ -1,6 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Copy, File, FolderOpen, Image as ImageIcon, Pencil, RotateCcw, Trash2, Upload, Video, X } from 'lucide-react';
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Copy, CopyPlus, Download, File, FolderOpen, Image as ImageIcon, Pencil, Presentation, RotateCcw, SquarePen, Trash2, Upload, Video, X } from 'lucide-react';
 import { requestJson } from './api.js';
+
+// The slide editor brings Fabric.js along, so it is loaded only when a slide is opened.
+const LazySlideEditor = lazy(() => import('./slide-editor-dialog.jsx'));
 
 const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'apng'];
 const videoExtensions = ['mp4', 'webm'];
@@ -25,8 +28,19 @@ async function sendFile(url, method, file, maxBytes) {
 }
 
 // The account's media library (GET/POST /api/media, ...).
+// Fonts a saved slide uses that the server doesn't have (it renders them with a fallback font), from its layout issues.
+export function missingFonts(issues) {
+  return [...new Set((issues ?? []).filter((issue) => issue?.type === 'font-missing' && issue.family).map((issue) => issue.family))];
+}
+
 export function useMedia(account) {
   const [items, setItems] = useState([]);
+  // Slides saved or uploaded with fonts the server lacks: [{ name, fonts }]
+  const [fontWarnings, setFontWarnings] = useState([]);
+  const noteFonts = (item, issues) => {
+    const fonts = missingFonts(issues);
+    setFontWarnings((current) => [...current.filter((warning) => warning.id !== item.id), ...(fonts.length ? [{ id: item.id, name: item.name, fonts }] : [])]);
+  };
   const [info, setInfo] = useState({ maxBytes: null, extensions: [] });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,8 +57,9 @@ export function useMedia(account) {
   }, [account]);
   useEffect(() => { void reload(); }, [reload]);
   async function upload(file) {
-    const { item } = await sendFile(`/api/media?name=${encodeURIComponent(file.name)}`, 'POST', file, info.maxBytes);
+    const { item, issues } = await sendFile(`/api/media?name=${encodeURIComponent(file.name)}`, 'POST', file, info.maxBytes);
     setItems((current) => [item, ...current]);
+    if (item.source === 'slide') noteFonts(item, issues);
     return item;
   }
   async function replace(item, file) {
@@ -55,11 +70,26 @@ export function useMedia(account) {
     await requestJson(`/api/media/${item.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
     setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, name } : candidate));
   }
+  // Slides (slide-editor): the item is the PNG made from the slide; the slide JSON is loaded and saved separately.
+  const loadSlide = (item) => requestJson(`/api/media/${item.id}/slide`);
+  async function createSlide(name, slide) {
+    const { item, issues } = await requestJson('/api/media/slides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, slide }) });
+    setItems((current) => [item, ...current]);
+    noteFonts(item, issues);
+    return item;
+  }
+  async function saveSlide(item, slide) {
+    const { item: updated, issues } = await requestJson(`/api/media/${item.id}/slide`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(slide) });
+    setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...updated, name: candidate.name, usage: candidate.usage } : candidate));
+    noteFonts(item, issues);
+    return updated;
+  }
   async function remove(item) {
     await requestJson(`/api/media/${item.id}`, { method: 'DELETE' });
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
   }
-  return { items, ...info, error, loading, reload, upload, replace, rename, remove };
+  return { items, ...info, error, loading, reload, upload, replace, rename, remove, loadSlide, createSlide, saveSlide, fontWarnings,
+    dismissFontWarnings: () => setFontWarnings([]) };
 }
 
 function MediaThumb({ item }) {
@@ -132,7 +162,7 @@ export function MediaPathWidget({ id, value, onChange, schema, disabled, readonl
 
 // ---- Media catalog page ----
 
-function MediaCard({ item, media, onCopied }) {
+function MediaCard({ item, media, onCopied, onOpenSlide }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(item.name);
   const [confirming, setConfirming] = useState(false);
@@ -165,7 +195,11 @@ function MediaCard({ item, media, onCopied }) {
         </div>
       </div> : <div className="media-card-actions">
         <button className="icon-button" type="button" onClick={() => setRenaming(true)} disabled={busy} aria-label={`Rename ${item.name}`} title="Rename"><Pencil size={14} /></button>
-        <button className="icon-button" type="button" onClick={() => replaceInput.current?.click()} disabled={busy} aria-label={`Replace ${item.name}`} title={`Replace with another .${item.extension} file (keeps the URL)`}><Upload size={14} /></button>
+        {item.source === 'slide' ? <>
+          <button className="icon-button" type="button" onClick={() => run(() => onOpenSlide('edit', item))} disabled={busy} aria-label={`Edit slide ${item.name}`} title="Edit slide"><SquarePen size={14} /></button>
+          <button className="icon-button" type="button" onClick={() => run(() => onOpenSlide('template', item))} disabled={busy} aria-label={`Use ${item.name} as template`} title="Use as template (edit a copy)"><CopyPlus size={14} /></button>
+          <a className="icon-button" href={`/api/media/${item.id}/slide?download=1`} download aria-label={`Download slide JSON of ${item.name}`} title="Download slide JSON"><Download size={14} /></a>
+        </> : <button className="icon-button" type="button" onClick={() => replaceInput.current?.click()} disabled={busy} aria-label={`Replace ${item.name}`} title={`Replace with another .${item.extension} file (keeps the URL)`}><Upload size={14} /></button>}
         <button className="icon-button" type="button" disabled={busy} aria-label={`Copy URL of ${item.name}`} title="Copy URL"
           onClick={() => navigator.clipboard?.writeText(item.url).then(() => onCopied(item), () => setError('Copy is not available.'))}><Copy size={14} /></button>
         <button className="icon-button" type="button" onClick={() => setConfirming(true)} disabled={busy} aria-label={`Delete ${item.name}`} title="Delete"><Trash2 size={14} /></button>
@@ -176,9 +210,21 @@ function MediaCard({ item, media, onCopied }) {
   </li>;
 }
 
-export default function MediaCatalogView({ account, authLoading, media, onCopied = () => {}, children }) {
+const slideName = (item) => item.name.replace(/\.png$/i, '');
+
+export default function MediaCatalogView({ account, authLoading, media, onCopied = () => {}, SlideEditor = LazySlideEditor, children }) {
   const input = useRef(null);
   const [dragging, setDragging] = useState(false);
+  // The slide being edited: { mode: 'new' | 'edit' | 'template', item, slide }
+  const [editing, setEditing] = useState(null);
+  async function openSlide(mode, item) {
+    setEditing({ mode, item, slide: await media.loadSlide(item) });
+  }
+  async function saveSlide(name, slide) {
+    if (editing.mode !== 'edit') return media.createSlide(name, slide);
+    await media.saveSlide(editing.item, slide);
+    if (name !== slideName(editing.item)) await media.rename(editing.item, `${name}.png`);
+  }
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState([]);
   async function upload(files) {
@@ -195,11 +241,12 @@ export default function MediaCatalogView({ account, authLoading, media, onCopied
   return <section className="media-catalog" aria-labelledby="media-heading">
     <p className="eyebrow">MEDIA</p>
     <h1 id="media-heading">Media library</h1>
-    <p className="renderer-lead">Images and other files for your graphics. Choose them in the properties of a graphic, e.g. as its image.
+    <p className="renderer-lead">Images, slides and other files for your graphics. Choose them in the properties of a graphic, e.g. as its image.
       Replacing a file keeps its address, so every graphic using it shows the new version.</p>
     {authLoading ? <p className="status" role="status">Loading account...</p>
       : !account ? <div className="empty-state"><strong>Sign in to manage your media.</strong>{children}</div>
         : <>
+          <div className="media-zones">
           <div className={`upload-zone${dragging ? ' is-dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); void upload([...(event.dataTransfer.files ?? [])]); }}>
             <Upload size={22} />
@@ -210,10 +257,31 @@ export default function MediaCatalogView({ account, authLoading, media, onCopied
             <input ref={input} type="file" multiple hidden aria-label="Choose files to upload" onChange={(event) => upload([...(event.target.files ?? [])])} />
             <button className="primary-button" type="button" disabled={uploading} onClick={() => input.current?.click()}>{uploading ? 'Uploading...' : 'Choose files'}</button>
           </div>
+          <div className="upload-zone slide-zone">
+            <Presentation size={22} />
+            <div>
+              <strong>Create a slide</strong>
+              <span>Text, shapes, icons and images on one screen, e.g. a break screen. It is saved as a PNG for your graphics.</span>
+            </div>
+            <button className="primary-button" type="button" onClick={() => setEditing({ mode: 'new', item: null, slide: null })}>Create slide</button>
+          </div>
+          </div>
           {errors.length > 0 && <div className="upload-result is-error" role="alert"><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>}
+          {media.fontWarnings?.length > 0 && <div className="upload-result font-warning" role="status">
+            <ul>{media.fontWarnings.map((warning) => <li key={warning.id}>
+              <strong>{warning.name}</strong>: the server has no font {warning.fonts.map((font) => `“${font}”`).join(', ')}, so the PNG uses a fallback font
+              and can look different from the editor. Choose a font from the editor's font list, or ask your admin to add the font.
+            </li>)}</ul>
+            <button className="icon-button" type="button" onClick={media.dismissFontWarnings} aria-label="Dismiss font notice" title="Dismiss"><X size={14} /></button>
+          </div>}
           {media.error && <p className="error-message" role="alert">{media.error}</p>}
           {!media.loading && !media.error && media.items.length === 0 && <div className="empty-state"><strong>No files yet.</strong><span>Upload images to use them in your graphics.</span></div>}
-          <ul className="media-grid">{media.items.map((item) => <MediaCard key={item.id} item={item} media={media} onCopied={onCopied} />)}</ul>
+          <ul className="media-grid">{media.items.map((item) => <MediaCard key={item.id} item={item} media={media} onCopied={onCopied} onOpenSlide={openSlide} />)}</ul>
+          {editing && <Suspense fallback={<p className="status" role="status">Loading the slide editor...</p>}>
+            <SlideEditor title={editing.mode === 'new' ? 'New slide' : editing.mode === 'template' ? 'New slide from template' : 'Edit slide'}
+              initialName={editing.mode === 'new' ? 'New slide' : editing.mode === 'template' ? `${slideName(editing.item)} (copy)` : slideName(editing.item)}
+              slide={editing.slide} onSave={saveSlide} onClose={() => setEditing(null)} />
+          </Suspense>}
         </>}
   </section>;
 }

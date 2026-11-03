@@ -9,7 +9,7 @@ Grafonaut hosts, organizes and renders [OGraf](https://ograf.ebu.io) graphics: a
 - **Catalogs:** a public catalog of published graphics with search and detail pages, and a private catalog for each account's own uploads (`.ograf.zip`, checked before anything is stored).
 - **Rundowns:** several prepared events per account. Entries keep their own label and properties, edited in a dialog generated from the graphic's schema (colour pickers, media file choosers, SPX file lists).
 - **Group actions:** several play, stop, update and custom-action steps, with pauses, triggered with one click.
-- **Media library:** images and other files for graphic properties, with hotlink protection.
+- **Media library:** images and other files for graphic properties, with hotlink protection, and slides made in the built-in slide editor (saved as PNG).
 - **Renderer:** one browser page per account for OBS/vMix, with every graphic in its own sandboxed frame.
 - **OGraf Server API** per account, with interactive documentation at `/api-docs/`, for controllers such as Bitfocus Companion.
 - **MCP interface** for AI assistants such as Claude: describe an event and let the assistant set up its rundown (optional, OAuth-protected, no control of graphics on air).

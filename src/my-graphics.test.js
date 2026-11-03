@@ -26,7 +26,7 @@ async function compileModule(file, local = {}) {
 const brandUrl = (await compileModule('./brand.jsx')).url;
 const brand = { './brand.jsx': brandUrl };
 const mediaUrl = (await compileModule('./media.jsx')).url;
-const { default: MediaCatalogView, MediaPathWidget, acceptedExtensions } = await import(mediaUrl);
+const { default: MediaCatalogView, MediaPathWidget, acceptedExtensions, missingFonts } = await import(mediaUrl);
 const colorUrl = (await compileModule('./color.jsx')).url;
 const { parseColor, formatColor, hexToHsv, hsvToHex } = await import(colorUrl);
 const compiled = await compileModule('./my-graphics.jsx', { ...brand, './media.jsx': mediaUrl, './color.jsx': colorUrl });
@@ -66,7 +66,7 @@ const compiledMain = await transformAsync(await fs.readFile(mainUrl, 'utf8'), {
     }
   } })]
 });
-const { AccountBar, AddGraphicButton, CatalogFilters, Pagination, SearchBox, Toast, distinctValues, matchesFilters, matchesSearch, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
+const { AccountBar, AddGraphicButton, BuildInfo, CatalogFilters, Pagination, SearchBox, Toast, distinctValues, matchesFilters, matchesSearch, pageNumbers, parseRoute } = await import(`data:text/javascript,${encodeURIComponent(compiledMain.code)}`);
 // Never hand DOM nodes to assert.equal/deepEqual: a failing comparison makes Node inspect and diff the whole jsdom
 // object graph, which exhausts memory instead of failing (and inside waitFor's first, expected miss, it stalls the run).
 const describeNode = (node) => node?.outerHTML?.slice(0, 160) ?? String(node);
@@ -1471,4 +1471,79 @@ test('entries with a license file offer "Show license", which shows the file in 
   await waitFor(() => assert.equal(dialog.querySelector('.license-text')?.textContent, 'MIT License\n\nCopyright (c) 2026'));
   assert.match(dialog.textContent, /LICENSE\.md/);
   assert.deepEqual(licenses, ['1']);
+});
+
+test('slides in the media library open in the slide editor: edit, use as template, download; "Create slide" starts a new one', async () => {
+  const slide = { type: 'slide-editor', version: 1, width: 1920, height: 1080, canvas: { objects: [] } };
+  const items = [{ id: 's1', name: 'Break.png', extension: 'png', source: 'slide', size: 2048, usage: 1, url: 'https://graphics.example.com/render/media/s1.png', previewUrl: '/p/s1' },
+    { id: 'f1', name: 'logo.png', extension: 'png', source: 'file', size: 100, usage: 0, url: 'https://graphics.example.com/render/media/f1.png', previewUrl: '/p/f1' }];
+  const calls = [];
+  const media = { items, extensions: ['png', 'json'], maxBytes: 1000, loading: false, error: '',
+    upload: async () => {}, replace: async () => {}, remove: async () => {},
+    rename: async (item, name) => { calls.push(['rename', item.id, name]); },
+    loadSlide: async (item) => { calls.push(['load', item.id]); return slide; },
+    createSlide: async (name, json) => { calls.push(['create', name, json.type]); },
+    saveSlide: async (item, json) => { calls.push(['save', item.id, json.width]); } };
+  // A stand-in for the lazily loaded editor: shows its props and saves on click.
+  const editorProps = [];
+  function SlideEditor(props) {
+    editorProps.push(props);
+    return React.createElement('div', { role: 'dialog', 'aria-label': props.title },
+      React.createElement('button', { type: 'button', onClick: async () => { await props.onSave(`${props.initialName}!`, { ...slide, width: 640 }); props.onClose(); } }, 'Save'));
+  }
+  render(React.createElement(MediaCatalogView, { account: { id: 7 }, authLoading: false, media, SlideEditor }));
+  // Slides have edit, template and download instead of replace.
+  assertAbsent(screen.queryByRole('button', { name: 'Replace Break.png' }));
+  assert.ok(screen.getByRole('button', { name: 'Replace logo.png' }));
+  assertAbsent(screen.queryByRole('button', { name: 'Edit slide logo.png' }));
+  assert.equal(screen.getByRole('link', { name: 'Download slide JSON of Break.png' }).getAttribute('href'), '/api/media/s1/slide?download=1');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit slide Break.png' }));
+  const edit = await screen.findByRole('dialog', { name: 'Edit slide' });
+  assert.equal(editorProps.at(-1).initialName, 'Break');
+  assert.equal(editorProps.at(-1).slide, slide);
+  fireEvent.click(within(edit).getByRole('button', { name: 'Save' }));
+  await waitFor(() => assertAbsent(screen.queryByRole('dialog')));
+  assert.deepEqual(calls.slice(0, 3), [['load', 's1'], ['save', 's1', 640], ['rename', 's1', 'Break!.png']]);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Use Break.png as template' }));
+  const template = await screen.findByRole('dialog', { name: 'New slide from template' });
+  assert.equal(editorProps.at(-1).initialName, 'Break (copy)');
+  fireEvent.click(within(template).getByRole('button', { name: 'Save' }));
+  await waitFor(() => assertAbsent(screen.queryByRole('dialog')));
+  assert.deepEqual(calls.at(-1), ['create', 'Break (copy)!', 'slide-editor']);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Create slide' }));
+  const created = await screen.findByRole('dialog', { name: 'New slide' });
+  assert.equal(editorProps.at(-1).slide, null);
+  fireEvent.click(within(created).getByRole('button', { name: 'Save' }));
+  await waitFor(() => assert.deepEqual(calls.at(-1), ['create', 'New slide!', 'slide-editor']));
+});
+
+test('admins see the build information below the footer; other users do not ask for it', async () => {
+  const requests = [];
+  globalThis.fetch = async (url) => { requests.push(url); return Response.json({ version: '0.7.0', commit: '853cd0eeed702a25b82a9ce60ef5d0fe273262bf', modified: true,
+    committedAt: '2026-11-02T21:38:13+01:00', imageBuiltAt: '2026-11-03T10:12:00Z', node: 'v26.12.1', startedAt: '2026-11-03T11:00:00Z' }); };
+  const { container } = render(React.createElement(BuildInfo, { account: { id: 1, is_approver: 1 } }));
+  await waitFor(() => assert.match(container.textContent, /^v0\.7\.0 · 853cd0e \(modified\) of .+2026.+ · image built .+2026.+ · Node 26\.12\.1$/));
+  assert.match(container.querySelector('.build-info').title, /Commit 853cd0eeed702a25b82a9ce60ef5d0fe273262bf/);
+  assert.deepEqual(requests, ['/api/admin/build']);
+  cleanup();
+  const user = render(React.createElement(BuildInfo, { account: { id: 2, is_approver: 0 } }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(user.container.innerHTML, '');
+  assert.equal(requests.length, 1);
+});
+
+test('slides saved with fonts the server lacks get a notice naming the fonts', () => {
+  assert.deepEqual(missingFonts([{ type: 'font-missing', family: 'Archivo Black' }, { type: 'partly-outside' }, { type: 'font-missing', family: 'Archivo Black' },
+    { type: 'font-missing', family: 'Bebas Neue' }]), ['Archivo Black', 'Bebas Neue']);
+  assert.deepEqual(missingFonts(undefined), []);
+  const dismissed = [];
+  const media = { items: [], extensions: ['json'], maxBytes: 1000, loading: false, error: '', fontWarnings: [{ id: 's1', name: 'Break.png', fonts: ['Archivo Black', 'Bebas Neue'] }],
+    dismissFontWarnings: () => dismissed.push(true) };
+  render(React.createElement(MediaCatalogView, { account: { id: 7 }, authLoading: false, media }));
+  assert.match(screen.getByRole('status').textContent, /Break\.png: the server has no font “Archivo Black”, “Bebas Neue”, so the PNG uses a fallback font/);
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss font notice' }));
+  assert.deepEqual(dismissed, [true]);
 });

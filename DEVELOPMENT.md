@@ -13,7 +13,17 @@ The React development server runs on `http://localhost:5173`; API requests are p
 
 For local development without HTTPS, leave `NODE_ENV` unset (or set it to `development`) and register `http://localhost:3000/api/auth/twitch/callback` as the Twitch callback URL. Development sessions do not require secure cookies, and `SESSION_SECRET` and `TOKEN_ENCRYPTION_KEY` fall back to development values.
 
-The database schema (`db/schema.sql`) is applied at every start. Grafonaut has no data migrations yet: after schema changes, start with a fresh database.
+### Database changes
+
+`db/schema.sql` is the complete schema. It runs at every start and creates missing tables, so a new table needs no more than an entry there. Changes to existing tables (new or changed columns, indexes, data) also need an upgrade script for existing databases:
+
+- Add `db/migrations/NNN-description.sql` with the next number, and make the same change in `db/schema.sql`.
+- At startup, scripts that have not run yet run once, in name order, and are recorded in `schema_migrations`. A fresh database gets the complete schema; its scripts are only recorded.
+- MySQL commits schema changes immediately, so a script can't be rolled back. Errors meaning "already done" (duplicate column, key or foreign key, existing table) count as success, so a script interrupted halfway can run again; any other error stops the start.
+
+### Native modules
+
+Slides are rendered with `canvas` (node-canvas), a native module with prebuilt binaries for glibc Linux, macOS and Windows. npm 11 asks before running install scripts: `canvas` and `esbuild` are approved in `package.json` (`allowScripts`, per version: after updating them, run `npm install-scripts approve canvas esbuild`).
 
 ## Tests
 

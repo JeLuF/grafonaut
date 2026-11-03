@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import { after, test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -112,7 +115,10 @@ const store = {
   },
   updateGroupAction: async (accountId, id, changes) => Boolean(Object.assign(state.groups.find((group) => group.id === id), changes)),
   deleteGroupAction: async (accountId, id) => { state.groups = state.groups.filter((group) => group.id !== id); return true; },
-  listMedia: async () => [{ id: '33333333-3333-4333-8333-333333333333', name: 'logo.png', extension: 'png', size: 1234 }],
+  listMedia: async () => mediaRows,
+  findMedia: async (id, accountId) => mediaRows.find((row) => row.id === id && (accountId == null || row.accountId === String(accountId))) ?? null,
+  insertMedia: async (accountId, media) => { mediaRows.push({ ...media, accountId: String(accountId) }); },
+  updateMedia: async (accountId, id, changes) => Boolean(Object.assign(mediaRows.find((row) => row.id === id) ?? {}, changes)),
   insertMcpActivity: async (accountId, activity) => { state.activity.push({ accountId: String(accountId), ...activity }); },
   listFavouritePackageIds: async (accountId) => state.favourites[accountId] ?? [],
   listFavourites: async (accountId) => (state.favourites[accountId] ?? []).map((id) => versions.find((version) => version.packageId === id))
@@ -151,6 +157,14 @@ const store = {
     .map((grant) => ({ id: grant.id, scope: grant.scope, createdAt: null, lastUsedAt: null, clientMetadata: state.clients.get(grant.clientId) }))
 };
 
+// Media library of account 7: one image file (logo.png on disk) and the slides created by the tests.
+const mediaRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ograf-mcp-media-'));
+const logoId = '33333333-3333-4333-8333-333333333333';
+const onePixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+await fs.mkdir(path.join(mediaRoot, 'media', '7'), { recursive: true });
+await fs.writeFile(path.join(mediaRoot, 'media', '7', `${logoId}.png`), onePixel);
+const mediaRows = [{ id: logoId, accountId: '7', name: 'logo.png', extension: 'png', source: 'file', size: onePixel.length, checksum: 'c'.repeat(64) }];
+
 // ---- Server ----
 
 const changes = [];
@@ -161,7 +175,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const env = { TWITCH_CLIENT_ID: 'id', TWITCH_CLIENT_SECRET: 'secret', TWITCH_REDIRECT_URI: `${base}/api/auth/twitch/callback` };
 app.use(express.json());
 app.use((request, _response, next) => { request.session = request.headers['x-account'] ? { accountId: request.headers['x-account'] } : null; next(); });
-const mcp = createMcp({ baseUrl: new URL(base), store, mediaOrigin: () => 'https://graphics.example.com', env,
+const mcp = createMcp({ baseUrl: new URL(base), store, mediaOrigin: () => 'https://graphics.example.com', env, tools: { storageRoot: mediaRoot },
   onEntriesChanged: (accountId) => changes.push(accountId), allowedOrigins: new Set(['https://inspector.example.com']) });
 app.use(mcp.router);
 app.use('/api/mcp', createMcpSettings({ store, mcpUrl: mcp.mcpUrl }));
@@ -175,7 +189,7 @@ async function register(metadata = {}) {
   return { status: response.status, body: await response.json() };
 }
 // Runs the authorization code flow with PKCE for an account; returns the token response and the client.
-async function authorize({ account = '7', write = true, scope = 'rundowns:read rundowns:write', client } = {}) {
+async function authorize({ account = '7', write = true, slides = true, scope = 'rundowns:read rundowns:write', client } = {}) {
   client ??= (await register()).body;
   const verifier = crypto.randomBytes(32).toString('base64url');
   const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
@@ -187,7 +201,7 @@ async function authorize({ account = '7', write = true, scope = 'rundowns:read r
   const consent = await (await fetch(`${base}${consentPath}`, { headers: { 'x-account': account } })).text();
   const csrf = /name="csrf" value="([^"]+)"/.exec(consent)[1];
   const decision = await fetch(`${base}/oauth/consent`, { method: 'POST', redirect: 'manual', headers: { 'x-account': account },
-    body: form({ request: new URL(consentPath, base).searchParams.get('request'), csrf, decision: 'allow', ...(write ? { write: '1' } : {}) }) });
+    body: form({ request: new URL(consentPath, base).searchParams.get('request'), csrf, decision: 'allow', ...(write ? { write: '1' } : {}), ...(slides ? { slides: '1' } : {}) }) });
   const back = new URL(decision.headers.get('location'));
   assert.equal(back.origin + back.pathname, redirectUri);
   assert.equal(back.searchParams.get('state'), 'xyz');
@@ -231,7 +245,7 @@ test('redirect URIs, scopes, return paths and untrusted text are checked', () =>
   }
   assert.equal(redirectTarget('https://claude.ai/api/mcp/auth_callback'), 'claude.ai');
   assert.equal(redirectTarget('cursor://anysphere.cursor-mcp/oauth'), 'cursor://');
-  assert.deepEqual(grantedScopes([]), ['rundowns:read', 'rundowns:write']);
+  assert.deepEqual(grantedScopes([]), ['rundowns:read', 'rundowns:write', 'slides:write']);
   assert.deepEqual(grantedScopes(['rundowns:write']), ['rundowns:read', 'rundowns:write']);
   assert.deepEqual(grantedScopes(['rundowns:read', 'openid']), ['rundowns:read']);
   assert.equal(returnPath(`/oauth/consent?request=${'a'.repeat(43)}`), `/oauth/consent?request=${'a'.repeat(43)}`);
@@ -254,7 +268,7 @@ test('clients discover the authorization server and must authenticate', async ()
   const resource = await (await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)).json();
   assert.equal(resource.resource, `${base}/mcp`);
   assert.deepEqual(resource.authorization_servers, [`${base}/`]);
-  assert.deepEqual(resource.scopes_supported, ['rundowns:read', 'rundowns:write']);
+  assert.deepEqual(resource.scopes_supported, ['rundowns:read', 'rundowns:write', 'slides:write']);
   const metadata = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json();
   assert.equal(metadata.registration_endpoint, `${base}/register`);
   assert.deepEqual(metadata.code_challenge_methods_supported, ['S256']);
@@ -337,7 +351,8 @@ test('read-only grants see only reading tools; the user can withhold writing on 
   assert.equal(readOnly.tokens.scope, 'rundowns:read');
   const client = await connect(readOnly.tokens.access_token);
   const names = (await client.listTools()).tools.map((tool) => tool.name);
-  assert.deepEqual(names.sort(), ['get_entry', 'get_graphic', 'get_rundown', 'list_favourites', 'list_media', 'list_rundowns', 'search_graphics']);
+  assert.deepEqual(names.sort(), ['describe_slide', 'get_entry', 'get_graphic', 'get_rundown', 'list_favourites', 'list_media', 'list_rundowns', 'render_slide',
+    'search_graphics', 'search_icons']);
   const viaRequest = await authorize({ scope: 'rundowns:read' });
   assert.equal(viaRequest.tokens.scope, 'rundowns:read');
   assert.ok(!viaRequest.consent.includes('name="write"'));
@@ -428,4 +443,42 @@ test('connected apps are listed and disconnected by their account', async () => 
   assert.equal((await fetch(`${base}/api/mcp/apps/${listed.apps[0].id}`, { method: 'DELETE', headers: { 'x-account': '8' } })).status, 200);
   assert.equal((await mcpPost({ Authorization: `Bearer ${tokens.access_token}` })).status, 401);
   assert.equal((await fetch(`${base}/api/mcp`)).status, 401);
+});
+
+test('slide tools create slides in the media library and change them, with embedded images only', async () => {
+  const { closeSlideRunner } = await import('./slides.js');
+  after(() => closeSlideRunner());
+  const granted = await authorize({ scope: 'rundowns:read rundowns:write slides:write' });
+  assert.equal(granted.tokens.scope, 'rundowns:read rundowns:write slides:write');
+  assert.ok(granted.consent.includes('name="slides"'));
+  const client = await connect(granted.tokens.access_token);
+  const created = await call(client, 'create_slide', { name: 'Break', width: 640, height: 360, background: '#123456' });
+  assert.equal(created.error, false);
+  const { slideId } = created.body;
+  assert.match(created.body.url, new RegExp(`^https://graphics\\.example\\.com/render/media/${slideId}\\.png$`));
+  assert.equal((await fs.readFile(path.join(mediaRoot, 'media', '7', `${slideId}.png`))).subarray(1, 4).toString(), 'PNG');
+  assert.ok((await call(client, 'list_media', {})).body.files.some((file) => file.id === slideId && file.slide === true));
+  const added = await call(client, 'add_element', { slideId, element: { type: 'text', name: 'title', text: 'Back soon', fontSize: 48 } });
+  assert.equal(added.error, false);
+  assert.ok((await call(client, 'add_element', { slideId, element: { type: 'image', src: `https://graphics.example.com/render/media/${logoId}.png`, width: 50 } })).body.added);
+  const remote = await call(client, 'add_element', { slideId, element: { type: 'image', src: 'https://example.com/a.png' } });
+  assert.match(remote.body.error, /media library/);
+  const svg = await call(client, 'add_element', { slideId, element: { type: 'svg', svg: '<svg xmlns="http://www.w3.org/2000/svg"><image href="file:///etc/passwd"/></svg>' } });
+  assert.match(svg.body.error, /may not reference other files/);
+  const described = await call(client, 'describe_slide', { slideId });
+  assert.deepEqual(described.body.objects.map((object) => object.kind), ['text', 'image']);
+  const preview = await client.callTool({ name: 'render_slide', arguments: { slideId, maxWidth: 320 } });
+  assert.equal(preview.content[0].type, 'image');
+  // A slide that a loaded graphic shows is left to the user.
+  state.instances.push({ entryId: '1', ended: false, data: { image: created.body.url } });
+  const refused = await call(client, 'update_element', { slideId, id: 'title', changes: { text: 'Now' } });
+  assert.match(refused.body.error, /loaded on the renderer/);
+  state.instances.pop();
+  assert.equal((await call(client, 'set_slide_fields', { slideId, fields: { title: 'Back at 20:15' } })).error, false);
+  const copy = await call(client, 'create_slide', { name: 'Break 2', fromSlideId: slideId });
+  assert.notEqual(copy.body.slideId, slideId);
+  assert.match(JSON.stringify((await call(client, 'describe_slide', { slideId: copy.body.slideId })).body), /Back at 20:15/);
+  assert.match((await call(client, 'describe_slide', { slideId: logoId })).body.error, /Slide not found/);
+  assert.ok(state.activity.some((activity) => activity.tool === 'create_slide' && /Created slide "Break\.png"/.test(activity.summary)));
+  await client.close();
 });

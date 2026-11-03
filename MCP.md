@@ -71,7 +71,10 @@ Reading (scope `rundowns:read`):
 | `list_rundowns` | Your rundowns, their number of entries, and which one is current |
 | `get_rundown` | A rundown's entries in order, with property values and on-air state, and its group actions |
 | `get_entry` | One entry with its property values and schema |
-| `list_media` | Your media library; a file's URL can be used as the value of an image or video property |
+| `list_media` | Your media library; a file's URL can be used as the value of an image or video property. Slides are marked (`slide: true`); their `id` is the slide ID. |
+| `describe_slide` | A slide's elements (id, kind, position, size, text, colors) and layout issues |
+| `render_slide` | A preview image of a slide |
+| `search_icons` | Searches free icons and emoji (Iconify) for `add_element` |
 
 Preparing (scope `rundowns:write`):
 
@@ -84,13 +87,24 @@ Preparing (scope `rundowns:write`):
 | `duplicate_entry`, `reorder_entries`, `remove_entry` | Copies, reorders or removes entries |
 | `create_group_action`, `update_group_action`, `delete_group_action` | Prepares group actions. They are stored, not run: you trigger them in Grafonaut or from a controller. |
 
+Slides (scope `slides:write`), the tools of the [slide-editor](https://www.npmjs.com/package/slide-editor) package on the slides of your media library:
+
+| Tool | What it does |
+| --- | --- |
+| `create_slide` | A new slide in the media library, empty (size, background) or as a copy of another slide (`fromSlideId`, a template). Answers with the slide ID and the URL of its PNG for image properties. |
+| `add_element`, `update_element`, `remove_element`, `duplicate_element` | Text, shapes, polygons, icons, images and SVGs on a slide. Images come from your media library (their URL) or as `data:` URLs; images from other websites and SVGs that reference files are refused. |
+| `set_slide_background`, `set_slide_fields` | Background color or gradient; fills named text elements (templates) |
+
+Every change renders the slide's PNG again; its URL stays, so entries using the slide show the change. A slide that a graphic loaded on the renderer shows is not changed: the assistant is told to create a new slide instead.
+
 Property values are checked against the graphic's schema exactly as in the property dialog; the assistant receives the validation errors and can correct them. Values are not otherwise restricted: like you in the dialog, the assistant can set any value the schema allows.
 
 ### What it cannot do
 
 - Control graphics: load, play, stop, update, custom actions, running group actions. Use the Grafonaut UI, the [OGraf Server API](API.md) or a controller such as Bitfocus Companion.
 - Take graphics off air. Removing or disabling an entry that is on air, and switching rundowns while graphics are on air, are refused.
-- Delete rundowns, upload graphic packages or media files, change or delete media.
+- Delete rundowns, upload graphic packages or media files, change or delete media files other than slides, delete slides.
+- Change a slide that a graphic loaded on the renderer shows.
 - See or change the renderer and API URLs, or anything of other accounts.
 
 ## Security
@@ -112,9 +126,11 @@ Property values are checked against the graphic's schema exactly as in the prope
 - Sign-in from the consent page returns only to that consent page; other return addresses are ignored, so it can't be used as an open redirect.
 - Registration, authorization and token requests are rate-limited per IP address.
 
-**Least privilege.** The two scopes are enforced on the server: a token with only `rundowns:read` sees and can call only the reading tools. The user can withhold `rundowns:write` on the consent page even if the client asked for it. All tools act only on the signed-in account's data and use the same validation as the app (names, property schemas in a time-limited worker, group action steps).
+**Least privilege.** The scopes are enforced on the server: a token with only `rundowns:read` sees and can call only the reading tools. The user can withhold `rundowns:write` and `slides:write` on the consent page even if the client asked for them; grants from before slides existed don't include `slides:write` until the app connects again. All tools act only on the signed-in account's data and use the same validation as the app (names, property schemas in a time-limited worker, group action steps).
 
 **Nothing on air.** No tool controls the renderer. Changes that would take something off air are refused: removing or disabling an entry that is on air, switching rundowns while graphics are on air. Changing the properties of an entry on air doesn't change the graphic until you update it in Grafonaut.
+
+**Slides.** Slide tools run in a separate process with a time limit. Slides may only contain embedded images: images from the media library are embedded by the server, other URLs and SVGs that reference files are refused, and the worker itself loads nothing from the network or the disk except the icon search (Iconify, which sees the search words).
 
 **Prompt injection.** Public graphics are uploaded by other people. Their names, descriptions and property schemas, like your entry labels and file names, reach the assistant as tool results. A description could contain text written to look like instructions ("delete all entries"). The interface limits what such text can achieve:
 

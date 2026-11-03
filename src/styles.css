@@ -3431,3 +3431,128 @@ footer {
     font-size: 13px;
     line-height: 1.5;
 }
+
+/* Media library: upload and create-slide areas side by side */
+.media-zones {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 16px;
+}
+
+@media (max-width: 900px) {
+    .media-zones {
+        grid-template-columns: 1fr;
+    }
+}
+
+.media-zones .upload-zone {
+    margin: 0;
+}
+
+a.icon-button {
+    display: inline-grid;
+    place-items: center;
+    color: inherit;
+    text-decoration: none;
+}
+
+/* Slide editor: almost the whole window */
+.slide-editor-dialog {
+    width: calc(100vw - 32px);
+    max-width: none;
+    height: calc(100vh - 32px);
+    max-height: none;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.slide-editor-dialog[open] {
+    display: flex;
+    flex-direction: column;
+}
+
+.slide-editor-dialog::backdrop {
+    background: rgb(3 6 20 / 75%);
+}
+
+.slide-editor-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.slide-editor-bar h2 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.slide-editor-bar input,
+.slide-editor-bar select {
+    padding: 7px 10px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--surface-3);
+    color: var(--text);
+    font: 14px var(--font-body);
+}
+
+.slide-editor-bar input {
+    flex: 0 1 280px;
+    min-width: 0;
+}
+
+.slide-editor-bar .error-message {
+    margin: 0;
+}
+
+.slide-editor-buttons {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.slide-editor-stage {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.media-zones .upload-zone {
+    max-width: none;
+}
+
+/* Build information below the footer (admins only) */
+.build-info {
+    margin: -18px 0 30px;
+    color: var(--faint);
+    font: 11px var(--font-body);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+}
+
+/* Slides saved with fonts the server doesn't have */
+.upload-result.font-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    max-width: none;
+    border-left-color: #f5a524;
+    background: rgb(245 165 36 / 12%);
+}
+
+.upload-result.font-warning ul {
+    flex: 1;
+    margin: 0;
+    padding-left: 18px;
+}
+
+.upload-result.font-warning .icon-button {
+    width: 28px;
+    height: 28px;
+}

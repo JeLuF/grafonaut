@@ -15,7 +15,8 @@ import { generateToken, hashToken, tokenPattern } from './tokens.js';
 // a Grafonaut token. Tokens of the sign-in providers never reach MCP clients.
 export const scopes = {
   'rundowns:read': 'Read your rundowns, the public catalog, your private catalog and your media library',
-  'rundowns:write': 'Prepare rundowns: create and rename rundowns, add, change, reorder and remove entries and group actions'
+  'rundowns:write': 'Prepare rundowns: create and rename rundowns, add, change, reorder and remove entries and group actions',
+  'slides:write': 'Create slides in your media library and change them (not while a loaded graphic shows them)'
 };
 const ACCESS_TTL_SECONDS = 60 * 60;
 const REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -236,6 +237,7 @@ export function createMcpOAuth({ store = db, baseUrl, mcpUrl, env = process.env,
   : '<p class="muted">No sign-in provider is configured on this server.</p>'}</div>`);
     }
     const write = authorization.scopes.includes('rundowns:write');
+    const slides = authorization.scopes.includes('slides:write');
     page(response, 200, 'Connect an app', `<h1>Connect an app to Grafonaut</h1>
 <p>An app that calls itself <strong>${escapeHtml(authorization.clientName)}</strong> asks for access to your account
 <strong>${escapeHtml(account.display_name)}</strong> (${escapeHtml(providers[account.provider]?.label ?? account.provider)}).</p>
@@ -246,7 +248,8 @@ After you decide, your browser returns to <code>${escapeHtml(redirectTarget(auth
 <p>The app may:</p>
 <label><input type="checkbox" checked disabled> <span>${escapeHtml(scopes['rundowns:read'])}</span></label>
 ${write ? `<label><input type="checkbox" name="write" value="1" checked> <span>${escapeHtml(scopes['rundowns:write'])}</span></label>` : ''}
-<p class="muted">It cannot control graphics on air, delete rundowns, upload packages or media, or see your renderer and API URLs.
+${slides ? `<label><input type="checkbox" name="slides" value="1" checked> <span>${escapeHtml(scopes['slides:write'])}</span></label>` : ''}
+<p class="muted">It cannot control graphics on air, delete rundowns or files, upload packages or files, or see your renderer and API URLs.
 You can disconnect it at any time on the AI assistants page.</p>
 <div class="actions"><button type="submit" name="decision" value="deny">Deny</button>
 <button class="primary" type="submit" name="decision" value="allow">Allow access</button></div></form>`);
@@ -262,7 +265,8 @@ You can disconnect it at any time on the AI assistants page.</p>
     if (request.body.decision !== 'allow') {
       return redirectBack(response, authorization, { error: 'access_denied', error_description: 'The user denied access' });
     }
-    const granted = authorization.scopes.filter((scope) => scope !== 'rundowns:write' || request.body.write === '1');
+    const granted = authorization.scopes.filter((scope) => (scope !== 'rundowns:write' || request.body.write === '1') &&
+      (scope !== 'slides:write' || request.body.slides === '1'));
     const code = generateToken();
     codes.set(hashToken(code), { clientId: authorization.clientId, accountId: String(accountId), scopes: granted,
       redirectUri: authorization.redirectUri, codeChallenge: authorization.codeChallenge, created: now() });

@@ -7,6 +7,9 @@ import { importSeedDirectory } from './seed-import.js';
 import { storageRoot } from './storage.js';
 import { findThumbnail, findThumbnails } from './thumbnails.js';
 import { readLicense } from './licenses.js';
+import { createSlideRoutes } from './slide-routes.js';
+import { describeFonts, prepareSlideFonts, slideFonts } from './slide-fonts.js';
+import { downloadGoogleFonts } from './slides.js';
 import myGraphicsRouter from './my-graphics.js';
 import rundownsRouter from './rundowns.js';
 import { createPrivateCatalog } from './private-catalog.js';
@@ -26,6 +29,11 @@ import { apiMountPath, apiUrl, createOgrafApi } from './ograf-api.js';
 import { createApiDocs } from './api-docs.js';
 import { createMcp, parseAllowedOrigins } from './mcp.js';
 import { createMcpSettings, parseMcpBaseUrl } from './mcp-oauth.js';
+
+// Slide fonts first (the routes below are set up with them): Google Fonts listed in the seed volume are downloaded once.
+for (const { family, error } of await prepareSlideFonts({ download: downloadGoogleFonts })) {
+  console.error(`Slide font ${family} could not be downloaded from Google Fonts: ${error}`);
+}
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -172,6 +180,9 @@ app.use('/api/auth', createAuth({ upsertAccount: async (identity) => {
   return { ...account, is_approver: admin };
 } }));
 app.use('/api/admin', createAdmin());
+// Logged at startup: which fonts slides are rendered with (none means fallback fonts that differ from the editor).
+console.log(describeFonts(slideFonts()));
+app.use('/api/slides', createSlideRoutes());
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(publicDirectory));

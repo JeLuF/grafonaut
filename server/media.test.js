@@ -145,3 +145,39 @@ test('JSON files are stored as uploaded, not parsed as a request body', async ()
   // Other JSON requests are still parsed.
   assert.equal((await call('PATCH', `/api/media/${created.body.item.id}`, { body: { name: 'Confetti.json' } })).status, 200);
 });
+
+test('an uploaded slide-editor JSON becomes a PNG made from the slide, editable and downloadable as JSON', async () => {
+  const { closeSlideRunner } = await import('./slides.js');
+  after(() => closeSlideRunner());
+  const slide = { type: 'slide-editor', version: 1, width: 320, height: 180, backgroundStyle: { fill: '#336699', opacity: 1 }, canvas: { version: '7.4.0', objects: [] } };
+  const created = await call('POST', `/api/media?name=${encodeURIComponent('Break.json')}`, { body: Buffer.from(JSON.stringify(slide)), type: 'application/json' });
+  assert.equal(created.status, 201);
+  const { item } = created.body;
+  assert.deepEqual([item.name, item.extension, item.source, created.body.slide], ['Break.png', 'png', 'slide', true]);
+  assert.match(item.url, /\/render\/media\/[0-9a-f-]+\.png$/);
+  const png = await fs.readFile(path.join(storageRoot, 'media', '7', `${item.id}.png`));
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  assert.deepEqual((await call('GET', `/api/media/${item.id}/slide`)).body, slide);
+  const download = await call('GET', `/api/media/${item.id}/slide?download=1`);
+  assert.match(download.headers.get('content-disposition'), /^attachment; filename="?Break\.json"?$/);
+  // Saving keeps the URL and renders a new PNG.
+  const saved = await call('PUT', `/api/media/${item.id}/slide`, { body: Buffer.from(JSON.stringify({ ...slide, backgroundStyle: { fill: '#990000', opacity: 1 } })), type: 'application/json' });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.item.url, item.url);
+  assert.notEqual(saved.body.item.previewUrl, item.previewUrl);
+  assert.equal((await call('PUT', `/api/media/${item.id}/content?name=x.png`, { body: png, type: 'image/png' })).status, 409);
+  // Slides from the editor, and slides that are refused.
+  const fromEditor = await call('POST', '/api/media/slides', { body: Buffer.from(JSON.stringify({ name: 'Opening', slide })), type: 'application/json' });
+  assert.deepEqual([fromEditor.status, fromEditor.body.item.name], [201, 'Opening.png']);
+  const remote = { ...slide, canvas: { objects: [{ type: 'Image', src: 'https://example.com/a.png' }] } };
+  const refused = await call('PUT', `/api/media/${item.id}/slide`, { body: Buffer.from(JSON.stringify(remote)), type: 'application/json' });
+  assert.equal(refused.status, 422);
+  assert.match(refused.body.error, /embedded images/);
+  assert.equal((await call('GET', `/api/media/${item.id}/slide`, { account: '8' })).status, 404);
+  // Other JSON files stay JSON files.
+  const plain = await call('POST', `/api/media?name=${encodeURIComponent('data.json')}`, { body: Buffer.from('{"a":1}'), type: 'application/json' });
+  assert.deepEqual([plain.body.item.extension, plain.body.item.source], ['json', 'file']);
+  assert.equal((await call('GET', `/api/media/${plain.body.item.id}/slide`)).status, 404);
+  assert.equal((await call('DELETE', `/api/media/${item.id}`)).status, 200);
+  assert.deepEqual((await fs.readdir(path.join(storageRoot, 'media', '7'))).filter((file) => file.startsWith(item.id)), []);
+});

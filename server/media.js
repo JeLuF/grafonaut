@@ -6,6 +6,7 @@ import * as db from './db.js';
 import { uploadLimits } from './package-upload.js';
 import { assetTypes, graphicSandbox } from './renderer.js';
 import { storageRoot as defaultStorageRoot } from './storage.js';
+import { createSlideMedia, isSlide, SlideError } from './slides.js';
 
 // Media library: files an account uploads for graphic properties (images, videos, ...). Graphics reference a file by
 // its absolute URL on the graphics host (else the renderer host), /render/media/<id>.<extension>; the ID is a random UUID. Replacing a file
@@ -15,8 +16,8 @@ export const mediaFileRoute = '/render/media/:file';
 
 // Media uploads send the file itself as the request body, whatever its type (a .json file arrives as
 // application/json). The app's JSON parser must leave these requests to the media router (mounted at /api/media).
-export const isMediaUpload = (request) => (request.method === 'POST' && request.path === '/api/media') ||
-  (request.method === 'PUT' && /^\/api\/media\/[^/]+\/content$/.test(request.path));
+export const isMediaUpload = (request) => (request.method === 'POST' && /^\/api\/media(\/slides)?$/.test(request.path)) ||
+  (request.method === 'PUT' && /^\/api\/media\/[^/]+\/(content|slide)$/.test(request.path));
 
 export function mediaLimits(env = process.env) {
   const max = Number(env.MEDIA_MAX_BYTES);
@@ -32,10 +33,10 @@ function cleanName(value) {
 }
 
 // `fileOrigin(request)`: the origin media files are served from to graphics (the graphics host, if set).
-export function createMedia({ store = db, storageRoot = defaultStorageRoot, limits = mediaLimits(), fileOrigin }) {
+export function createMedia({ store = db, storageRoot = defaultStorageRoot, limits = mediaLimits(), fileOrigin, slides = createSlideMedia({ store, storageRoot }) }) {
   const router = express.Router();
   const filePath = (accountId, media) => path.join(storageRoot, 'media', String(accountId), `${media.id}.${media.extension}`);
-  const describe = (request, media) => ({ id: media.id, name: media.name, extension: media.extension, size: media.size,
+  const describe = (request, media) => ({ id: media.id, name: media.name, extension: media.extension, source: media.source ?? 'file', size: media.size,
     updatedAt: media.updatedAt, usage: media.usage ?? 0,
     url: `${fileOrigin(request)}/render/media/${media.id}.${media.extension}`,
     previewUrl: `/api/media/${media.id}/content?v=${media.checksum.slice(0, 12)}` });
@@ -48,6 +49,18 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
   }
   const extensionOf = (name) => path.extname(name).slice(1).toLowerCase();
   const raw = express.raw({ type: () => true, limit: limits.maxBytes });
+  const parseJson = (buffer) => { try { return JSON.parse(buffer.toString('utf8')); } catch { return null; } };
+  // Slide errors (invalid slide, rendering failed) are the user's to fix; other failures are logged.
+  function slideFailure(response, operation, error) {
+    if (error instanceof SlideError) return response.status(422).json({ error: error.message });
+    failed(operation, error);
+    response.status(503).json({ error: 'The slide could not be saved' });
+  }
+  async function slideOf(request, response) {
+    const media = await store.findMedia(request.params.mediaId, request.session.accountId);
+    if (!media || media.source !== 'slide') { response.status(404).json({ error: 'Slide not found' }); return null; }
+    return media;
+  }
 
   router.use((request, response, next) => {
     if (!request.session?.accountId) return response.status(401).json({ error: 'Sign-in required' });
@@ -73,6 +86,14 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
     const extension = extensionOf(name);
     if (!limits.allowedExtensions.has(`.${extension}`) || !assetTypes[`.${extension}`]) return response.status(415).json({ error: `Files of type .${extension || '?'} are not allowed` });
     if (!Buffer.isBuffer(request.body) || !request.body.length) return response.status(400).json({ error: 'The file is empty' });
+    // A slide of slide-editor (JSON with "type": "slide-editor") becomes a PNG media item made from the slide.
+    const slide = extension === 'json' ? parseJson(request.body) : null;
+    if (isSlide(slide)) {
+      try {
+        const { media, issues } = await slides.create(request.session.accountId, name, slide);
+        return response.status(201).json({ item: describe(request, { ...media, usage: 0 }), slide: true, issues });
+      } catch (error) { return slideFailure(response, 'slide upload', error); }
+    }
     const media = { id: crypto.randomUUID(), name, extension, size: request.body.length,
       checksum: crypto.createHash('sha256').update(request.body).digest('hex') };
     const target = filePath(request.session.accountId, media);
@@ -87,11 +108,49 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
     }
   });
 
+  // A new slide from the editor: { "name": "...", "slide": { ...slide-editor JSON } }.
+  router.post('/slides', raw, async (request, response) => {
+    const body = Buffer.isBuffer(request.body) ? parseJson(request.body) : null;
+    if (!isSlide(body?.slide)) return response.status(400).json({ error: 'Send { "name": "...", "slide": { "type": "slide-editor", ... } }' });
+    const name = cleanName(body.name) ?? 'Slide';
+    try {
+      const { media, issues } = await slides.create(request.session.accountId, name, body.slide);
+      response.status(201).json({ item: describe(request, { ...media, usage: 0 }), issues });
+    } catch (error) { slideFailure(response, 'slide create', error); }
+  });
+
+  // The slide JSON, for the editor; ?download=1 as a file.
+  router.get('/:mediaId/slide', async (request, response) => {
+    try {
+      const media = await slideOf(request, response);
+      if (!media) return;
+      const slide = await slides.load(request.session.accountId, media);
+      if (request.query.download) {
+        const fileName = `${media.name.replace(/\.png$/i, '')}.json`.replace(/["\\\r\n]/g, '_');
+        response.attachment(fileName);
+      }
+      response.set('Cache-Control', 'private, no-store').json(slide);
+    } catch (error) { failed('slide load', error); response.status(503).json({ error: 'The slide could not be loaded' }); }
+  });
+
+  // Saves an edited slide: the PNG is rendered again and keeps its URL.
+  router.put('/:mediaId/slide', raw, async (request, response) => {
+    try {
+      const media = await slideOf(request, response);
+      if (!media) return;
+      const slide = Buffer.isBuffer(request.body) ? parseJson(request.body) : null;
+      if (!isSlide(slide)) return response.status(400).json({ error: 'Send the slide JSON ("type": "slide-editor")' });
+      const { media: saved, issues } = await slides.update(request.session.accountId, media, slide);
+      response.json({ item: describe(request, saved), issues });
+    } catch (error) { slideFailure(response, 'slide save', error); }
+  });
+
   // Replace the content; the file keeps its ID and URL, so the extension must stay the same.
   router.put('/:mediaId/content', raw, async (request, response) => {
     try {
       const media = await store.findMedia(request.params.mediaId, request.session.accountId);
       if (!media) return response.status(404).json({ error: 'File not found' });
+      if (media.source === 'slide') return response.status(409).json({ error: 'This file is made from a slide: edit the slide instead' });
       const name = cleanName(request.query.name);
       if (name && extensionOf(name) !== media.extension) {
         return response.status(415).json({ error: `The replacement must be a .${media.extension} file; upload other types as a new file` });
@@ -120,6 +179,7 @@ export function createMedia({ store = db, storageRoot = defaultStorageRoot, limi
       const media = await store.findMedia(request.params.mediaId, request.session.accountId);
       if (!media || !await store.deleteMedia(request.session.accountId, media.id)) return response.status(404).json({ error: 'File not found' });
       await fs.rm(filePath(request.session.accountId, media), { force: true });
+      if (media.source === 'slide') await slides.remove(request.session.accountId, media.id);
       response.json({ ok: true });
     } catch (error) { failed('delete', error); response.status(503).json({ error: 'The file could not be deleted' }); }
   });

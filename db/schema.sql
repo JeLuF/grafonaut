@@ -1,3 +1,10 @@
+-- Database upgrade scripts (db/migrations) that have run; this schema already contains all of them.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name VARCHAR(190) NOT NULL,
+  applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS accounts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   -- Each login provider has its own accounts; the same person signing in with Twitch and Google gets two accounts.
@@ -152,6 +159,8 @@ CREATE TABLE IF NOT EXISTS media (
   account_id BIGINT UNSIGNED NOT NULL,
   name VARCHAR(255) NOT NULL,
   extension VARCHAR(16) NOT NULL,
+  -- 'slide': the file is the PNG rendered from a slide-editor JSON stored next to it
+  source ENUM('file','slide') NOT NULL DEFAULT 'file',
   size_bytes INT UNSIGNED NOT NULL,
   checksum_sha256 CHAR(64) NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
