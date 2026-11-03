@@ -18,7 +18,7 @@ import { createFavourites } from './favourites.js';
 import { createAuth } from './auth.js';
 import { adminMatcher, createAdmin } from './admins.js';
 import { createMedia, createMediaFileHandler, mediaFileRoute, isMediaUpload } from './media.js';
-import { createRefererCheck, parseHosts, refererMode } from './referer.js';
+import { createRefererCheck, refererMode } from './referer.js';
 import { configureSession } from './session.js';
 import { sameOriginWrites } from './request-guards.js';
 import { createHosts, parseHostSetting } from './hosts.js';
@@ -28,7 +28,7 @@ import { tokenKey } from './tokens.js';
 import { apiMountPath, apiUrl, createOgrafApi } from './ograf-api.js';
 import { createApiDocs } from './api-docs.js';
 import { createMcp, parseAllowedOrigins } from './mcp.js';
-import { createMcpSettings, parseMcpBaseUrl } from './mcp-oauth.js';
+import { createMcpSettings, mcpBaseUrl as mcpBaseUrlFor } from './mcp-oauth.js';
 
 // Slide fonts first (the routes below are set up with them): Google Fonts listed in the seed volume are downloaded once.
 for (const { family, error } of await prepareSlideFonts({ download: downloadGoogleFonts })) {
@@ -39,10 +39,10 @@ const app = express();
 const port = Number(process.env.PORT ?? 3000);
 const publicDirectory = path.resolve('dist');
 const rendererHost = parseRendererHost(process.env.RENDERER_HOST);
-// Main, renderer and graphics hosts and what each serves (see hosts.js). APP_HOST may list several, comma separated.
 // Accounts with the admin role (ADMIN_USERS, see admins.js); invalid entries stop the start.
 const isAdmin = adminMatcher(process.env.ADMIN_USERS);
-const hosts = createHosts({ appHosts: parseHosts(process.env.APP_HOST), rendererHost,
+// Main, renderer and graphics hosts and what each serves (see hosts.js), one host name each.
+const hosts = createHosts({ appHost: parseHostSetting(process.env.APP_HOST, 'APP_HOST'), rendererHost,
   graphicsHost: parseHostSetting(process.env.GRAPHICS_HOST, 'GRAPHICS_HOST') });
 // Strict (Referer required) with a graphics host. Without one, graphic frames run in an opaque origin and the
 // browser sends no Referer for their images and nested pages, so missing referers are allowed (foreign ones are not).
@@ -52,8 +52,12 @@ const assetRefererCheck = createRefererCheck({ hosts: hosts.hosts,
 const mediaRefererCheck = createRefererCheck({ hosts: hosts.hosts,
   mode: refererMode(process.env.ASSET_REFERER_CHECK) === 'off' ? 'off' : 'lenient' });
 tokenKey();
-// MCP interface (MCP.md): off unless MCP_BASE_URL is set.
-const mcpBaseUrl = parseMcpBaseUrl(process.env.MCP_BASE_URL);
+// Icon server of the stack (ICONIFY_API_URL, e.g. http://iconify:3000), used by the slide renderer; see slide-routes.js.
+if (process.env.ICONIFY_API_URL && !/^https?:\/\/[^/]+\/?$/i.test(process.env.ICONIFY_API_URL.trim())) {
+  throw new Error(`Invalid ICONIFY_API_URL: ${process.env.ICONIFY_API_URL} (use an http(s) origin, e.g. http://iconify:3000)`);
+}
+// MCP interface (MCP.md): off unless MCP_ENABLED, on the main host.
+const mcpBaseUrl = mcpBaseUrlFor({ enabled: process.env.MCP_ENABLED, appHost: hosts.app, port });
 const mcpAllowedOrigins = parseAllowedOrigins(process.env.MCP_ALLOWED_ORIGINS);
 const renderStore = { listRenderEntries, listRenderInstances, saveRenderInstance, deleteRenderInstances, findAccountGraphic, listGroupActions };
 const renderHub = createRenderHub(renderStore);

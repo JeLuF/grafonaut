@@ -6,8 +6,8 @@ import * as db from './db.js';
 import { createMcpOAuth } from './mcp-oauth.js';
 import { createMcpServer } from './mcp-tools.js';
 
-// The MCP interface (MCP.md): a remote MCP server at <MCP_BASE_URL>/mcp (Streamable HTTP, stateless, JSON responses)
-// with its OAuth authorization server. Everything is served on the MCP_BASE_URL host only; other hosts (renderer,
+// The MCP interface (MCP.md): a remote MCP server at https://<APP_HOST>/mcp (Streamable HTTP, stateless, JSON responses)
+// with its OAuth authorization server. Everything is served on the main host only; other hosts (renderer,
 // graphics) answer these paths as before.
 export const mcpPath = '/mcp';
 const RATE_WINDOW_MS = 60 * 1000;

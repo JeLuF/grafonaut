@@ -6,7 +6,7 @@ import path from 'node:path';
 import express from 'express';
 import { after, beforeEach, test } from 'node:test';
 import { createMedia, createMediaFileHandler, isMediaUpload, mediaFileRoute } from './media.js';
-import { createRefererCheck, parseHosts, refererMode } from './referer.js';
+import { createRefererCheck, refererMode } from './referer.js';
 
 const storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ograf-media-'));
 let rows;
@@ -112,9 +112,7 @@ test('media files are served without a referer or with an own one, never to fore
   assert.equal((await call('GET', '/render/media/not-an-id.png', { account: null, referer: 'https://render.example.com/' })).status, 404);
 });
 
-test('the referer check knows strict, lenient and off and parses host lists', async () => {
-  assert.deepEqual(parseHosts('grafonaut.example.com, https://render.example.com:8443/'), ['grafonaut.example.com', 'render.example.com:8443']);
-  assert.deepEqual(parseHosts(''), []);
+test('the referer check knows strict, lenient and off', async () => {
   assert.equal(refererMode(undefined), 'strict');
   assert.equal(refererMode(' Lenient '), 'lenient');
   assert.throws(() => refererMode('maybe'), /ASSET_REFERER_CHECK/);

@@ -54,7 +54,7 @@ export function createSlideRunner({ timeoutMs = 30000, fonts = slideFonts(), mem
       serialization: 'advanced', execArgv: [`--max-old-space-size=${memoryMb}`], stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
       // Only what rendering needs: no secrets of the app.
       env: { PATH: process.env.PATH ?? '', NODE_ENV: process.env.NODE_ENV ?? '', SLIDE_WORKER_FONTS: JSON.stringify(fonts),
-        SLIDE_WORKER_FONT_CACHE: fontCache }
+        SLIDE_WORKER_FONT_CACHE: fontCache, SLIDE_WORKER_ICON_API: process.env.ICONIFY_API_URL ?? '' }
     });
     const current = { child, pending: null };
     current.ready = new Promise((resolve, reject) => {

@@ -65,7 +65,7 @@ test('changing API requests must come from the app\'s own origin', () => {
 });
 
 test('graphics files are only served on the graphics host, which serves nothing else', () => {
-  const hosts = createHosts({ appHosts: ['grafonaut.example.com'], rendererHost: { host: 'render.example.com' }, graphicsHost: { host: 'graphics.example.com' } });
+  const hosts = createHosts({ appHost: { host: 'grafonaut.example.com' }, rendererHost: { host: 'render.example.com' }, graphicsHost: { host: 'graphics.example.com' } });
   assert.equal(hosts.isolated, true);
   assert.deepEqual(hosts.hosts, ['grafonaut.example.com', 'render.example.com', 'graphics.example.com']);
   const answer = (host, path) => run(hosts.routing, { method: 'GET', host, path });
@@ -90,7 +90,7 @@ test('without a graphics host, graphics run opaque and are served on the rendere
   const shared = createHosts({});
   assert.equal(shared.isolated, false);
   assert.equal(run(shared.routing, { method: 'GET', host: 'grafonaut.example.com', path: '/render/token/' }), 'next');
-  const renderer = createHosts({ rendererHost: { origin: 'https://render.example.com:8443' } });
+  const renderer = createHosts({ rendererHost: { host: 'render.example.com:8443' } });
   assert.equal(renderer.graphicsOrigin({ protocol: 'https', host: 'grafonaut.example.com' }), 'https://render.example.com:8443');
   assert.equal(run(renderer.routing, { method: 'GET', host: 'grafonaut.example.com', path: '/render/token/' }), 404);
   assert.equal(run(renderer.routing, { method: 'GET', host: 'render.example.com:8443', path: '/render/token/' }), 'next');
@@ -98,9 +98,17 @@ test('without a graphics host, graphics run opaque and are served on the rendere
 });
 
 test('the graphics host must be a host of its own', () => {
-  assert.throws(() => createHosts({ rendererHost: { host: 'render.example.com' }, graphicsHost: { origin: 'https://render.example.com' } }), /GRAPHICS_HOST/);
-  assert.throws(() => createHosts({ appHosts: ['grafonaut.example.com'], graphicsHost: { host: 'grafonaut.example.com' } }), /GRAPHICS_HOST/);
+  assert.throws(() => createHosts({ rendererHost: { host: 'render.example.com' }, graphicsHost: { host: 'render.example.com' } }), /GRAPHICS_HOST/);
+  assert.throws(() => createHosts({ appHost: { host: 'grafonaut.example.com' }, graphicsHost: { host: 'grafonaut.example.com' } }), /GRAPHICS_HOST/);
   assert.throws(() => parseHostSetting('graphics.example.com/x', 'GRAPHICS_HOST'), /Invalid GRAPHICS_HOST/);
+});
+
+test('host settings are single host names, without scheme', () => {
+  assert.deepEqual(parseHostSetting(' Grafonaut.Example.com ', 'APP_HOST'), { host: 'grafonaut.example.com' });
+  assert.deepEqual(parseHostSetting('render.localhost:3000', 'RENDERER_HOST'), { host: 'render.localhost:3000' });
+  for (const value of ['grafonaut.example.com, www.grafonaut.example.com', 'https://grafonaut.example.com', 'user@grafonaut.example.com']) {
+    assert.throws(() => parseHostSetting(value, 'APP_HOST'), /Invalid APP_HOST/, value);
+  }
 });
 
 test('renderer pages load graphic frames and modules from the graphics origin and only talk to it', () => {

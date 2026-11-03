@@ -1,0 +1,9 @@
+# Not part of the build context: the image installs its own dependencies (a local node_modules copied over them
+# would put old package versions into the bundle), and secrets, data and local state stay out of the image.
+node_modules
+dist
+storage
+seeds/volume
+.env
+.git
+.mcp.json

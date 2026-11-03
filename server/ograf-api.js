@@ -3,6 +3,7 @@ import express from 'express';
 import { runGroupAction } from './group-run.js';
 import { RENDERER_ID, RendererError } from './render-hub.js';
 import { ControlError, createRenderControl, customActionError } from './render-control.js';
+import { originFor } from './hosts.js';
 
 // Grafonaut's implementation of the OGraf Server API (https://ograf.ebu.io), scoped to one account by the API token in the path:
 // /<api-token>/ograf/v1/... The token is the only credential, so no cookies are involved and any origin may call it.
@@ -16,7 +17,7 @@ const isObject = (value) => value && typeof value === 'object' && !Array.isArray
 export { payloadProblems } from './render-control.js';
 
 export function apiUrl(request, token) {
-  return `${request.protocol}://${request.host}/${encodeURIComponent(token)}/ograf/v1/`;
+  return `${originFor(request, null)}/${encodeURIComponent(token)}/ograf/v1/`;
 }
 
 export const renderTargetSchema = {

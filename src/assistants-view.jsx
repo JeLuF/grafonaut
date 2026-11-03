@@ -5,7 +5,7 @@ import { LoginButtons } from './brand.jsx';
 
 const formatDate = (value) => value ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : null;
 
-// Whether the server has the MCP interface enabled (MCP_BASE_URL), for the sidebar link. Unknown or failed: false.
+// Whether the server has the MCP interface enabled (MCP_ENABLED), for the sidebar link. Unknown or failed: false.
 export function useMcpEnabled(account) {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
@@ -56,7 +56,7 @@ function McpSettings({ account }) {
   if (!settings) return error ? <p className="error-message" role="alert">{error}</p> : <p className="status" role="status">Loading...</p>;
   if (!settings.enabled) {
     return <div className="empty-state"><strong>The MCP interface is not enabled on this server.</strong>
-      <span>Its administrator can turn it on with the MCP_BASE_URL setting.</span></div>;
+      <span>Its administrator can turn it on with the MCP_ENABLED setting.</span></div>;
   }
   return <>
     <section className="renderer-card" aria-labelledby="mcp-url-heading">

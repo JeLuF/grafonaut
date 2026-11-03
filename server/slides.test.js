@@ -7,7 +7,7 @@ import { closeSlideRunner, createSlideMedia, createSlideRunner, renderSlide, run
 import { describeFonts, discoverFonts, editorFonts, fontFileFamily, prepareSlideFonts, readGoogleFontList, replaceMissingFonts, slideFonts } from './slide-fonts.js';
 import { readFontInfo } from './font-info.js';
 
-const example = JSON.parse(await fs.readFile(new URL('../node_modules/slide-editor/examples/slides/be-right-back.json', import.meta.url), 'utf8'));
+const example = JSON.parse(await fs.readFile(new URL('./fixtures/be-right-back-slide.json', import.meta.url), 'utf8'));
 const blank = { type: 'slide-editor', version: 1, width: 640, height: 360, backgroundStyle: { fill: '#123456', opacity: 1 }, canvas: { version: '7.4.0', objects: [] } };
 const withImage = (src) => ({ ...blank, canvas: { ...blank.canvas, objects: [{ type: 'Image', src, left: 0, top: 0, width: 1, height: 1 }] } });
 const storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ograf-slides-'));

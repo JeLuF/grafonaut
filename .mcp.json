@@ -1,5 +1,0 @@
-{
-  "mcpServers": {
-    "grafonaut": { "type": "http", "url": "https://ograf.mnjk.de/mcp" }
-  }
-}

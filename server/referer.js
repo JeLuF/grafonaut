@@ -7,14 +7,6 @@
 //   off     no check
 export const refererModes = ['strict', 'lenient', 'off'];
 
-// "a.example.com, https://b.example.com:8443" -> ['a.example.com', 'b.example.com:8443']
-export function parseHosts(value) {
-  return String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean).map((item) => {
-    try { return new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(item) ? item : `https://${item}`).host.toLowerCase(); }
-    catch { throw new Error(`Invalid host name: ${item}`); }
-  });
-}
-
 export function refererMode(value) {
   const mode = String(value ?? '').trim().toLowerCase() || 'strict';
   if (!refererModes.includes(mode)) throw new Error(`ASSET_REFERER_CHECK must be one of ${refererModes.join(', ')}`);

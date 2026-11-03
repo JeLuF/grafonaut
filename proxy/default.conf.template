@@ -1,0 +1,113 @@
+# The proxy of the Compose stack (docker-compose.yml): what each host name serves. HTTPS ends at your reverse proxy
+# in front of this one, which forwards all host names to it unchanged (see INSTALLATION.md). The app checks the same
+# rules again (server/hosts.js).
+#
+#   APP_HOST       the app, its API, the OGraf Server API, the MCP interface and the icon server (/iconify/)
+#   RENDERER_HOST  the renderer page /render/<token>/ and its WebSocket
+#   GRAPHICS_HOST  graphic frames, package files and media files: /render/frame, /render/assets/…, /render/media/…
+#
+# The nginx image fills in ${…} from the environment when the container starts; nginx's own $variables stay.
+# Proxy settings for the app: app-proxy.conf.
+
+# Renderer pages keep a WebSocket open to /render/<token>/ws.
+map $http_upgrade $connection_upgrade {
+	default upgrade;
+	''      close;
+}
+
+# The scheme the client used, as your reverse proxy reports it (HTTPS ends there); else this connection's own.
+map $http_x_forwarded_proto $forwarded_proto {
+	default $scheme;
+	https   https;
+	http    http;
+}
+
+server_tokens off;
+# Uploads: at least UPLOAD_MAX_ZIP_BYTES and MEDIA_MAX_BYTES.
+client_max_body_size ${PROXY_MAX_BODY_SIZE};
+
+# Other host names (and requests by IP address) get nothing but the health check.
+server {
+	listen 80 default_server;
+
+	location = /health {
+		include /etc/nginx/app-proxy.conf;
+	}
+
+	location / {
+		return 444;
+	}
+}
+
+server {
+	listen 80;
+	server_name ${APP_HOST};
+
+	# Renderer pages and graphics have hosts of their own.
+	location /render/ {
+		return 404;
+	}
+
+	# Icon server of the stack, for the slide editor (read-only).
+	location /iconify/ {
+		limit_except GET {
+			deny all;
+		}
+		proxy_pass http://iconify:3000/;
+		proxy_set_header Host $host;
+	}
+
+	location / {
+		include /etc/nginx/app-proxy.conf;
+	}
+}
+
+server {
+	listen 80;
+	server_name ${RENDERER_HOST};
+
+	# Renderer page and its WebSocket
+	location /render/ {
+		include /etc/nginx/app-proxy.conf;
+	}
+
+	# Graphics are served on the graphics host only.
+	location = /render/frame {
+		return 404;
+	}
+	location /render/assets/ {
+		return 404;
+	}
+	location /render/media/ {
+		return 404;
+	}
+
+	location / {
+		return 301 $forwarded_proto://${APP_HOST}$request_uri;
+	}
+}
+
+server {
+	listen 80;
+	server_name ${GRAPHICS_HOST};
+
+	# Graphic frames, package files and media files
+	location = /render/frame {
+		include /etc/nginx/app-proxy.conf;
+	}
+	location /render/assets/ {
+		include /etc/nginx/app-proxy.conf;
+	}
+	location /render/media/ {
+		include /etc/nginx/app-proxy.conf;
+	}
+
+	# Renderer pages are served on the renderer host only.
+	location /render/ {
+		return 404;
+	}
+
+	location / {
+		return 301 $forwarded_proto://${APP_HOST}$request_uri;
+	}
+}

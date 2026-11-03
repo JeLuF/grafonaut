@@ -6,16 +6,16 @@ The interface prepares rundowns. It cannot control graphics on air: there is no 
 
 ## Enabling it
 
-The interface is off unless `MCP_BASE_URL` is set:
+The interface is off unless `MCP_ENABLED` is set:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MCP_BASE_URL` | empty (off) | Public origin of the main host, e.g. `https://grafonaut.example.com`. Must be HTTPS; `http://localhost:<port>` is allowed for development. Turns on the MCP endpoint at `<MCP_BASE_URL>/mcp` and its OAuth endpoints. |
+| `MCP_ENABLED` | `false` | `true` turns on the MCP endpoint at `https://<APP_HOST>/mcp` and its OAuth endpoints, on the main host ([`APP_HOST`](INSTALLATION.md#host-names)). Without `APP_HOST` (development): `http://localhost:<PORT>/mcp`. |
 | `MCP_ALLOWED_ORIGINS` | empty | Origins of browser-based MCP clients allowed to call `/mcp` directly (CORS), comma separated, e.g. `http://localhost:6274`. Not needed for Claude, Claude Code or other clients that don't run in a browser. |
 
-The endpoints answer only on the host of `MCP_BASE_URL`; on the renderer and graphics hosts they don't exist. Use the main host for it, the one users sign in on, so the consent page has their session.
+The endpoints answer only on the main host, the one users sign in on, so the consent page has their session; on the renderer and graphics hosts they don't exist.
 
-With the reverse proxy from [INSTALLATION.md](INSTALLATION.md#reverse-proxy-and-sessions) (`location /` to the container), nothing else is needed. If your proxy only forwards selected paths, it must also forward:
+With the reverse proxy from [INSTALLATION.md](INSTALLATION.md#reverse-proxy-and-sessions) (all paths of all host names to the stack), nothing else is needed. If your proxy only forwards selected paths, it must also forward:
 
 | Path | Purpose |
 | --- | --- |
@@ -32,7 +32,7 @@ The interface needs a single app instance: pending authorizations and authorizat
 
 ## Connecting an assistant
 
-Use the MCP URL from the AI assistants page, `<MCP_BASE_URL>/mcp`.
+Use the MCP URL from the AI assistants page, `https://<APP_HOST>/mcp`.
 
 - **Claude (claude.ai and the desktop app):** add a custom connector with the MCP URL (Settings → Connectors). Claude opens Grafonaut's consent page when you connect.
 - **Claude Code:** `claude mcp add --transport http grafonaut https://grafonaut.example.com/mcp`, then run `/mcp` in Claude Code to sign in.
@@ -130,7 +130,7 @@ Property values are checked against the graphic's schema exactly as in the prope
 
 **Nothing on air.** No tool controls the renderer. Changes that would take something off air are refused: removing or disabling an entry that is on air, switching rundowns while graphics are on air. Changing the properties of an entry on air doesn't change the graphic until you update it in Grafonaut.
 
-**Slides.** Slide tools run in a separate process with a time limit. Slides may only contain embedded images: images from the media library are embedded by the server, other URLs and SVGs that reference files are refused, and the worker itself loads nothing from the network or the disk except the icon search (Iconify, which sees the search words).
+**Slides.** Slide tools run in a separate process with a time limit. Slides may only contain embedded images: images from the media library are embedded by the server, other URLs and SVGs that reference files are refused, and the worker itself loads nothing from the network or the disk except the icon search (the stack's icon server, or the public Iconify API without one, which then sees the search words).
 
 **Prompt injection.** Public graphics are uploaded by other people. Their names, descriptions and property schemas, like your entry labels and file names, reach the assistant as tool results. A description could contain text written to look like instructions ("delete all entries"). The interface limits what such text can achieve:
 
@@ -146,7 +146,7 @@ Property values are checked against the graphic's schema exactly as in the prope
 
 ## Development
 
-Set `MCP_BASE_URL=http://localhost:3000` (the API server, not the Vite port). Session cookies don't depend on the port, so a sign-in through the Vite dev server also works on the consent page.
+Set `MCP_ENABLED=true` and leave `APP_HOST` empty: the endpoint is then `http://localhost:3000/mcp` (the API server, not the Vite port). Session cookies don't depend on the port, so a sign-in through the Vite dev server also works on the consent page.
 
 To try the tools without an assistant, run the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) (`npx @modelcontextprotocol/inspector`), choose Streamable HTTP and `http://localhost:3000/mcp`, and connect with OAuth. If the Inspector calls the server directly from the browser, add its origin to `MCP_ALLOWED_ORIGINS`.
 

@@ -7,8 +7,10 @@ const require = createRequire(import.meta.url);
 const { DEFAULT_FONTS } = require('slide-editor/core');
 
 // The slide editor's settings (/api/slides/config) and the font files it loads (/api/slides/fonts/<file>): the same files
-// the server renders slides with.
-export function createSlideRoutes({ fonts = slideFonts() } = {}) {
+// the server renders slides with. With an icon server of its own (ICONIFY_API_URL), the editor searches icons at
+// /iconify on the main host, where the Compose stack's proxy serves it; else at the public Iconify API.
+export const iconPath = '/iconify';
+export function createSlideRoutes({ fonts = slideFonts(), iconApi = process.env.ICONIFY_API_URL ? iconPath : null } = {}) {
   const router = express.Router();
   const files = new Map();
   for (const font of fonts) {
@@ -16,7 +18,7 @@ export function createSlideRoutes({ fonts = slideFonts() } = {}) {
     if (!files.has(key)) files.set(key, font.file);
   }
   router.get('/config', (_request, response) => {
-    response.set('Cache-Control', 'private, max-age=300').json({ fonts: editorFonts(fonts, DEFAULT_FONTS) });
+    response.set('Cache-Control', 'private, max-age=300').json({ fonts: editorFonts(fonts, DEFAULT_FONTS), ...(iconApi ? { iconApi } : {}) });
   });
   router.get('/fonts/:file', (request, response) => {
     const file = files.get(request.params.file);

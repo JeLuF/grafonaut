@@ -17,7 +17,7 @@ Work packages as defined in `ograf-platform-requirements.md`, section 13.
 - **FE-7** Group actions per rundown: steps across entries, mixed action types and sleep steps, one click to run.
 - **FE-9** Renderer page: renderer and API URLs, copy, new token.
 - **OPS-1** Docker Compose with the app (including the renderer), MySQL, persistent storage and a separate seed volume.
-- **OPS-4** Example nginx configuration for the main, renderer and graphics hosts (see [INSTALLATION.md](INSTALLATION.md#reverse-proxy-and-sessions)).
+- **OPS-4** Proxy in the Compose stack (nginx): what the main, renderer and graphics hosts serve, WebSocket, upload size, forwarded headers; the outer HTTPS proxy is one `server` block for all host names (see [INSTALLATION.md](INSTALLATION.md#reverse-proxy-and-sessions)). Iconify server in the stack for the slide icon search.
 
 Beyond the work packages: rundowns (several prepared events per account), the private catalog, a media library for image and file properties with hotlink protection, custom actions in the UI, interactive API documentation at `/api-docs/`, and the Grafonaut website design.
 

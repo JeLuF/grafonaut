@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { parseHostSetting } from './hosts.js';
+import { originFor, parseHostSetting } from './hosts.js';
 import { extractedRoot } from './thumbnails.js';
 
 export const rendererRoute = '/render/:token';
@@ -11,13 +11,11 @@ export const assetRoute = '/render/assets/:versionId/*file';
 const rendererScript = fs.readFileSync(new URL('./renderer-client/renderer.js', import.meta.url), 'utf8');
 const frameScript = fs.readFileSync(new URL('./renderer-client/frame.js', import.meta.url), 'utf8');
 
-// RENDERER_HOST accepts a host ("render.example.com", "render.example.com:8443") or an origin
-// ("https://render.example.com"). Empty means: the same host as the request.
+// RENDERER_HOST is a host name ("render.example.com", see parseHostSetting). Empty means: the same host as the request.
 export const parseRendererHost = (value) => parseHostSetting(value, 'RENDERER_HOST');
 
 export function rendererUrl(request, config, token) {
-  const origin = config?.origin ?? `${request.protocol}://${config?.host ?? request.host}`;
-  return `${origin}/render/${encodeURIComponent(token)}/`;
+  return `${originFor(request, config)}/render/${encodeURIComponent(token)}/`;
 }
 
 // Renderer pages carry the account token in their URL: send only the origin as referrer (strict-origin; the asset
@@ -39,7 +37,7 @@ const escapeJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 // different origin than the page itself; otherwise from the page's own host, in an opaque origin.
 export function rendererDocument(request, token, { isolated = false, graphicsOrigin = null } = {}) {
   const nonce = crypto.randomBytes(16).toString('base64');
-  const origin = `${request.protocol}://${request.host}`;
+  const origin = originFor(request, null);
   const frameOrigin = isolated ? graphicsOrigin : origin;
   const config = { socketPath: `/render/${encodeURIComponent(token)}/ws`, framePath: `${frameOrigin}${framePath}`, assetOrigin: frameOrigin,
     messageOrigin: isolated ? graphicsOrigin : '*', sandbox: graphicSandbox(isolated) };

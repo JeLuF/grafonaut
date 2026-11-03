@@ -7,7 +7,9 @@ import { createRequire } from 'node:module';
 // (fonts imported in the editor, downloaded once into SLIDE_WORKER_FONT_CACHE). The process gets only the environment
 // it needs (no secrets of the app).
 const require = createRequire(import.meta.url);
-const allowedOrigins = new Set(['https://api.iconify.design', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com']);
+// The icon server of the stack (ICONIFY_API_URL), if any, replaces the public Iconify API.
+const iconApi = process.env.SLIDE_WORKER_ICON_API || null;
+const allowedOrigins = new Set([new URL(iconApi ?? 'https://api.iconify.design').origin, 'https://fonts.googleapis.com', 'https://fonts.gstatic.com']);
 const realFetch = globalThis.fetch;
 globalThis.fetch = (input, init) => {
   const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
@@ -51,7 +53,7 @@ const tasks = {
   async tool({ name, args, slides }) {
     const store = new Map(Object.entries(slides ?? {}));
     const saved = {};
-    const tools = createSlideTools({ googleFonts, store: {
+    const tools = createSlideTools({ googleFonts, ...(iconApi ? { iconApi } : {}), store: {
       load: async (id) => store.get(id) ?? null,
       save: async (id, json) => { store.set(id, json); saved[id] = json; }
     } });

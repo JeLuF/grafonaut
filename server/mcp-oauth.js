@@ -30,16 +30,15 @@ const refusedSchemes = new Set(['http:', 'file:', 'about:', 'blob:', 'filesystem
   'javascript:', 'data:', 'vbscript:']);
 const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-// MCP_BASE_URL: the public origin of the main host, e.g. https://grafonaut.example.com. Without it the MCP interface is off.
-export function parseMcpBaseUrl(value) {
-  const setting = value?.trim();
-  if (!setting) return null;
-  let url;
-  try { url = new URL(setting); } catch { throw new Error(`Invalid MCP_BASE_URL: ${setting}`); }
-  if (url.username || url.password || url.search || url.hash || url.pathname !== '/' ||
-    !(url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) {
-    throw new Error(`Invalid MCP_BASE_URL: ${setting} (use an https origin without a path; http only for localhost)`);
-  }
+// MCP_ENABLED turns the MCP interface on. It is served on the main host: https://<APP_HOST>, or http for a loopback
+// host (development); without APP_HOST on http://localhost:<port>.
+export function mcpBaseUrl({ enabled, appHost, port }) {
+  const setting = String(enabled ?? '').trim().toLowerCase();
+  if (['', 'false', '0', 'no', 'off'].includes(setting)) return null;
+  if (!['true', '1', 'yes', 'on'].includes(setting)) throw new Error(`Invalid MCP_ENABLED: ${enabled} (use true or false)`);
+  if (!appHost) return new URL(`http://localhost:${port}`);
+  const url = new URL(`https://${appHost}`);
+  if (loopbackHosts.has(url.hostname)) url.protocol = 'http:';
   return url;
 }
 

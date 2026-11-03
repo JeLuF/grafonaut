@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { RundownError } from './db.js';
 import { createMcp, createRateLimiter, parseAllowedOrigins } from './mcp.js';
-import { checkRedirectUri, createMcpSettings, grantedScopes, parseMcpBaseUrl, redirectTarget } from './mcp-oauth.js';
+import { checkRedirectUri, createMcpSettings, grantedScopes, mcpBaseUrl, redirectTarget } from './mcp-oauth.js';
 import { untrusted } from './mcp-tools.js';
 import { returnPath } from './auth.js';
 
@@ -226,12 +226,11 @@ const mcpPost = (headers = {}) => fetch(`${base}/mcp`, { method: 'POST', headers
 // ---- Tests ----
 
 test('settings are validated', () => {
-  assert.equal(parseMcpBaseUrl(''), null);
-  assert.equal(parseMcpBaseUrl('https://grafonaut.example.com').href, 'https://grafonaut.example.com/');
-  assert.equal(parseMcpBaseUrl('http://localhost:3000').host, 'localhost:3000');
-  for (const invalid of ['http://grafonaut.example.com', 'https://grafonaut.example.com/app', 'https://x.example.com/?a=1', 'nonsense']) {
-    assert.throws(() => parseMcpBaseUrl(invalid));
-  }
+  for (const enabled of [undefined, '', 'false', 'off', '0']) assert.equal(mcpBaseUrl({ enabled, appHost: 'grafonaut.example.com', port: 3000 }), null);
+  assert.equal(mcpBaseUrl({ enabled: 'true', appHost: 'grafonaut.example.com', port: 3000 }).href, 'https://grafonaut.example.com/');
+  assert.equal(mcpBaseUrl({ enabled: 'TRUE', appHost: null, port: 3000 }).href, 'http://localhost:3000/');
+  assert.equal(mcpBaseUrl({ enabled: 'yes', appHost: 'localhost:3001', port: 3000 }).href, 'http://localhost:3001/');
+  assert.throws(() => mcpBaseUrl({ enabled: 'maybe', appHost: 'grafonaut.example.com', port: 3000 }), /MCP_ENABLED/);
   assert.deepEqual([...parseAllowedOrigins('https://a.example.com, http://localhost:6274')], ['https://a.example.com', 'http://localhost:6274']);
   assert.throws(() => parseAllowedOrigins('https://a.example.com/path'));
 });

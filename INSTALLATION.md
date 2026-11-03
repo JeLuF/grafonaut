@@ -4,7 +4,7 @@ How to run Grafonaut in production: Docker, configuration, sign-in providers, re
 
 ## Run with Docker
 
-1. Copy `.env.example` to `.env` and set `SESSION_SECRET` (at least 32 characters, e.g. `openssl rand -base64 48`; the app refuses to start in production without it), `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
+1. Copy `.env.example` to `.env` and set the [host names](#host-names) `APP_HOST`, `RENDERER_HOST` and `GRAPHICS_HOST` (required; the stack doesn't start without them), `SESSION_SECRET` (at least 32 characters, e.g. `openssl rand -base64 48`; the app refuses to start in production without it), `TOKEN_ENCRYPTION_KEY` (`openssl rand -base64 32`) and Twitch OAuth values.
 2. Set `TWITCH_REDIRECT_URI` to your public HTTPS callback URL (for example, `https://grafonaut.example.com/api/auth/twitch/callback`) and register that exact URL in Twitch.
 3. Place fixed sample packages in `seeds/builtin/` and operator-provided packages in `seeds/volume/` (fonts for slides in `seeds/volume/fonts/`, see [Slides](#slides)).
 4. Start the stack:
@@ -13,9 +13,9 @@ How to run Grafonaut in production: Docker, configuration, sign-in providers, re
 docker compose up --build
 ```
 
-Open the public HTTPS hostname served by your reverse proxy. The app exposes `GET /health` and `GET /api/catalog`; these also work on `http://localhost:3000`, but production sign-in requires HTTPS.
+Open the public HTTPS hostname served by your reverse proxy. The app exposes `GET /health` and `GET /api/catalog`; `/health` also works on `http://localhost:3000` (the stack's proxy), but production sign-in requires HTTPS.
 
-The Compose stack runs the app (including the renderer), MySQL 8.4, a volume for uploaded and unpacked files (`/app/storage`) and a read-only seed volume (`./seeds/volume`). The database schema is created at startup.
+The Compose stack runs the app (including the renderer), a proxy in front of it (nginx, see [Reverse proxy](#reverse-proxy-and-sessions)), an [icon server](#icons) (Iconify) with a volume for its icon sets, MySQL 8.4, a volume for uploaded and unpacked files (`/app/storage`) and a read-only seed volume (`./seeds/volume`). The database schema is created at startup.
 
 ### Prebuilt image
 
@@ -36,9 +36,9 @@ All settings are environment variables, set in `.env` (see `.env.example`).
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_REDIRECT_URI` | empty | Twitch sign-in; hidden unless all three are set. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | empty | Google sign-in, labelled "Login with YouTube"; hidden unless all three are set. |
 | `ADMIN_USERS` | empty | Accounts with the admin role, comma separated, see [Admins](#admins). |
-| `APP_HOST` | empty | Host names of the main page, comma separated. Used by the [referer check](#hotlink-protection). |
-| `RENDERER_HOST` | empty (main host) | Host name or origin of the renderer page, see [Host names](#host-names). |
-| `GRAPHICS_HOST` | empty (opaque origin) | Host name or origin for graphic frames, package and media files, see [Host names](#host-names). |
+| `APP_HOST` | none (required with Compose) | Host name of the main host, see [Host names](#host-names). |
+| `RENDERER_HOST` | none (required with Compose) | Host name of the renderer page, see [Host names](#host-names). |
+| `GRAPHICS_HOST` | none (required with Compose) | Host name for graphic frames, package and media files, see [Host names](#host-names). |
 | `ASSET_REFERER_CHECK` | `strict` with `GRAPHICS_HOST`, else `lenient` | `strict`, `lenient` or `off`, see [Hotlink protection](#hotlink-protection). |
 | `TRUST_PROXY` | `loopback,linklocal,uniquelocal` | Proxies whose `X-Forwarded-*` headers are trusted, see [Reverse proxy](#reverse-proxy-and-sessions). |
 | `UPLOAD_MAX_ZIP_BYTES` | `10485760` (10 MB) | Largest package upload. |
@@ -46,12 +46,13 @@ All settings are environment variables, set in `.env` (see `.env.example`).
 | `UPLOAD_MAX_FILES` | `5000` | Most entries in a package. |
 | `UPLOAD_ALLOWED_EXTENSIONS` | see [USER-GUIDE.md](USER-GUIDE.md#private-catalog) | Allowed file types in packages and the media library, comma separated. |
 | `MEDIA_MAX_BYTES` | `20971520` (20 MB) | Largest media library upload. |
-| `MCP_BASE_URL` | empty (off) | Public HTTPS origin of the main host; turns on the MCP interface for AI assistants, see [MCP.md](MCP.md). |
+| `MCP_ENABLED` | `false` | `true` turns on the MCP interface for AI assistants at `https://<APP_HOST>/mcp`, see [MCP.md](MCP.md). |
 | `MCP_ALLOWED_ORIGINS` | empty | Origins of browser-based MCP clients allowed to call `/mcp`, see [MCP.md](MCP.md). |
-| `APP_PORT` | `3000` | Host port Docker Compose publishes the app on. |
+| `APP_PORT` | `3000` | Host port of the stack's proxy, to which your reverse proxy forwards all host names. |
+| `PROXY_MAX_BODY_SIZE` | `25m` | Largest request body the stack's proxy accepts (nginx size); at least `UPLOAD_MAX_ZIP_BYTES` and `MEDIA_MAX_BYTES`. |
 | `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD` | see `.env.example` | Database credentials; Compose passes them to MySQL and the app. |
 
-Docker Compose sets `MYSQL_HOST`, `MYSQL_PORT`, `STORAGE_ROOT`, `SEED_BUILTIN_DIR` and `SEED_VOLUME_DIR` for the container itself.
+Docker Compose sets `MYSQL_HOST`, `MYSQL_PORT`, `STORAGE_ROOT`, `SEED_BUILTIN_DIR`, `SEED_VOLUME_DIR` and `ICONIFY_API_URL` ([Icons](#icons)) for the container itself.
 
 ## Sign-in
 
@@ -76,21 +77,27 @@ The list is applied at every start and at every sign-in, so removing an entry al
 
 ## Reverse proxy and sessions
 
-The container runs in production mode and uses `Secure`, `HttpOnly`, `SameSite=Lax` signed session cookies. When nginx terminates HTTPS and forwards HTTP to the container, Express must trust the proxy to recognize the original connection as HTTPS. `TRUST_PROXY` defaults to loopback and private-network addresses; restrict it to your proxy's IP address or CIDR ranges in deployments where other clients can reach the backend. Keep the backend reachable only through trusted infrastructure, and configure nginx to overwrite forwarded headers:
+The Compose stack has a proxy of its own (`proxy`, nginx) in front of the app. It decides what each [host name](#host-names) serves and handles everything else Grafonaut needs from a proxy: the WebSocket of the renderer pages, long-lived connections, the upload size (`PROXY_MAX_BODY_SIZE`), the forwarded headers and the [icon server](#icons). Its configuration is `proxy/default.conf.template` (the hosts) and `proxy/app-proxy.conf` (the settings for the app). Your own reverse proxy only terminates HTTPS and forwards the three host names, unchanged, to `APP_PORT`:
 
 ```nginx
-location / {
-	proxy_pass http://127.0.0.1:3000;
-	# Uploads: nginx allows 1 MB by default. At least UPLOAD_MAX_ZIP_BYTES and MEDIA_MAX_BYTES (20 MB).
-	client_max_body_size 25m;
-	proxy_set_header Host $host;
-	proxy_set_header X-Forwarded-Proto $scheme;
-	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-	# Renderer pages keep a WebSocket open to /render/<token>/ws
-	proxy_http_version 1.1;
-	proxy_set_header Upgrade $http_upgrade;
-	proxy_set_header Connection $connection_upgrade;
-	proxy_read_timeout 1h;
+server {
+	listen 443 ssl;
+	server_name grafonaut.example.com render.example.com graphics.example.com;
+	# ssl_certificate / ssl_certificate_key …
+
+	location / {
+		proxy_pass http://127.0.0.1:3000;
+		client_max_body_size 0;                    # the stack's proxy limits uploads (PROXY_MAX_BODY_SIZE)
+		proxy_set_header Host $host;
+		proxy_set_header X-Forwarded-Proto $scheme;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+		# Renderer pages keep a WebSocket open to /render/<token>/ws
+		proxy_http_version 1.1;
+		proxy_set_header Upgrade $http_upgrade;
+		proxy_set_header Connection $connection_upgrade;
+		proxy_read_timeout 1h;
+		proxy_send_timeout 1h;
+	}
 }
 ```
 
@@ -103,76 +110,36 @@ map $http_upgrade $connection_upgrade {
 }
 ```
 
-This location belongs in your existing HTTPS server configuration. Without `X-Forwarded-Proto: https` from a trusted proxy, the callback redirects successfully but cannot issue the secure session cookie.
+The certificate must cover the three host names. Alternate names (e.g. `www.grafonaut.example.com`) are not Grafonaut's: redirect them to `APP_HOST` in your proxy. The stack's proxy answers other host names only with `/health`.
+
+The container runs in production mode and uses `Secure`, `HttpOnly`, `SameSite=Lax` signed session cookies. Express must trust the proxies to recognize the original connection as HTTPS: your proxy must set `X-Forwarded-Proto`, which the stack's proxy passes on. Without `X-Forwarded-Proto: https`, the sign-in callback redirects successfully but cannot issue the secure session cookie. `TRUST_PROXY` defaults to loopback and private-network addresses, which covers the stack's proxy and a reverse proxy on the Docker host. Restrict it to the proxies' addresses or CIDR ranges in deployments where other clients can reach the backend, and keep `APP_PORT` reachable only through your reverse proxy: anyone who can reach it directly can claim to be on HTTPS. For example, publish it on the loopback interface only, `"127.0.0.1:${APP_PORT:-3000}:80"` in `docker-compose.yml`.
+
+**More services.** Further services of the stack get a `location` in `proxy/default.conf.template`, like the icon server. Your own reverse proxy stays as it is.
+
+### Upgrading from 0.8 and older
+
+The host setup changed, and the stack needs changes in `.env` and in your reverse proxy:
+
+1. `APP_HOST`, `RENDERER_HOST` and `GRAPHICS_HOST` are required, one host name each, without `https://` or a port. `APP_HOST` no longer takes a list: redirect alternate names in your proxy.
+2. `MCP_BASE_URL` is replaced by `MCP_ENABLED=true`; the MCP interface is at `https://<APP_HOST>/mcp` as before. Connected AI apps keep working if `MCP_BASE_URL` was `https://<APP_HOST>`.
+3. Replace the `server` blocks of the renderer and graphics hosts and the `location /render/` of the main host with the single `server` block above. The stack's proxy now does what they did.
+4. The app no longer publishes a port of its own; the stack's proxy listens on `APP_PORT`.
 
 ## Host names
 
-Grafonaut uses up to three host names, all pointing to the same container:
+Grafonaut uses three host names, all pointing to the same stack:
 
 | Host | Example | Serves | Setting |
 | --- | --- | --- | --- |
-| Main host | `grafonaut.example.com` | the app, its API and the OGraf Server API | `APP_HOST` |
-| Renderer host | `render.example.com` | the renderer page `/render/<token>/` and its WebSocket | `RENDERER_HOST` (optional) |
+| Main host | `grafonaut.example.com` | the app, its API, the OGraf Server API, the MCP interface and the icon server `/iconify/` | `APP_HOST` |
+| Renderer host | `render.example.com` | the renderer page `/render/<token>/` and its WebSocket | `RENDERER_HOST` |
 | Graphics host | `graphics.example.com` | graphic frames `/render/frame`, package files `/render/assets/…`, media files `/render/media/…` | `GRAPHICS_HOST` |
 
-Set all three in `.env`. `RENDERER_HOST` and `GRAPHICS_HOST` accept a host name (optionally with a port) or a full origin such as `https://graphics.example.com`; they must differ from the main host and from each other. The app answers `404` when a path is requested on the wrong host, and the graphics host serves nothing but graphics paths. When `RENDERER_HOST` is empty, the renderer page uses the main host.
+Each setting is one host name, without scheme or port; the three must differ. The stack's proxy (`proxy/default.conf.template`) serves each host only its paths: the renderer and graphics hosts redirect everything else to the main host, the renderer page on the graphics host and graphics paths on the renderer host get `404`, and so does `/render/` on the main host. The app checks the same rules again and answers `404` when a path is requested on the wrong host.
 
-The renderer and graphics hosts only proxy `/render/` and redirect everything else to the main host:
-
-```nginx
-server {
-	listen 443 ssl;
-	server_name render.example.com;
-	# ssl_certificate / ssl_certificate_key …
-
-	# Renderer page and its WebSocket
-	location /render/ {
-		proxy_pass http://127.0.0.1:3000;          # no trailing slash, see below
-		proxy_set_header Host $host;
-		proxy_set_header X-Forwarded-Proto $scheme;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-		proxy_http_version 1.1;
-		proxy_set_header Upgrade $http_upgrade;
-		proxy_set_header Connection $connection_upgrade;
-		proxy_read_timeout 1h;
-	}
-
-	# Everything else belongs to the app
-	location / {
-		return 301 https://grafonaut.example.com$request_uri;
-	}
-}
-
-server {
-	listen 443 ssl;
-	server_name graphics.example.com;
-	# ssl_certificate / ssl_certificate_key …
-
-	# Graphic frames, package files and media files
-	location /render/ {
-		proxy_pass http://127.0.0.1:3000;          # no trailing slash, see below
-		proxy_set_header Host $host;
-		proxy_set_header X-Forwarded-Proto $scheme;
-		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-	}
-
-	location / {
-		return 301 https://grafonaut.example.com$request_uri;
-	}
-}
-```
-
-`proxy_pass` must not end with a slash here: inside `location /render/`, a trailing slash would make nginx replace `/render/` with `/`, and every renderer request would reach the wrong path.
+Without the Compose stack (development, `npm start`), the three settings are optional: without them, everything is served on one host and graphics run in an opaque origin (see below). There a host may carry a port, e.g. `render.localhost:3000`.
 
 **Why a graphics host.** Graphics are uploaded code. Graphics that script their own HTML pages (for example SPX templates) must share an origin with their package files, so their frames cannot run in an opaque origin. On the graphics host, that origin belongs to graphics alone: package code can neither use the signed-in user's session (main host) nor read the renderer page, whose URL carries the renderer token (renderer host). The renderer page talks to the graphic frames with `postMessage` only. Without `GRAPHICS_HOST`, every graphic runs in an opaque origin; such graphics then cannot fill their content. Graphics on the same renderer still share the graphics origin with each other.
-
-As a second line of defence, add this to the main host's `server` block (nothing on the main host needs `/render/` once `RENDERER_HOST` and `GRAPHICS_HOST` are set; the renderer URL and the preview in the rundown view point to the renderer host):
-
-```nginx
-	location /render/ {
-		return 404;
-	}
-```
 
 The session cookie is bound to the main host, so it is never sent to the renderer or graphics host. Changing API requests must come from the main host's own origin (`Origin`/`Sec-Fetch-Site` check), so pages on the other hosts cannot use a signed-in user's session even though they are same-site.
 
@@ -199,7 +166,16 @@ More fonts go into the `fonts` folder of the seed volume (`seeds/volume/fonts/`,
 - `.ttf` or `.otf` files. The family, weight and style are read from the files, so the file names don't matter. WOFF/WOFF2 files don't work for rendering.
 - Google Fonts: put the embed code from fonts.google.com (the `@import` or `<link>` lines, as offered under "Get embed code") into `google-fonts.txt` in that folder. At startup the fonts are downloaded from Google once and kept in `<STORAGE_ROOT>/seed-fonts`; later starts use those files without network access. Fonts that can't be downloaded are logged (`Slide font … could not be downloaded`) and left out. To get a newer version of a font, delete `seed-fonts` and restart.
 
-**Safety.** Slides are uploaded by users and rendered on the server. A slide may only contain embedded images (`data:image/…`); slides with other image URLs are refused, and the rendering process loads nothing from the network or the disk except the slide's Google Fonts (only from Google's font hosts, with a timeout and a size limit, into `slide-fonts`) and the icon search of the MCP tools (Iconify). Slides are limited to 4096 × 4096 pixels, and rendering one may take at most 30 seconds; a render that takes longer is stopped by killing that process (a new one starts for the next slide), so the app itself keeps running.
+**Safety.** Slides are uploaded by users and rendered on the server. A slide may only contain embedded images (`data:image/…`); slides with other image URLs are refused, and the rendering process loads nothing from the network or the disk except the slide's Google Fonts (only from Google's font hosts, with a timeout and a size limit, into `slide-fonts`) and the icon search of the MCP tools ([Icons](#icons)). Slides are limited to 4096 × 4096 pixels, and rendering one may take at most 30 seconds; a render that takes longer is stopped by killing that process (a new one starts for the next slide), so the app itself keeps running.
+
+## Icons
+
+The slide editor and the slide tools of the [MCP interface](MCP.md) search icons with the [Iconify API](https://iconify.design/docs/api/). The Compose stack runs its own Iconify server (`iconify`, image `iconify/api`) with all free icon sets, so there are no rate limits and no search words leave the installation:
+
+- The editor in the browser uses it at `https://<APP_HOST>/iconify/`, through the stack's proxy (read-only: `GET` only).
+- The slide renderer uses it directly, `ICONIFY_API_URL=http://iconify:3000` (set in `docker-compose.yml`).
+
+Without `ICONIFY_API_URL` (e.g. `npm start` in development), both use the public API at `api.iconify.design`, which sees the users' IP addresses and search words and limits how many requests it answers. The icon server downloads its icon sets (the npm package `@iconify/json`) into the volume `iconify-cache`. At every start it asks npm for a newer version and downloads only that; restart it (`docker compose restart iconify`) to get new icons. The first start takes a while longer, until the download has finished.
 
 ## Tokens
 

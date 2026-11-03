@@ -1,8 +1,29 @@
 services:
+  # Your HTTPS reverse proxy forwards all host names (main, renderer, graphics) to this port; this proxy decides what
+  # each host serves (proxy/default.conf.template). See INSTALLATION.md.
+  proxy:
+    image: nginx:1.28-alpine
+    ports:
+      - "${APP_PORT:-3000}:80"
+    environment:
+      APP_HOST: ${APP_HOST:?Set APP_HOST, RENDERER_HOST and GRAPHICS_HOST in .env (see INSTALLATION.md)}
+      RENDERER_HOST: ${RENDERER_HOST:?Set APP_HOST, RENDERER_HOST and GRAPHICS_HOST in .env (see INSTALLATION.md)}
+      GRAPHICS_HOST: ${GRAPHICS_HOST:?Set APP_HOST, RENDERER_HOST and GRAPHICS_HOST in .env (see INSTALLATION.md)}
+      PROXY_MAX_BODY_SIZE: ${PROXY_MAX_BODY_SIZE:-25m}
+    volumes:
+      - ./proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./proxy/app-proxy.conf:/etc/nginx/app-proxy.conf:ro
+    depends_on:
+      - app
+      - iconify
+  # Icons for the slide editor and the MCP slide tools, instead of the public Iconify API (served at /iconify/).
+  iconify:
+    image: iconify/api:3.2.0
+    volumes:
+      # The icon sets (npm package @iconify/json) and data prepared from them; without it, every start downloads them.
+      - iconify-cache:/data/iconify-api/cache
   app:
     build: .
-    ports:
-      - "${APP_PORT:-3000}:3000"
     environment:
       PORT: 3000
       MYSQL_HOST: mysql
@@ -20,17 +41,18 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
       ADMIN_USERS: ${ADMIN_USERS:-}
-      RENDERER_HOST: ${RENDERER_HOST:-}
-      GRAPHICS_HOST: ${GRAPHICS_HOST:-}
-      APP_HOST: ${APP_HOST:-}
+      APP_HOST: ${APP_HOST}
+      RENDERER_HOST: ${RENDERER_HOST}
+      GRAPHICS_HOST: ${GRAPHICS_HOST}
       ASSET_REFERER_CHECK: ${ASSET_REFERER_CHECK:-}
       MEDIA_MAX_BYTES: ${MEDIA_MAX_BYTES:-20971520}
       UPLOAD_MAX_ZIP_BYTES: ${UPLOAD_MAX_ZIP_BYTES:-10485760}
       UPLOAD_MAX_UNCOMPRESSED_BYTES: ${UPLOAD_MAX_UNCOMPRESSED_BYTES:-52428800}
       UPLOAD_MAX_FILES: ${UPLOAD_MAX_FILES:-5000}
       UPLOAD_ALLOWED_EXTENSIONS: ${UPLOAD_ALLOWED_EXTENSIONS:-}
-      MCP_BASE_URL: ${MCP_BASE_URL:-}
+      MCP_ENABLED: ${MCP_ENABLED:-false}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+      ICONIFY_API_URL: http://iconify:3000
       SEED_BUILTIN_DIR: /app/seeds/builtin
       SEED_VOLUME_DIR: /app/seeds/volume
       STORAGE_ROOT: /app/storage
@@ -57,3 +79,4 @@ services:
 volumes:
   graf-storage:
   graf-mysql:
+  iconify-cache:

@@ -35,11 +35,12 @@ export default function SlideEditorDialog({ title, initialName, slide, onSave, o
     fabric.IText.ownDefaults.hiddenTextareaContainer = element;
     let active = true;
     (async () => {
-      let fonts;
-      try { fonts = (await requestJson('/api/slides/config')).fonts; } catch { /* the editor's own web-safe fonts */ }
+      let fonts, iconApi;
+      // Without the settings: the editor's own web-safe fonts and the public Iconify API.
+      try { ({ fonts, iconApi } = await requestJson('/api/slides/config')); } catch { /* defaults */ }
       if (!active) return;
       const instance = SlideEditor.create(stage.current, { fabric, theme: 'dark', colors, width: slide?.width ?? 1920, height: slide?.height ?? 1080,
-        ...(fonts ? { fonts } : {}) });
+        ...(fonts ? { fonts } : {}), ...(iconApi ? { iconApi } : {}) });
       editor.current = instance;
       if (slide) await instance.load(slide);
       if (!active) { instance.destroy(); return; }
